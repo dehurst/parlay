@@ -1,0 +1,19 @@
+{
+  "name": "parlay",
+  "version": "1.0.0",
+  "description": "Weekly NFL picks with friends, turned into consensus parlays",
+  "private": true,
+  "type": "module",
+  "main": "server.js",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "express": "^5.2.1"
+  }
+}

@@ -1,0 +1,107 @@
+:root {
+  --bg: #0f1419;
+  --card: #1a2129;
+  --line: #2a333d;
+  --text: #e8edf2;
+  --muted: #8b97a3;
+  --accent: #2fbf71;
+  --accent-ink: #06240f;
+  --warn: #e0a526;
+  --bad: #e5484d;
+  --radius: 10px;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0 auto;
+  max-width: 860px;
+  padding: 0 16px 40px;
+  background: var(--bg);
+  color: var(--text);
+  font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+h1 { font-size: 22px; margin: 0; }
+h2 { font-size: 18px; margin: 0 0 6px; }
+h3 { font-size: 16px; margin: 0; }
+.muted { color: var(--muted); }
+.small { font-size: 13px; }
+
+header {
+  display: flex; justify-content: space-between; align-items: center;
+  gap: 12px; padding: 18px 0 12px; flex-wrap: wrap;
+}
+.brand { display: flex; align-items: baseline; gap: 10px; }
+.who { display: flex; align-items: center; gap: 8px; }
+
+button, input {
+  font: inherit; color: inherit; border-radius: 8px;
+  border: 1px solid var(--line); background: var(--card); padding: 8px 12px;
+}
+button { cursor: pointer; }
+button:hover { border-color: var(--muted); }
+button[type=submit], .primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
+button.link { background: none; border: none; color: var(--muted); text-decoration: underline; padding: 0; }
+input { min-width: 0; flex: 1; }
+
+.row { display: flex; gap: 8px; margin-top: 10px; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0; }
+
+.card {
+  background: var(--card); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 14px; margin-bottom: 12px;
+}
+
+.notice { background: #3a2e0d; border: 1px solid var(--warn); border-radius: var(--radius); padding: 10px 12px; margin-bottom: 12px; }
+
+.tabs { display: flex; gap: 6px; margin-bottom: 14px; border-bottom: 1px solid var(--line); }
+.tabs button { border: none; background: none; border-bottom: 2px solid transparent; border-radius: 0; color: var(--muted); padding: 10px 12px; }
+.tabs button.active { color: var(--text); border-bottom-color: var(--accent); }
+
+.game-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-bottom: 10px; }
+.game-grid {
+  display: grid; grid-template-columns: 1fr repeat(3, minmax(0, 1fr));
+  gap: 6px; align-items: center;
+}
+.game-grid .team { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.game-grid .colhead { font-size: 12px; color: var(--muted); text-align: center; }
+
+.pick {
+  position: relative; display: flex; flex-direction: column; align-items: center;
+  padding: 6px 4px; font-size: 13px; line-height: 1.2;
+}
+.pick .line { font-weight: 600; }
+.pick .price { color: var(--muted); font-size: 12px; }
+.pick.on { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.pick.on .price { color: var(--accent-ink); }
+.pick:disabled { opacity: .55; cursor: not-allowed; }
+.pick .votes {
+  position: absolute; top: -7px; right: -5px; min-width: 18px; height: 18px;
+  padding: 0 5px; border-radius: 9px; background: var(--warn); color: #1d1500;
+  font-size: 11px; font-weight: 700; line-height: 18px;
+}
+.locked { font-size: 12px; color: var(--warn); }
+
+.board-row { display: flex; justify-content: space-between; gap: 10px; padding: 8px 0; border-top: 1px solid var(--line); }
+.board-row:first-of-type { border-top: none; }
+.bar { height: 6px; background: var(--line); border-radius: 3px; margin-top: 4px; overflow: hidden; }
+.bar > span { display: block; height: 100%; background: var(--accent); }
+
+.parlay .head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+.parlay .odds { font-size: 22px; font-weight: 700; color: var(--accent); }
+.parlay ul { margin: 10px 0; padding-left: 18px; }
+.parlay li { margin: 3px 0; }
+.stats { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 13px; color: var(--muted); }
+.stats b { color: var(--text); }
+.ev-bad { color: var(--bad); }
+.stake-row { align-items: center; margin: 0 0 12px; }
+.stake-row input { max-width: 100px; flex: none; }
+
+footer { display: flex; justify-content: space-between; gap: 10px; margin-top: 24px; flex-wrap: wrap; }
+
+@media (max-width: 520px) {
+  .game-grid { grid-template-columns: 1fr repeat(3, minmax(58px, 1fr)); }
+  .pick { font-size: 12px; }
+}

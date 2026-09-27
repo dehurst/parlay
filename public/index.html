@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Parlay Party</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏈</text></svg>">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <h1>Parlay Party</h1>
+      <span id="week-label" class="muted"></span>
+    </div>
+    <div id="who" class="who"></div>
+  </header>
+
+  <div id="notice" class="notice" hidden></div>
+
+  <section id="join" class="card join" hidden>
+    <h2>Who are you?</h2>
+    <p class="muted">Pick your name or add yourself. We remember you on this device.</p>
+    <div id="player-list" class="chips"></div>
+    <form id="join-form" class="row">
+      <input id="join-name" placeholder="New name" maxlength="30" autocomplete="off">
+      <button type="submit">Join</button>
+    </form>
+    <div id="code-row" class="row" hidden>
+      <input id="group-code" placeholder="Group code" autocomplete="off">
+      <button id="code-save" type="button">Save code</button>
+    </div>
+  </section>
+
+  <nav id="tabs" class="tabs" hidden>
+    <button data-tab="picks" class="active">My Picks</button>
+    <button data-tab="board">Group Board</button>
+    <button data-tab="parlays">Parlays</button>
+  </nav>
+
+  <main>
+    <section id="tab-picks" class="tab">
+      <p class="muted small">Tap the plays you like. Numbers show how many friends took each one. Picks lock at kickoff.</p>
+      <div id="games"></div>
+    </section>
+
+    <section id="tab-board" class="tab" hidden>
+      <div id="board"></div>
+    </section>
+
+    <section id="tab-parlays" class="tab" hidden>
+      <div class="row stake-row">
+        <label for="stake">Stake $</label>
+        <input id="stake" type="number" min="1" value="10">
+      </div>
+      <div id="parlays"></div>
+    </section>
+  </main>
+
+  <footer class="muted small">
+    <span id="odds-meta"></span>
+    <button id="refresh" class="link" type="button">Refresh odds</button>
+  </footer>
+
+  <script src="app.js" type="module"></script>
+</body>
+</html>
