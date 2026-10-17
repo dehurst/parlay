@@ -136,8 +136,9 @@ app.get('/api/week', async (req, res, next) => {
       games: games.map((g) => ({ ...g, started: hasStarted(g, now) })),
       players,
       picks: submitted(win),
-      // Your own unsubmitted selections; nobody else sees these.
-      draft: me ? store.data.drafts[win.key]?.[me] ?? [] : [],
+      // Your own unsubmitted selections (null if you have none); nobody else sees these.
+      draft: (me && store.data.drafts[win.key]?.[me]) ?? null,
+      nextRefreshAt: lines ? lines.fetchedAt + MANUAL_REFRESH_GAP : null,
     });
   } catch (err) {
     next(err);
@@ -162,14 +163,13 @@ function checkPlayer(req, res) {
 }
 
 // Save your unsubmitted selections (just the bet keys; lines are set on submit).
+// After submitting, a draft means you're editing; submitted picks still count
+// until you resubmit.
 app.put('/api/draft', async (req, res, next) => {
   try {
     const name = checkPlayer(req, res);
     if (!name) return;
     const { win, gamesById } = await loadWeek();
-    if (store.data.picks[win.key]?.[name]?.length) {
-      return res.status(409).json({ error: "You've already submitted this week's picks." });
-    }
     const keys = [...new Set(req.body.keys ?? [])].filter((k) => pickable(k, gamesById));
     // One side per bet per game (can't take both Over and Under); last one wins.
     const byMarket = new Map(keys.map((k) => [k.split('|').slice(0, 2).join('|'), k]));
@@ -182,21 +182,44 @@ app.put('/api/draft', async (req, res, next) => {
   }
 });
 
-// Lock in your picks at the book's current lines. No changes after this.
+// Throw away edits and keep what you submitted.
+app.delete('/api/draft', async (req, res, next) => {
+  try {
+    const name = checkPlayer(req, res);
+    if (!name) return;
+    const { win } = await loadWeek();
+    if (store.data.drafts[win.key]) delete store.data.drafts[win.key][name];
+    store.save();
+    res.json({ draft: null });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Submit (or resubmit) your picks. Bets you already had keep the line you got;
+// new ones take the book's current line. Picks on started games can't change.
 app.post('/api/submit', async (req, res, next) => {
   try {
     const name = checkPlayer(req, res);
     if (!name) return;
     const { win, gamesById } = await loadWeek();
     const weekPicks = (store.data.picks[win.key] ??= {});
-    if (weekPicks[name]?.length) return res.status(409).json({ error: "You've already submitted this week's picks." });
+    const before = weekPicks[name] ?? [];
+    const now = new Date();
+    const started = (key) => {
+      const game = gamesById.get(key.split('|')[0]);
+      return !game || hasStarted(game, now);
+    };
 
     const draft = store.data.drafts[win.key]?.[name] ?? [];
-    const picks = [];
+    const picks = before.filter((p) => started(p.key));
     const dropped = [];
     for (const key of draft) {
-      const line = pickable(key, gamesById);
-      if (line) picks.push({ key, point: line.point, price: line.price });
+      if (picks.some((p) => p.key === key)) continue;
+      const kept = before.find((p) => p.key === key);
+      const line = pickable(key, gamesById, now);
+      if (kept && line) picks.push(kept);
+      else if (line) picks.push({ key, point: line.point, price: line.price });
       else dropped.push(key);
     }
     if (!picks.length) {

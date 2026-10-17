@@ -9,9 +9,11 @@ the plays most of you agree on and builds a few parlays out of them.
 - **Players**: Daniel, Asher, and Matt (set with `PLAYERS`). Pick your name
   and the site remembers you on that device.
 - **My Picks**: tap a spread, total, or moneyline to select it, tap again to
-  remove it. Picks stay private until you hit **Submit**, which locks them in
-  for the week at FanDuel's line at that moment. Orange badges show how many
-  friends submitted each bet.
+  remove it. Picks stay private until you hit **Submit**, which saves them at
+  FanDuel's line at that moment. Tap **Edit picks** to change them later:
+  your submitted picks keep counting until you resubmit, bets you keep stay
+  at the line you got, and picks on games that started can't change. Orange
+  badges show how many friends submitted each bet.
 - **Group Board**: every submitted bet ranked by how many of you took it,
   plus who still needs to submit. It flags bets where FanDuel's line has
   moved since.
@@ -58,7 +60,8 @@ Settings (in `.env` or as environment variables):
 The free tier has 500 credits a month. The schedule doesn't use any. Lines
 cost 3 credits per refresh and only refresh when someone opens the site and
 they're older than `ODDS_CACHE_HOURS`, so 6 hours means at most ~360 a month.
-The **Refresh lines** link forces an update but only once per 15 minutes. The
+The **Refresh lines** button at the top forces an update, at most once per 15
+minutes. The
 footer shows how many credits are left.
 
 ## How the parlays are built

@@ -35,7 +35,8 @@ header {
   display: flex; justify-content: space-between; align-items: center;
   gap: 12px; padding: 18px 0 12px; flex-wrap: wrap;
 }
-.brand { display: flex; align-items: baseline; gap: 10px; }
+.brand { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.refresh { padding: 5px 10px; font-size: 13px; }
 .who { display: flex; align-items: center; gap: 8px; }
 
 button, input {
@@ -125,3 +126,6 @@ body { padding-bottom: 90px; }
   background: var(--card); border-top: 1px solid var(--line);
   box-shadow: 0 -6px 20px rgba(0, 0, 0, .35);
 }
+.submit-bar .actions { display: flex; gap: 8px; }
+.submit-bar button { white-space: nowrap; }
+.submit-bar > span:first-child { min-width: 0; }

@@ -81,6 +81,9 @@ function showJoin() {
 
 const submittedPicks = () => week.picks[me] ?? null;
 const hasSubmitted = () => !!submittedPicks();
+// Submitted and not editing: picks are shown read-only.
+const isLocked = () => hasSubmitted() && week.draft === null;
+const isEditing = () => hasSubmitted() && week.draft !== null;
 const gameOf = (key) => week.games.find((g) => g.id === key.split('|')[0]);
 const marketOf = (key) => key.split('|').slice(0, 2).join('|');
 
@@ -108,18 +111,23 @@ function render() {
 }
 
 function renderGames() {
-  const locked = hasSubmitted();
+  const locked = isLocked();
   $('#picks-hint').textContent = locked
-    ? `Your picks are locked in for ${week.label}. Orange numbers show how many friends took each bet.`
-    : `Tap a bet to select it at ${week.book ?? 'the sportsbook'}'s line, tap again to remove it. Hit Submit when you're done. Orange numbers show how many friends have submitted each bet.`;
+    ? `Your picks are in for ${week.label}. Tap Edit picks to change them before kickoff. Orange numbers show how many friends took each bet.`
+    : isEditing()
+      ? 'Editing your picks. Your submitted picks still count until you resubmit. Picks you keep stay at the line you got.'
+      : `Tap a bet to select it at ${week.book ?? 'the sportsbook'}'s line, tap again to remove it. Hit Submit when you're done. Orange numbers show how many friends have submitted each bet.`;
 
   if (!week.games.length) {
     $('#games').innerHTML = '<div class="card muted">No games on the schedule this week.</div>';
     renderSubmitBar();
     return;
   }
-  const mine = new Set(locked ? submittedPicks().map((p) => p.key) : week.draft);
-  const savedLine = new Map((submittedPicks() ?? []).map((p) => [p.key, p]));
+  // Picks on started games can't change, so they stay selected while editing.
+  const startedPicks = (submittedPicks() ?? []).filter((p) => gameOf(p.key)?.started).map((p) => p.key);
+  const mine = new Set(locked ? submittedPicks().map((p) => p.key) : [...(week.draft ?? []), ...startedPicks]);
+  // Bets you already submitted show the line you got, not today's line.
+  const savedLine = new Map((submittedPicks() ?? []).filter((p) => mine.has(p.key)).map((p) => [p.key, p]));
 
   $('#games').innerHTML = week.games.map((g) => {
     const cell = (market, side) => {
@@ -159,18 +167,44 @@ function renderGames() {
 function renderSubmitBar() {
   const bar = $('#submit-bar');
   bar.hidden = tab !== 'picks';
-  if (hasSubmitted()) {
-    bar.innerHTML = `<span><b>Locked in:</b> ${submittedPicks().length} pick${submittedPicks().length === 1 ? '' : 's'}</span>
-      <button type="button" data-tab-go="parlays">See parlays</button>`;
+  const plural = (n) => `${n} pick${n === 1 ? '' : 's'}`;
+  if (isLocked()) {
+    bar.innerHTML = `<span><b>Submitted:</b> ${plural(submittedPicks().length)}</span>
+      <span class="actions">
+        <button type="button" id="edit-picks">Edit picks</button>
+        <button type="button" data-tab-go="parlays">See parlays</button>
+      </span>`;
     return;
   }
-  const n = week.draft.length;
+  const n = (week.draft ?? []).length;
   bar.innerHTML = `<span>${n ? `<b>${n}</b> pick${n === 1 ? '' : 's'} selected` : 'No picks selected yet'}</span>
-    <button type="button" class="primary" id="submit-picks" ${n ? '' : 'disabled'}>Submit picks</button>`;
+    <span class="actions">
+      ${isEditing() ? '<button type="button" id="cancel-edit">Cancel</button>' : ''}
+      <button type="button" class="primary" id="submit-picks" ${n ? '' : 'disabled'}>${isEditing() ? 'Resubmit' : 'Submit picks'}</button>
+    </span>`;
+}
+
+async function startEditing() {
+  const keys = submittedPicks().map((p) => p.key);
+  try {
+    week.draft = (await api('/api/draft', { method: 'PUT', body: { name: me, keys } })).draft;
+  } catch (err) {
+    notice(err.message);
+  }
+  renderGames();
+}
+
+async function cancelEditing() {
+  try {
+    week.draft = (await api('/api/draft', { method: 'DELETE', body: { name: me } })).draft;
+  } catch (err) {
+    notice(err.message);
+  }
+  renderGames();
 }
 
 async function toggle(key) {
-  const draft = new Set(week.draft);
+  const draft = new Set(week.draft ?? []);
   if (draft.has(key)) {
     draft.delete(key);
   } else {
@@ -189,12 +223,10 @@ async function toggle(key) {
 }
 
 async function submit() {
-  const n = week.draft.length;
-  if (!confirm(`Lock in your ${n} pick${n === 1 ? '' : 's'} for ${week.label}? You can't change them after you submit.`)) return;
   try {
     const res = await api('/api/submit', { method: 'POST', body: { name: me } });
     week.picks = res.picks;
-    week.draft = [];
+    week.draft = null;
     if (res.dropped) notice(`${res.dropped} pick${res.dropped === 1 ? ' was' : 's were'} left out because the game already started.`);
   } catch (err) {
     notice(err.message);
@@ -294,6 +326,8 @@ $('#games').addEventListener('click', (e) => {
 });
 $('#submit-bar').addEventListener('click', (e) => {
   if (e.target.closest('#submit-picks')) submit();
+  if (e.target.closest('#edit-picks')) startEditing();
+  if (e.target.closest('#cancel-edit')) cancelEditing();
   const go = e.target.closest('[data-tab-go]')?.dataset.tabGo;
   if (go) {
     tab = go;
@@ -319,6 +353,19 @@ $('#code-save').addEventListener('click', () => {
   load();
 });
 $('#stake').addEventListener('change', renderParlays);
-$('#refresh').addEventListener('click', () => load(true));
+$('#refresh').addEventListener('click', async () => {
+  const btn = $('#refresh');
+  const wait = (week?.nextRefreshAt ?? 0) - Date.now();
+  if (wait > 0) {
+    const ago = Math.max(1, Math.round((Date.now() - week.linesUpdated) / 60e3));
+    notice(`Lines were updated ${ago} min ago. To save API credits you can refresh again in ${Math.ceil(wait / 60e3)} min.`);
+    return;
+  }
+  btn.disabled = true;
+  btn.textContent = 'Refreshing…';
+  await load(true);
+  btn.disabled = false;
+  btn.textContent = '↻ Refresh lines';
+});
 
 load();
