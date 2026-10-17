@@ -246,8 +246,7 @@ function picksText(day) {
       const team = abbr(side === 'home' ? g.home : g.away);
       return market === 'ml' ? `${team} ML` : `${team} ${fmtPoint(p.point)}`;
     });
-  const date = new Date(day).toLocaleDateString([], { weekday: 'short', month: 'numeric', day: 'numeric' });
-  return [`${me} – ${date}`, ...lines].join('\n');
+  return lines.join('\n');
 }
 
 async function copyText(text) {

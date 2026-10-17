@@ -15,7 +15,7 @@ the plays most of you agree on and builds a few parlays out of them.
   at the line you got, and picks on games that started can't change. Only
   your own picks show here, so nobody copies anybody. After submitting,
   **Copy picks** copies a plain-text list of that day's picks (like
-  `KC -3.5`, `GB/DET O 49.5`, `JAX ML`) for a group chat. **Clear my picks** (next to
+  `KC -3.5`, `GB/DET O 49.5`, `JAX ML`, one per line) for a group chat. **Clear my picks** (next to
   your name) wipes your picks for the week, except games already under way.
 - **Group Board**: every submitted bet ranked by how many of you took it,
   plus who still needs to submit. It flags bets where FanDuel's line has
