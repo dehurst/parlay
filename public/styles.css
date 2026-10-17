@@ -1,5 +1,7 @@
 :root {
   --bg: #0f1419;
+  --bar: #17271f; /* bottom bar: a faint green tint so it stands out from the cards */
+  --bar-line: rgba(47, 191, 113, .45);
   --card: #1a2129;
   --line: #2a333d;
   --text: #e8edf2;
@@ -122,11 +124,12 @@ body { padding-bottom: 90px; }
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 10;
   display: flex; justify-content: space-between; align-items: center; gap: 12px;
   max-width: 860px; margin: 0 auto; padding: 12px 16px;
-  background: var(--card); border-top: 1px solid var(--line);
+  background: var(--bar); border-top: 1px solid var(--bar-line);
   box-shadow: 0 -6px 20px rgba(0, 0, 0, .35);
 }
 .submit-bar .actions { display: flex; gap: 8px; }
 .submit-bar button { white-space: nowrap; }
+.submit-bar button:not(.primary) { background: var(--bg); }
 .submit-bar > span:first-child { min-width: 0; }
 .clear { padding: 4px 10px; font-size: 13px; color: var(--bad); }
 .who { flex-wrap: wrap; }
@@ -188,7 +191,7 @@ details.week summary .num { margin-left: auto; font-weight: 700; }
   .submit-bar {
     left: 16px; right: 16px; bottom: 16px;
     max-width: 828px; /* page max-width 860 minus the 16px side padding */
-    border: 1px solid var(--line);
+    border: 1px solid var(--bar-line);
     border-radius: var(--radius);
     padding: 12px 14px; /* same side padding as the cards */
   }
