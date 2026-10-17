@@ -151,3 +151,37 @@ test('skips games that already kicked off', () => {
 test('no picks means no parlays', () => {
   assert.deepEqual(buildParlays([], 0).options, []);
 });
+
+test('asks ESPN for each day of the week and merges the games', async () => {
+  const { fetchEspnSchedule } = await import('../src/schedule.js');
+  const realFetch = globalThis.fetch;
+  const asked = [];
+  const board = (date, home, away) => ({ events: [{ id: home, date, competitions: [{ status: { type: { state: 'pre' } }, competitors: [
+    { homeAway: 'home', team: { displayName: home, shortDisplayName: home.split(' ').pop() } },
+    { homeAway: 'away', team: { displayName: away, shortDisplayName: away.split(' ').pop() } },
+  ] }] }] });
+  globalThis.fetch = async (url) => {
+    const day = new URL(url).searchParams.get('dates');
+    asked.push(day);
+    if (day === '20261015') return Response.json(board('2026-10-16T00:15Z', 'Buffalo Bills', 'Miami Dolphins'));
+    if (day === '20261018') return Response.json(board('2026-10-18T17:00Z', 'Kansas City Chiefs', 'Denver Broncos'));
+    return Response.json({ events: [] });
+  };
+  try {
+    const games = await fetchEspnSchedule({ key: '2026-10-13', start: new Date('2026-10-13T12:00:00Z') });
+    assert.deepEqual(asked, ['20261013', '20261014', '20261015', '20261016', '20261017', '20261018', '20261019']);
+    assert.deepEqual(games.map((g) => g.id), ['2026-10-13-dolphins-at-bills', '2026-10-13-broncos-at-chiefs']);
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+
+test('demo schedules are dropped on restart so real sources get retried', async () => {
+  const { Store } = await import('../src/store.js');
+  const file = join(mkdtempSync(join(tmpdir(), 'parlay-')), 'db.json');
+  writeFileSync(file, JSON.stringify({ schedule: {
+    a: { source: 'demo', demo: true, games: [] },
+    b: { source: 'ESPN', games: [] },
+  } }));
+  assert.deepEqual(Object.keys(new Store(file).data.schedule), ['b']);
+});

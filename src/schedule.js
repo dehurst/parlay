@@ -25,11 +25,23 @@ export function makeGame({ weekKey, home, away, commence, state = 'pre', homeSho
 
 const ymd = (d) => d.toISOString().slice(0, 10).replaceAll('-', '');
 
-export async function fetchEspnSchedule({ key, start, end }) {
-  const dates = `${ymd(start)}-${ymd(new Date(end.getTime() - DAY))}`;
-  const res = await fetch(`${ESPN}?dates=${dates}&limit=100`, { signal: AbortSignal.timeout(8000) });
-  if (!res.ok) throw new Error(`ESPN returned ${res.status}`);
-  return parseScoreboard(await res.json(), key);
+// ESPN rejected date ranges (400), so ask for each day of the week separately.
+// A single YYYYMMDD date is the form its scoreboard reliably accepts.
+export async function fetchEspnSchedule({ key, start }) {
+  const days = Array.from({ length: 7 }, (_, i) => ymd(new Date(start.getTime() + i * DAY)));
+  const boards = await Promise.all(days.map(async (day) => {
+    const res = await fetch(`${ESPN}?dates=${day}`, { signal: AbortSignal.timeout(8000) });
+    if (!res.ok) throw new Error(`ESPN returned ${res.status}`);
+    return res.json();
+  }));
+  const games = new Map();
+  for (const board of boards) {
+    for (const g of parseScoreboard(board, key)) {
+      // Only keep games inside this Tuesday-to-Tuesday week.
+      if (new Date(g.commence) >= start) games.set(g.id, g);
+    }
+  }
+  return [...games.values()].sort((a, b) => a.commence.localeCompare(b.commence));
 }
 
 export function parseScoreboard(data, weekKey) {

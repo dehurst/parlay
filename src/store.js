@@ -19,7 +19,8 @@ export class Store {
     // schedules cached before multi-source support used other game IDs.
     delete this.data.odds;
     for (const [week, sched] of Object.entries(this.data.schedule)) {
-      if (!sched.source) delete this.data.schedule[week];
+      // Demo slates are placeholders: try the real sources again on restart.
+      if (!sched.source || sched.demo) delete this.data.schedule[week];
     }
     for (const week of Object.values(this.data.picks)) {
       for (const [player, picks] of Object.entries(week)) {
