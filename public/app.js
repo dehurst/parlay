@@ -167,7 +167,7 @@ function renderGames() {
     };
     const kick = new Date(g.commence).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' });
     const row = (team, side, totalSide) => `
-      <div class="team" title="${esc(team)}">${esc(side === 'home' ? g.homeShort : g.awayShort)}</div>
+      <div class="team" title="${esc(team)}">${logo(team)}<span>${esc(side === 'home' ? g.homeShort : g.awayShort)}</span></div>
       ${cell('spread', side)}${cell('total', totalSide)}${cell('ml', side)}`;
     return `<div class="card" data-game="${esc(g.id)}">
       <div class="game-head">
@@ -219,6 +219,16 @@ const ABBR = {
   titans: 'TEN', commanders: 'WAS',
 };
 const abbr = (team) => ABBR[team.split(' ').pop().toLowerCase()] ?? team.split(' ').pop();
+
+// Team logos from ESPN's image server (it uses WSH for Washington). If one
+// doesn't load, it's hidden and the name stands on its own.
+function logo(team) {
+  const code = ABBR[team.split(' ').pop().toLowerCase()];
+  if (!code) return '';
+  const file = code === 'WAS' ? 'wsh' : code.toLowerCase();
+  const src = `https://a.espncdn.com/combiner/i?img=/i/teamlogos/nfl/500/${file}.png&h=80&w=80`;
+  return `<img class="logo" src="${src}" alt="" loading="lazy" onerror="this.remove()">`;
+}
 const dayKey = (iso) => new Date(iso).toDateString();
 
 // Which day's picks to copy: today if you have picks today, otherwise the next

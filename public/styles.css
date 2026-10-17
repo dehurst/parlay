@@ -75,7 +75,10 @@ html { touch-action: manipulation; -webkit-text-size-adjust: 100%; }
   display: grid; grid-template-columns: 1fr repeat(3, minmax(0, 1fr));
   gap: 6px; align-items: center;
 }
-.game-grid .team { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.game-grid .team { display: flex; align-items: center; gap: 8px; min-width: 0; font-weight: 600; }
+.game-grid .team span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* A faint glow keeps dark logos (Raiders, Ravens) visible on the dark card. */
+.logo { width: 28px; height: 28px; flex: none; object-fit: contain; filter: drop-shadow(0 0 1px rgba(255, 255, 255, .35)); }
 .game-grid .colhead { font-size: 12px; color: var(--muted); text-align: center; }
 
 .pick {
@@ -107,7 +110,10 @@ html { touch-action: manipulation; -webkit-text-size-adjust: 100%; }
 .meta { margin-top: 0; font-size: 12px; }
 
 @media (max-width: 520px) {
-  .game-grid { grid-template-columns: 1fr repeat(3, minmax(58px, 1fr)); }
+  /* Room for logo + the longest nickname ("Commanders") next to three bet columns. */
+  .game-grid { grid-template-columns: 130px repeat(3, minmax(0, 1fr)); }
+  .game-grid .team { gap: 6px; font-size: 14px; }
+  .logo { width: 20px; height: 20px; }
   .pick { font-size: 12px; }
 }
 
