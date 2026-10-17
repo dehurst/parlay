@@ -179,3 +179,16 @@ details.week summary .num { margin-left: auto; font-weight: 700; }
   .brand #week-label { font-size: 14px; }
   .refresh { padding: 4px 8px; font-size: 12px; }
 }
+
+/* On wider screens the bottom bar floats as a card lined up with the ones
+   above it (same width as the page content, rounded, inset from the bottom). */
+@media (min-width: 700px) {
+  body { padding-bottom: 110px; }
+  .submit-bar {
+    left: 16px; right: 16px; bottom: 16px;
+    max-width: 828px; /* page max-width 860 minus the 16px side padding */
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 12px 14px; /* same side padding as the cards */
+  }
+}
