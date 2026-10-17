@@ -7,6 +7,9 @@ const DAY = 24 * 60 * 60 * 1000;
 export const nickname = (name) => name.trim().split(/\s+/).pop();
 const slug = (s) => s.toLowerCase().replace(/[^a-z0-9]+/g, '');
 
+// Identifies a team across sources ("Denver Broncos" -> "broncos").
+export const teamKey = (name) => slug(nickname(name));
+
 // Matches the same game across sources ("Denver Broncos" vs "Broncos").
 export const matchKey = (away, home) => `${slug(nickname(away))}@${slug(nickname(home))}`;
 
@@ -42,6 +45,32 @@ export async function fetchEspnSchedule({ key, start }) {
     }
   }
   return [...games.values()].sort((a, b) => a.commence.localeCompare(b.commence));
+}
+
+// Season records from ESPN's scoreboard, like { broncos: '3-2' }. ESPN lists
+// several (home, road, ...); the overall one is the season record.
+export function parseEspnRecords(data) {
+  const out = {};
+  for (const ev of data.events ?? []) {
+    for (const c of ev.competitions?.[0]?.competitors ?? []) {
+      const rec = c.records?.find((r) => r.type === 'total' || r.name === 'overall') ?? c.records?.[0];
+      if (c.team?.displayName && rec?.summary) out[teamKey(c.team.displayName)] = rec.summary;
+    }
+  }
+  return out;
+}
+
+// Records for the teams playing on the given games' days (free).
+export async function fetchEspnRecords(games) {
+  const day = (iso) => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit' })
+    .format(new Date(iso)).replaceAll('-', '');
+  const days = [...new Set(games.map((g) => day(g.commence)))];
+  const boards = await Promise.all(days.map(async (d) => {
+    const res = await fetch(`${ESPN}?dates=${d}`, { signal: AbortSignal.timeout(8000) });
+    if (!res.ok) throw new Error(`ESPN returned ${res.status}`);
+    return res.json();
+  }));
+  return Object.assign({}, ...boards.map(parseEspnRecords));
 }
 
 export function parseScoreboard(data, weekKey) {

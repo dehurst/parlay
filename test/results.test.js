@@ -124,3 +124,13 @@ test('uses Upstash Redis when its env vars are set', async () => {
     globalThis.fetch = realFetch;
   }
 });
+
+test('reads season records from ESPN', async () => {
+  const { parseEspnRecords } = await import('../src/schedule.js');
+  const board = { events: [{ competitions: [{ competitors: [
+    { team: { displayName: 'Houston Texans' }, records: [{ name: 'overall', type: 'total', summary: '3-2' }, { name: 'Home', type: 'home', summary: '2-0' }] },
+    { team: { displayName: 'Jacksonville Jaguars' }, records: [{ name: 'Road', type: 'road', summary: '1-1' }, { name: 'overall', type: 'total', summary: '4-1-1' }] },
+    { team: { displayName: 'New York Jets' } },
+  ] }] }] };
+  assert.deepEqual(parseEspnRecords(board), { texans: '3-2', jaguars: '4-1-1' });
+});

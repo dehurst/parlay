@@ -127,6 +127,8 @@ function render() {
   if (tab === 'stats') renderStats();
 }
 
+const rec = (r) => (r ? ` <span class="rec">(${esc(r)})</span>` : '');
+
 function renderGames() {
   renderWho();
   const locked = isLocked();
@@ -168,8 +170,11 @@ function renderGames() {
       ${cell('spread', side)}${cell('total', totalSide)}${cell('ml', side)}`;
     return `<div class="card" data-game="${esc(g.id)}">
       <div class="game-head">
-        <h3>${esc(g.away)} @ ${esc(g.home)}</h3>
-        <span class="${g.started ? 'locked' : 'muted small'}">${g.started ? 'Started' : kick}</span>
+        <h3>
+          <span class="team-line">${esc(g.away)}${rec(g.awayRecord)} @</span>
+          <span class="team-line">${esc(g.home)}${rec(g.homeRecord)}</span>
+        </h3>
+        <span class="kick ${g.started ? 'locked' : 'muted small'}">${g.started ? 'Started' : kick}</span>
       </div>
       <div class="game-grid ${locked ? 'is-locked' : ''}">
         <div></div><div class="colhead">Spread</div><div class="colhead">Total</div><div class="colhead">Moneyline</div>

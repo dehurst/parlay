@@ -169,3 +169,6 @@ details.week summary .num { margin-left: auto; font-weight: 700; }
 .hist-parlay:first-of-type { border-top: none; }
 .hist-parlay ul, .hist-picks ul { margin: 6px 0; padding-left: 0; list-style: none; font-size: 14px; }
 .hist-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 4px 16px; }
+.team-line { display: block; }
+.rec { font-weight: 400; color: var(--muted); font-size: 14px; }
+.kick { white-space: nowrap; flex: none; }

@@ -4,7 +4,7 @@ import { dirname, join } from 'node:path';
 import { loadEnvFile } from './env.js';
 import { createStore } from './store.js';
 import { weekWindow, weekLabel } from './week.js';
-import { fetchEspnSchedule, demoSchedule, hasStarted, matchKey } from './schedule.js';
+import { fetchEspnSchedule, fetchEspnRecords, demoSchedule, hasStarted, matchKey, teamKey } from './schedule.js';
 import { fetchOddsApiSchedule, fetchBookLines } from './oddsapi.js';
 import { tally, buildParlays, MARKETS } from './parlay.js';
 import { gradeLeg, gradeParlay } from './grading.js';
@@ -87,14 +87,22 @@ async function loadWeek({ refreshLines = false } = {}) {
   const problems = [];
 
   const cached = store.data.schedule[win.key];
-  if (!cached || Date.now() >= cached.retryAt) {
+  // Schedules saved before team records existed get refreshed right away.
+  if (!cached || Date.now() >= cached.retryAt || (!cached.demo && !cached.records)) {
     const fresh = await fetchSchedule(win, problems);
     if (fresh) {
       // Finished games can drop out of a feed; keep the ones we already had.
       const ids = new Set(fresh.games.map((g) => g.id));
       const gone = (cached?.demo ? [] : cached?.games ?? []).filter((g) => !ids.has(g.id) && hasStarted(g));
       const games = [...fresh.games, ...gone].sort((a, b) => a.commence.localeCompare(b.commence));
-      store.data.schedule[win.key] = { ...fresh, games, retryAt: Date.now() + SCHEDULE_TTL };
+      // Team records come from ESPN; keep the last ones if it's unreachable.
+      let records = cached?.records ?? {};
+      try {
+        records = { ...records, ...(await fetchEspnRecords(games)) };
+      } catch (err) {
+        console.error(`ESPN records failed: ${describe(err)}`);
+      }
+      store.data.schedule[win.key] = { ...fresh, games, records, retryAt: Date.now() + SCHEDULE_TTL };
     } else if (cached && !cached.demo) {
       cached.retryAt = Date.now() + RETRY_AFTER_ERROR;
     } else {
@@ -124,7 +132,13 @@ async function loadWeek({ refreshLines = false } = {}) {
 
   // Attach the book's line to each game. Games that kicked off drop out of the
   // odds feed, so keep whatever lines we last saw for them.
-  const games = schedule.games.map((g) => ({ ...g, lines: lines?.byMatchup[matchKey(g.away, g.home)] ?? null }));
+  const records = schedule.records ?? {};
+  const games = schedule.games.map((g) => ({
+    ...g,
+    lines: lines?.byMatchup[matchKey(g.away, g.home)] ?? null,
+    homeRecord: records[teamKey(g.home)] ?? null,
+    awayRecord: records[teamKey(g.away)] ?? null,
+  }));
   const gamesById = new Map(games.map((g) => [g.id, g]));
 
   let warning = problems.join(' ') || null;
