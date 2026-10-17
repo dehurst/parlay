@@ -1,0 +1,35 @@
+import { americanToDecimal } from './odds-math.js';
+
+// Grade one bet against a final score: 'win' | 'loss' | 'push' | 'pending'.
+// A leg is { key: "gameId|market|side", point, price }. Moneylines push on a
+// tie, as they do at FanDuel for NFL two-way moneylines.
+export function gradeLeg(leg, result) {
+  if (!result) return 'pending';
+  const { homeScore: h, awayScore: a } = result;
+  const [, market, side] = leg.key.split('|');
+  let diff;
+  if (market === 'spread') diff = (side === 'home' ? h - a : a - h) + leg.point;
+  else if (market === 'total') diff = side === 'over' ? h + a - leg.point : leg.point - (h + a);
+  else diff = side === 'home' ? h - a : a - h;
+  return diff > 0 ? 'win' : diff < 0 ? 'loss' : 'push';
+}
+
+// Grade a parlay whose legs already carry a `grade`. Any loss loses it; a
+// pushed leg drops out and the rest pay as a smaller parlay; all pushes
+// refund the stake. `returned` is the total paid back (stake included).
+export function gradeParlay(legs, stake) {
+  if (legs.some((l) => l.grade === 'loss')) return { status: 'lost', returned: 0 };
+  if (legs.some((l) => l.grade === 'pending')) return { status: 'pending', returned: null };
+  const wins = legs.filter((l) => l.grade === 'win');
+  if (!wins.length) return { status: 'push', returned: stake };
+  const decimal = wins.reduce((d, l) => d * americanToDecimal(l.price), 1);
+  return { status: 'won', returned: stake * decimal };
+}
+
+// Profit from betting `stake` on a single pick (used for "if you'd bet $10 on
+// every pick" stats).
+export function singleProfit(price, grade, stake = 10) {
+  if (grade === 'win') return stake * (americanToDecimal(price) - 1);
+  if (grade === 'loss') return -stake;
+  return 0;
+}

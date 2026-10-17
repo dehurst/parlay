@@ -129,6 +129,7 @@ function render() {
   if (tab === 'board') renderBoard();
   if (tab === 'parlays') renderParlays();
   if (tab === 'slip') renderSlip();
+  if (tab === 'stats') renderStats();
 }
 
 function renderGames() {
@@ -359,6 +360,81 @@ async function renderParlays() {
   $('#parlays').innerHTML = html;
 }
 
+const gradeMark = (g) => ({ win: '<span class="mark win">✓</span>', loss: '<span class="mark loss">✗</span>', push: '<span class="mark push">P</span>' })[g] ?? '';
+const signed = (n) => `${n > 0 ? '+' : n < 0 ? '−' : ''}${money(Math.abs(n))}`;
+const netClass = (n) => (n > 0.004 ? 'pos' : n < -0.004 ? 'neg' : '');
+
+function statusChip(status, returned, total) {
+  if (!status || status === 'pending') return '';
+  const text = { won: `Won ${money(returned)}`, lost: 'Lost', push: 'Push (refunded)' }[status];
+  return `<span class="chip ${status}">${text}</span>`;
+}
+
+function recordText(r) {
+  const decided = r.win + r.loss;
+  const pctText = decided ? ` (${Math.round((r.win / decided) * 100)}%)` : '';
+  return `${r.win}-${r.loss}${r.push ? `-${r.push}` : ''}${pctText}`;
+}
+
+async function renderStats() {
+  $('#stats').innerHTML = '<p class="muted">Loading…</p>';
+  const data = await api('/api/stats').catch((err) => (notice(err.message), null));
+  if (!data) return;
+  if (!data.weeks.length) {
+    $('#stats').innerHTML = '<div class="card muted">No history yet. Stats show up once games people picked have finished.</div>';
+    return;
+  }
+  const pr = data.parlays;
+  const people = [...data.players].sort((a, b) => b.net - a.net);
+  const money_ = `<div class="card"><h3>Season money</h3>
+    <p class="small muted">Parlays you put money on that have been decided. Net = paid back minus staked.</p>
+    <table class="slip">
+      <thead><tr><th>Who</th><th class="num">Staked</th><th class="num">Paid back</th><th class="num">Net</th></tr></thead>
+      <tbody>${people.map((p) => `<tr><td>${esc(p.name)}${p.inPlay ? `<div class="small muted">${money(p.inPlay)} in play</div>` : ''}</td>
+        <td class="num">${money(p.staked)}</td><td class="num">${money(p.returned)}</td>
+        <td class="num ${netClass(p.net)}">${signed(p.net)}</td></tr>`).join('')}</tbody>
+      <tfoot><tr><th>Group</th><th class="num">${money(pr.staked)}</th><th class="num">${money(pr.returned)}</th>
+        <th class="num ${netClass(pr.net)}">${signed(pr.net)}</th></tr></tfoot>
+    </table></div>`;
+
+  const parlayCard = `<div class="card"><h3>Group parlays</h3>
+    <div class="statline">
+      <div><b>${pr.won}-${pr.lost}${pr.push ? `-${pr.push}` : ''}</b><span>record</span></div>
+      <div><b>${pr.won + pr.lost ? Math.round((pr.won / (pr.won + pr.lost)) * 100) : 0}%</b><span>hit rate</span></div>
+      <div><b class="${netClass(pr.net)}">${signed(pr.net)}</b><span>net</span></div>
+      ${pr.pending ? `<div><b>${pr.pending}</b><span>still live</span></div>` : ''}
+    </div></div>`;
+
+  const c = data.consensus;
+  const picksCard = `<div class="card"><h3>Pick records</h3>
+    <p class="small muted">Every submitted pick graded as a single bet. "$10 a pick" is what you'd be up or down betting $10 on each one.</p>
+    <table class="slip">
+      <thead><tr><th>Who</th><th class="num">W-L-P</th><th class="num">$10 a pick</th></tr></thead>
+      <tbody>${[...data.players].sort((a, b) => b.flatNet - a.flatNet).map((p) => `<tr>
+        <td>${esc(p.name)}<div class="small muted">ATS ${recordText(p.byMarket.spread)} · Totals ${recordText(p.byMarket.total)} · ML ${recordText(p.byMarket.ml)}</div></td>
+        <td class="num">${recordText(p.picks)}</td><td class="num ${netClass(p.flatNet)}">${signed(p.flatNet)}</td></tr>`).join('')}</tbody>
+      <tfoot><tr><th>Group consensus<div class="small muted">Bets most of you agreed on</div></th><th class="num">${recordText(c)}</th><th></th></tr></tfoot>
+    </table></div>`;
+
+  const weeks = data.weeks.map((w, i) => {
+    const parlays = w.parlays.map((p) => `<div class="hist-parlay">
+        <div class="head"><b>${esc(p.name)} ${fmtOdds(p.american)}</b> ${statusChip(p.status, p.returned, p.total) || '<span class="chip pending">Live</span>'}</div>
+        <ul>${p.legs.map((l) => `<li>${gradeMark(l.grade)}${esc(l.label)} <span class="muted">${fmtOdds(l.price)}</span></li>`).join('')}</ul>
+        <div class="small muted">${Object.entries(p.stakes).map(([who, amt]) => `${esc(who)} ${money(amt)}`).join(' · ')} · ${money(p.total)} total</div>
+      </div>`).join('') || '<p class="small muted">No parlays placed.</p>';
+    const picks = Object.entries(w.picks).map(([who, rows]) => `<div class="hist-picks"><b>${esc(who)}</b>
+        <ul>${rows.map((r) => `<li>${gradeMark(r.grade)}${esc(r.label)} <span class="muted">${fmtOdds(r.price)}</span></li>`).join('')}</ul></div>`).join('');
+    return `<details class="card week" ${i === 0 ? 'open' : ''}>
+      <summary><b>${esc(w.label)}</b> <span class="muted small">${w.parlays.length} parlay${w.parlays.length === 1 ? '' : 's'}</span>
+        <span class="num ${netClass(w.net)}">${w.parlays.some((p) => p.status !== 'pending') ? signed(w.net) : ''}</span></summary>
+      <h4>Parlays</h4>${parlays}
+      <h4>Picks</h4><div class="hist-grid">${picks || '<p class="small muted">No picks submitted.</p>'}</div>
+    </details>`;
+  }).join('');
+
+  $('#stats').innerHTML = parlayCard + money_ + picksCard + `<h3 class="section">Week by week</h3>` + weeks;
+}
+
 async function renderSlip() {
   $('#slip').innerHTML = '<p class="muted">Loading…</p>';
   const data = await api('/api/slip').catch((err) => (notice(err.message), null));
@@ -369,13 +445,13 @@ async function renderSlip() {
   }
   const grand = data.parlays.reduce((sum, p) => sum + p.total, 0);
   const cards = data.parlays.map((p, i) => {
-    const legs = p.legs.map((l) => `<li><b>${esc(l.label)}</b> <span class="muted">${fmtOdds(l.price)} · ${esc(l.matchup)}</span>${lineMoved(l, data.book)}</li>`).join('');
+    const legs = p.legs.map((l) => `<li>${gradeMark(l.grade)}<b>${esc(l.label)}</b> <span class="muted">${fmtOdds(l.price)} · ${esc(l.matchup)}</span>${l.grade === 'pending' ? lineMoved(l, data.book) : ''}</li>`).join('');
     const rows = Object.entries(p.stakes).map(([who, amt]) => `<tr>
         <td>${esc(who)}${who === me ? ` <button type="button" class="link danger" data-slip-out="${esc(p.id)}">remove</button>` : ''}</td>
         <td class="num">${money(amt)}</td><td class="num">${money(amt * p.decimal)}</td></tr>`).join('');
     return `<div class="card parlay">
       <div class="head">
-        <div><span class="muted small">Bet ${i + 1}</span><h3>${esc(p.name)} · ${p.legs.length}-leg parlay</h3></div>
+        <div><span class="muted small">Bet ${i + 1}</span> ${statusChip(p.status, p.returned, p.total)}<h3>${esc(p.name)} · ${p.legs.length}-leg parlay</h3></div>
         <div class="odds">${fmtOdds(p.american)}</div>
       </div>
       ${p.stillOption ? '' : '<div class="lines">Picks changed since people bought in, so this parlay is no longer one of the current options. Double-check before placing it.</div>'}

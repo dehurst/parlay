@@ -23,6 +23,11 @@ the plays most of you agree on and builds a few parlays out of them.
   bets that are one vote short. Everyone types in how much they want on the
   parlays they like; one with money from a majority of the group is marked
   **Group's pick**.
+- **Stats**: season money per person (staked, paid back, net), the group's
+  parlay record, everyone's pick records (by spread, total, and moneyline),
+  how the group's consensus picks have done, and a week-by-week history.
+  Games are graded automatically from ESPN's final scores (free), about 3
+  hours after kickoff.
 - **Bet Slip**: for whoever places the bets. Every parlay with money on it,
   its legs and odds, each person's stake and payout, and a "who owes what"
   total. A parlay is saved as it was when people bought in, so it stays on
@@ -96,12 +101,38 @@ FanDuel's current lines. The board and parlay cards flag any that moved.
 estimate. Expected return is almost always negative because the book's edge
 compounds on every leg.
 
-## Hosting
+## Week to week
 
-This is one Node process that saves to a JSON file, so any host with a
-persistent disk works: a Raspberry Pi, a small VPS, Render or Railway with a
-volume, or Fly.io. Hosts with ephemeral filesystems lose picks on restart
-unless you point `DATA_FILE` at a mounted volume.
+The week flips every Tuesday at 8am Eastern: new games, fresh lines, and empty
+picks. Nothing is deleted. Past weeks stay in the data and show up on the
+Stats tab with their results.
+
+## Hosting on Vercel (free)
+
+Vercel runs the site for free but has no lasting disk, so the data goes in a
+free Upstash Redis database you add from Vercel's dashboard. (Locally, the
+site keeps using `data/db.json`.)
+
+1. Sign in at https://vercel.com with GitHub (the free Hobby plan).
+2. **Add New → Project**, import this repo, and leave the build settings
+   alone (`vercel.json` handles them).
+3. Under **Environment Variables**, add `ODDS_API_KEY`. Strongly consider
+   `GROUP_CODE` too: the site will be on the public internet. Add `PLAYERS` if
+   the group changes.
+4. Click **Deploy**. The page loads, but picks won't work until step 5.
+5. In the project, open **Storage → Create Database → Upstash for Redis**
+   (free plan) and connect it to the project. That adds `KV_REST_API_URL` and
+   `KV_REST_API_TOKEN` for you.
+6. **Deployments → ⋯ → Redeploy** so the site picks up the database.
+7. Optional, to bring over picks and history from your computer: put the
+   `KV_REST_API_URL` and `KV_REST_API_TOKEN` values in your local `.env`, then
+   run `npm run upload-data`.
+
+Pushing to the repo's default branch redeploys automatically.
+
+You can also host it anywhere that runs Node: `npm start` with the same
+environment variables. Without Upstash variables it uses `data/db.json`, so
+use a persistent disk.
 
 ## Tests
 

@@ -177,11 +177,13 @@ test('asks ESPN for each day of the week and merges the games', async () => {
 });
 
 test('demo schedules are dropped on restart so real sources get retried', async () => {
-  const { Store } = await import('../src/store.js');
+  const { FileStore } = await import('../src/store.js');
   const file = join(mkdtempSync(join(tmpdir(), 'parlay-')), 'db.json');
   writeFileSync(file, JSON.stringify({ schedule: {
     a: { source: 'demo', demo: true, games: [] },
     b: { source: 'ESPN', games: [] },
   } }));
-  assert.deepEqual(Object.keys(new Store(file).data.schedule), ['b']);
+  const store = new FileStore(file);
+  await store.load();
+  assert.deepEqual(Object.keys(store.data.schedule), ['b']);
 });
