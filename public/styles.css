@@ -101,7 +101,8 @@ html { touch-action: manipulation; -webkit-text-size-adjust: 100%; }
 .stats b { color: var(--text); }
 .ev-bad { color: var(--bad); }
 
-footer { display: flex; justify-content: space-between; gap: 10px; margin-top: 24px; flex-wrap: wrap; }
+#picks-hint { margin-bottom: 4px; }
+.meta { margin-top: 0; font-size: 12px; }
 
 @media (max-width: 520px) {
   .game-grid { grid-template-columns: 1fr repeat(3, minmax(58px, 1fr)); }
