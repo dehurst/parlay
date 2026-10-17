@@ -176,10 +176,10 @@ function renderGames() {
           <span class="team-line">${esc(g.away)}${rec(g.awayRecord)} @</span>
           <span class="team-line">${esc(g.home)}${rec(g.homeRecord)}</span>
         </h3>
-        <span class="kick ${g.started ? 'locked' : 'muted small'}">${g.started ? 'Started' : kick}</span>
       </div>
       <div class="game-grid ${locked ? 'is-locked' : ''}">
-        <div></div><div class="colhead">Spread</div><div class="colhead">Total</div><div class="colhead">Moneyline</div>
+        <div class="kick ${g.started ? 'locked' : ''}">${g.started ? 'Started' : kick}</div>
+        <div class="colhead">Spread</div><div class="colhead">Total</div><div class="colhead">Moneyline</div>
         ${row(g.away, 'away', 'over')}
         ${row(g.home, 'home', 'under')}
       </div>
@@ -193,10 +193,11 @@ function renderSubmitBar() {
   bar.hidden = tab !== 'picks';
   const plural = (n) => `${n} pick${n === 1 ? '' : 's'}`;
   if (isLocked()) {
-    bar.innerHTML = `<span><b>Submitted:</b> ${plural(submittedPicks().length)}</span>
+    const day = copyDay();
+    bar.innerHTML = `<span><b>${plural(submittedPicks().length)}</b> in</span>
       <span class="actions">
+        ${day ? `<button type="button" id="copy-picks">Copy ${esc(day.label)} picks</button>` : ''}
         <button type="button" id="edit-picks">Edit picks</button>
-        <button type="button" data-tab-go="parlays">See parlays</button>
       </span>`;
     return;
   }
@@ -206,6 +207,75 @@ function renderSubmitBar() {
       ${isEditing() ? '<button type="button" id="cancel-edit">Cancel</button>' : ''}
       <button type="button" class="primary" id="submit-picks" ${n ? '' : 'disabled'}>${isEditing() ? 'Resubmit' : 'Submit picks'}</button>
     </span>`;
+}
+
+// ---- Copy picks as text ----------------------------------------------------
+
+const ABBR = {
+  cardinals: 'ARI', falcons: 'ATL', ravens: 'BAL', bills: 'BUF', panthers: 'CAR', bears: 'CHI',
+  bengals: 'CIN', browns: 'CLE', cowboys: 'DAL', broncos: 'DEN', lions: 'DET', packers: 'GB',
+  texans: 'HOU', colts: 'IND', jaguars: 'JAX', chiefs: 'KC', raiders: 'LV', chargers: 'LAC',
+  rams: 'LAR', dolphins: 'MIA', vikings: 'MIN', patriots: 'NE', saints: 'NO', giants: 'NYG',
+  jets: 'NYJ', eagles: 'PHI', steelers: 'PIT', '49ers': 'SF', seahawks: 'SEA', buccaneers: 'TB',
+  titans: 'TEN', commanders: 'WAS',
+};
+const abbr = (team) => ABBR[team.split(' ').pop().toLowerCase()] ?? team.split(' ').pop();
+const dayKey = (iso) => new Date(iso).toDateString();
+
+// Which day's picks to copy: today if you have picks today, otherwise the next
+// day you do (Saturday copies Sunday's), otherwise the most recent day.
+function copyDay() {
+  const picks = submittedPicks() ?? [];
+  const days = [...new Set(picks.map((p) => gameOf(p.key)?.commence).filter(Boolean).sort().map(dayKey))];
+  if (!days.length) return null;
+  const today = new Date().toDateString();
+  const upcoming = days.filter((d) => new Date(d) >= new Date(today));
+  const day = upcoming[0] ?? days[days.length - 1];
+  const label = day === today ? "today's" : `${new Date(day).toLocaleDateString([], { weekday: 'short' })}`;
+  return { day, label };
+}
+
+function picksText(day) {
+  const lines = (submittedPicks() ?? [])
+    .map((p) => ({ p, g: gameOf(p.key) }))
+    .filter(({ g }) => g && dayKey(g.commence) === day)
+    .sort((a, b) => a.g.commence.localeCompare(b.g.commence))
+    .map(({ p, g }) => {
+      const [, market, side] = p.key.split('|');
+      if (market === 'total') return `${abbr(g.away)}/${abbr(g.home)} ${side === 'over' ? 'O' : 'U'} ${p.point}`;
+      const team = abbr(side === 'home' ? g.home : g.away);
+      return market === 'ml' ? `${team} ML` : `${team} ${fmtPoint(p.point)}`;
+    });
+  const date = new Date(day).toLocaleDateString([], { weekday: 'short', month: 'numeric', day: 'numeric' });
+  return [`${me} – ${date}`, ...lines].join('\n');
+}
+
+async function copyText(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    // Older browsers: copy through a hidden text box.
+    const box = document.createElement('textarea');
+    box.value = text;
+    box.setAttribute('readonly', '');
+    box.style.position = 'fixed';
+    box.style.opacity = '0';
+    document.body.append(box);
+    box.select();
+    const ok = document.execCommand('copy');
+    box.remove();
+    return ok;
+  }
+}
+
+async function copyPicks(btn) {
+  const day = copyDay();
+  if (!day) return;
+  const ok = await copyText(picksText(day.day));
+  const label = btn.textContent;
+  btn.textContent = ok ? 'Copied ✓' : "Couldn't copy";
+  setTimeout(() => (btn.textContent = label), 1800);
 }
 
 async function startEditing() {
@@ -486,6 +556,7 @@ $('#games').addEventListener('click', (e) => {
 $('#submit-bar').addEventListener('click', (e) => {
   if (e.target.closest('#submit-picks')) submit();
   if (e.target.closest('#edit-picks')) startEditing();
+  if (e.target.closest('#copy-picks')) copyPicks(e.target.closest('#copy-picks'));
   if (e.target.closest('#cancel-edit')) cancelEditing();
   const go = e.target.closest('[data-tab-go]')?.dataset.tabGo;
   if (go) {
