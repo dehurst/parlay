@@ -3,18 +3,19 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { Store } from './src/store.js';
 import { weekWindow, weekLabel } from './src/week.js';
-import { fetchOdds, normalizeEvents, demoEvents } from './src/odds.js';
-import { tally, buildParlays } from './src/parlay.js';
+import { fetchSchedule, demoSchedule, hasStarted } from './src/schedule.js';
+import { tally, buildParlays, MARKETS } from './src/parlay.js';
+import { validPrice } from './src/odds-math.js';
 
 const root = dirname(fileURLToPath(import.meta.url));
 const {
-  ODDS_API_KEY = '',
-  BOOKMAKER = 'draftkings',
-  ODDS_CACHE_HOURS = '6',
   GROUP_CODE = '',
   PORT = '3000',
   DATA_FILE = join(root, 'data', 'db.json'),
 } = process.env;
+
+const SCHEDULE_TTL = 30 * 60e3; // re-check ESPN every 30 min (kickoff times, game status)
+const RETRY_AFTER_ERROR = 5 * 60e3;
 
 const store = new Store(DATA_FILE);
 const app = express();
@@ -27,61 +28,48 @@ app.use('/api', (req, res, next) => {
   res.status(401).json({ error: 'Wrong or missing group code' });
 });
 
-// Return this week's games, fetching from the API at most every ODDS_CACHE_HOURS.
-async function loadWeek({ force = false } = {}) {
+// This week's games, refreshed from ESPN every SCHEDULE_TTL.
+// Falls back to the last good copy, then to a demo slate.
+async function loadWeek() {
   const win = weekWindow();
-  const cached = store.data.odds[win.key];
-  const stale = !cached || Date.now() - cached.fetchedAt > Number(ODDS_CACHE_HOURS) * 3600e3;
+  const cached = store.data.schedule[win.key];
   let warning = null;
-  let fresh = null;
 
-  if (!ODDS_API_KEY) {
-    if (!cached) fresh = { fetchedAt: Date.now(), events: demoEvents(win.start), demo: true };
-  } else if (stale || (force && Date.now() - cached.fetchedAt > 15 * 60e3)) {
-    // Manual refreshes are capped at one per 15 minutes to protect API credits.
+  if (!cached || Date.now() >= cached.retryAt) {
     try {
-      const { events, remaining } = await fetchOdds({ apiKey: ODDS_API_KEY, ...win });
-      fresh = { fetchedAt: Date.now(), events, remaining };
+      const games = await fetchSchedule(win);
+      store.data.schedule[win.key] = { games, retryAt: Date.now() + SCHEDULE_TTL };
     } catch (err) {
-      if (!cached) throw err;
-      warning = `Couldn't refresh odds (${err.message}); showing lines from ${new Date(cached.fetchedAt).toLocaleString()}.`;
+      if (cached && !cached.demo) {
+        cached.retryAt = Date.now() + RETRY_AFTER_ERROR;
+        warning = `Couldn't reach ESPN for schedule updates (${err.message}).`;
+      } else {
+        store.data.schedule[win.key] = { games: demoSchedule(win.start), demo: true, retryAt: Date.now() + RETRY_AFTER_ERROR };
+      }
     }
-  }
-
-  if (fresh) {
-    // Games drop out of the API feed once they kick off, so keep every event
-    // seen this week; picks on started games still need their lines.
-    const { events, ...meta } = fresh;
-    const bucket = { ...(cached?.events ?? {}) };
-    for (const ev of events) bucket[ev.id] = ev;
-    store.data.odds[win.key] = { ...meta, events: bucket };
     store.save();
   }
-
-  const snap = store.data.odds[win.key];
-  const games = normalizeEvents(Object.values(snap.events), BOOKMAKER);
-  const selections = new Map();
-  for (const g of games) {
-    for (const s of g.selections) {
-      selections.set(s.key, { ...s, commence: g.commence, matchup: `${g.away} @ ${g.home}` });
-    }
+  if (store.data.schedule[win.key].demo) {
+    warning = "Couldn't load the NFL schedule from ESPN, so these are demo games. It retries every few minutes.";
   }
-  return { win, snap, games, selections, warning };
+
+  const { games, demo = false } = store.data.schedule[win.key];
+  const gamesById = new Map(games.map((g) => [g.id, g]));
+  return { win, games, gamesById, demo, warning };
 }
 
 const cleanName = (n) => String(n ?? '').trim().replace(/\s+/g, ' ').slice(0, 30);
 
 app.get('/api/week', async (req, res, next) => {
   try {
-    const { win, snap, games, warning } = await loadWeek({ force: req.query.refresh === '1' });
+    const { win, games, demo, warning } = await loadWeek();
+    const now = new Date();
     res.json({
       key: win.key,
       label: weekLabel(win),
-      demo: !!snap.demo,
-      fetchedAt: snap.fetchedAt,
-      remaining: snap.remaining ?? null,
+      demo,
       warning,
-      games,
+      games: games.map((g) => ({ ...g, started: hasStarted(g, now) })),
       players: store.data.players,
       picks: store.data.picks[win.key] ?? {},
     });
@@ -101,27 +89,56 @@ app.post('/api/players', (req, res) => {
   res.json({ name: existing ?? name, players: store.data.players });
 });
 
+// Check one typed-in pick. Returns a clean { key, point, price } or an error string.
+function parsePick(raw, gamesById) {
+  const [gameId, market, side] = String(raw?.key ?? '').split('|');
+  const game = gamesById.get(gameId);
+  if (!game || !MARKETS[market]?.includes(side)) return { error: 'Unknown game or bet' };
+
+  const price = raw.price === '' || raw.price == null ? (market === 'ml' ? null : -110) : Number(raw.price);
+  if (price === null) return { error: 'Moneyline picks need odds, like -150 or +130' };
+  if (!validPrice(price)) return { error: 'Odds should look like -110 or +150' };
+
+  let point = null;
+  if (market !== 'ml') {
+    point = Number(raw.point);
+    if (raw.point === '' || raw.point == null || !Number.isFinite(point)) {
+      return { error: market === 'total' ? 'Enter the total, like 44.5' : 'Enter the spread, like -3.5' };
+    }
+    if (market === 'total' && (point <= 0 || point > 120)) return { error: 'Totals should be between 0 and 120' };
+    if (market === 'spread' && Math.abs(point) > 50) return { error: 'Spreads should be between -50 and +50' };
+    if (Math.round(point * 2) !== point * 2) return { error: 'Lines go in half-point steps' };
+  }
+  return { pick: { key: `${gameId}|${market}|${side}`, point, price }, game };
+}
+
 // Replace a player's picks for the week. Picks on games that already
-// kicked off can't be added or removed.
+// kicked off can't be added, changed, or removed.
 app.put('/api/picks', async (req, res, next) => {
   try {
     const name = cleanName(req.body.name);
     if (!store.data.players.includes(name)) return res.status(400).json({ error: 'Unknown player' });
-    const { win, selections } = await loadWeek();
+    const { win, gamesById } = await loadWeek();
     const now = new Date();
-    const started = (key) => new Date(selections.get(key)?.commence) <= now;
+    const started = (key) => {
+      const game = gamesById.get(key.split('|')[0]);
+      return !game || hasStarted(game, now);
+    };
 
     const weekPicks = (store.data.picks[win.key] ??= {});
-    const before = weekPicks[name] ?? [];
-    const requested = [...new Set(req.body.picks ?? [])].filter((k) => selections.has(k));
+    const locked = (weekPicks[name] ?? []).filter((p) => started(p.key));
 
-    const locked = before.filter(started);
-    const fresh = requested.filter((k) => !started(k));
-    const kept = [...locked, ...fresh];
+    const fresh = [];
+    for (const raw of req.body.picks ?? []) {
+      if (started(String(raw?.key ?? ''))) continue;
+      const { pick, error } = parsePick(raw, gamesById);
+      if (error) return res.status(400).json({ error });
+      fresh.push(pick);
+    }
 
-    // One side per market per game: can't take both Over and Under.
+    // One side per bet per game (can't take both Over and Under); last one wins.
     const byMarket = new Map();
-    for (const k of kept) byMarket.set(k.split('|').slice(0, 2).join('|'), k);
+    for (const p of [...locked, ...fresh]) byMarket.set(p.key.split('|').slice(0, 2).join('|'), p);
     weekPicks[name] = [...byMarket.values()];
     if (!weekPicks[name].length) delete weekPicks[name];
     store.save();
@@ -133,12 +150,14 @@ app.put('/api/picks', async (req, res, next) => {
 
 app.get('/api/parlays', async (req, res, next) => {
   try {
-    const { win, selections } = await loadWeek();
+    const { win, games, gamesById } = await loadWeek();
     const picks = store.data.picks[win.key] ?? {};
     const voters = Object.keys(picks).length;
     const stake = Math.max(1, Number(req.query.stake) || 10);
-    const tallied = tally(picks, selections);
-    res.json({ tallied, ...buildParlays(tallied, voters, { stake }) });
+    const now = new Date();
+    const startedIds = new Set(games.filter((g) => hasStarted(g, now)).map((g) => g.id));
+    const tallied = tally(picks, gamesById);
+    res.json({ tallied, ...buildParlays(tallied, voters, { startedIds, stake }) });
   } catch (err) {
     next(err);
   }
@@ -151,5 +170,4 @@ app.use((err, req, res, _next) => {
 
 app.listen(Number(PORT), () => {
   console.log(`Parlay Party on http://localhost:${PORT}`);
-  if (!ODDS_API_KEY) console.log('No ODDS_API_KEY set: using demo odds.');
 });

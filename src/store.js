@@ -12,8 +12,16 @@ export class Store {
       this.data = {};
     }
     this.data.players ??= [];
-    this.data.picks ??= {}; // { weekKey: { player: [selectionKey] } }
-    this.data.odds ??= {}; // { weekKey: { fetchedAt, events, remaining } }
+    this.data.picks ??= {}; // { weekKey: { player: [{ key, point, price }] } }
+    this.data.schedule ??= {}; // { weekKey: { games, retryAt, demo? } }
+    // Drop data from the old auto-odds version (picks were plain strings then).
+    delete this.data.odds;
+    for (const week of Object.values(this.data.picks)) {
+      for (const [player, picks] of Object.entries(week)) {
+        week[player] = picks.filter((p) => typeof p === 'object');
+        if (!week[player].length) delete week[player];
+      }
+    }
   }
 
   save() {

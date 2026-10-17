@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { americanToDecimal, decimalToAmerican, fairProb } from '../src/odds-math.js';
-import { normalizeEvents, demoEvents } from '../src/odds.js';
+import { americanToDecimal, decimalToAmerican, estFairProb } from '../src/odds-math.js';
+import { demoSchedule, parseScoreboard } from '../src/schedule.js';
 import { tally, buildParlays, priceParlay } from '../src/parlay.js';
 import { weekWindow, weekLabel } from '../src/week.js';
 
@@ -10,7 +10,7 @@ test('odds conversions', () => {
   assert.equal(americanToDecimal(150), 2.5);
   assert.equal(decimalToAmerican(2.5), 150);
   assert.equal(decimalToAmerican(1.5), -200);
-  assert.equal(fairProb(-110, -110), 0.5);
+  assert.equal(estFairProb(-110).toFixed(2), '0.50');
 });
 
 test('two -110 legs price at about +264', () => {
@@ -29,66 +29,81 @@ test('week window runs Tuesday to Tuesday and labels the week', () => {
   assert.equal(weekWindow(new Date('2026-09-22T11:00:00Z')).key, '2026-09-15');
 });
 
+test('parses the ESPN scoreboard shape', () => {
+  const games = parseScoreboard({
+    events: [{
+      id: '401772', date: '2026-10-18T17:00Z',
+      competitions: [{
+        status: { type: { state: 'pre' } },
+        competitors: [
+          { homeAway: 'home', team: { displayName: 'Kansas City Chiefs', shortDisplayName: 'Chiefs' } },
+          { homeAway: 'away', team: { displayName: 'Denver Broncos', shortDisplayName: 'Broncos' } },
+        ],
+      }],
+    }],
+  });
+  assert.deepEqual(games, [{
+    id: 'espn-401772', commence: '2026-10-18T17:00:00.000Z',
+    home: 'Kansas City Chiefs', away: 'Denver Broncos', homeShort: 'Chiefs', awayShort: 'Broncos', state: 'pre',
+  }]);
+});
+
 function fixture() {
-  const start = new Date('2026-09-22T12:00:00Z');
-  const games = normalizeEvents(demoEvents(start), 'demo');
-  const selections = new Map();
-  for (const g of games) for (const s of g.selections) selections.set(s.key, { ...s, commence: g.commence });
-  const k = (i, market, side) => `demo-2026-09-22-${i}|${market}|${side}`;
-  return { selections, k, now: new Date('2026-09-22T13:00:00Z') };
+  const games = demoSchedule(new Date('2026-09-22T12:00:00Z'));
+  const gamesById = new Map(games.map((g) => [g.id, g]));
+  const id = (i) => games[i].id;
+  const pick = (i, market, side, point = null, price = -110) => ({ key: `${id(i)}|${market}|${side}`, point, price });
+  return { gamesById, id, pick };
 }
 
-test('normalizes the API shape into six selections per game', () => {
-  const { selections } = fixture();
-  assert.equal(selections.size, 13 * 6);
+test('groups picks of the same bet and uses the most common line', () => {
+  const { gamesById, pick } = fixture();
+  const t = tally({
+    Ann: [pick(1, 'spread', 'home', -3)],
+    Ben: [pick(1, 'spread', 'home', -3)],
+    Cal: [pick(1, 'spread', 'home', -3.5, -105)],
+  }, gamesById);
+  assert.equal(t.length, 1);
+  assert.equal(t[0].label, 'Chiefs -3');
+  assert.equal(t[0].price, -110);
+  assert.equal(t[0].pickers.length, 3);
+  assert.equal(t[0].lines.length, 2);
 });
 
 test('builds parlays only from majority picks, one leg per game', () => {
-  const { selections, k, now } = fixture();
+  const { gamesById, id, pick } = fixture();
   const picks = {
-    Ann: [k(1, 'ml', 'home'), k(2, 'spread', 'home'), k(3, 'total', 'over'), k(4, 'ml', 'away')],
-    Ben: [k(1, 'ml', 'home'), k(2, 'spread', 'home'), k(3, 'total', 'over'), k(5, 'ml', 'home')],
-    Cal: [k(1, 'ml', 'home'), k(2, 'spread', 'home'), k(1, 'total', 'under')],
-    Dee: [k(1, 'ml', 'home'), k(3, 'total', 'over'), k(1, 'total', 'under')],
+    Ann: [pick(1, 'ml', 'home', null, -180), pick(2, 'spread', 'home', -4), pick(3, 'total', 'over', 51.5), pick(4, 'ml', 'away', null, 120)],
+    Ben: [pick(1, 'ml', 'home', null, -180), pick(2, 'spread', 'home', -4), pick(3, 'total', 'over', 51.5), pick(5, 'ml', 'home', null, -250)],
+    Cal: [pick(1, 'ml', 'home', null, -175), pick(2, 'spread', 'home', -4), pick(1, 'total', 'under', 44.5)],
+    Dee: [pick(1, 'ml', 'home', null, -180), pick(3, 'total', 'over', 51), pick(1, 'total', 'under', 44.5)],
   };
-  const result = buildParlays(tally(picks, selections), 4, { now });
+  const result = buildParlays(tally(picks, gamesById), 4);
   assert.equal(result.need, 3);
-  // Game 1 has two majority plays (ML 4/4, under 2/4 doesn't count) -> only ML.
-  assert.deepEqual(result.consensus.map((s) => s.key), [k(1, 'ml', 'home'), k(2, 'spread', 'home'), k(3, 'total', 'over')]);
+  assert.deepEqual(result.consensus.map((s) => s.label), ['Chiefs ML', 'Eagles -4', 'Over 51.5']);
+  assert.equal(result.consensus[0].price, -180);
   for (const opt of result.options) {
     const gameIds = opt.legs.map((l) => l.gameId);
     assert.equal(new Set(gameIds).size, gameIds.length, `${opt.name} repeats a game`);
     assert.ok(opt.legs.length >= 2);
   }
-  // No duplicate leg sets across options.
   const sigs = result.options.map((o) => o.legs.map((l) => l.key).sort().join());
   assert.equal(new Set(sigs).size, sigs.length);
+  assert.ok(result.options.length >= 3);
   // Game 1 is already in the consensus via the ML, so its 2/4 under isn't "one vote away".
-  assert.ok(result.almost.every((s) => s.gameId !== 'demo-2026-09-22-1'));
-});
-
-test('unanimous option only includes plays everyone took', () => {
-  const { selections, k, now } = fixture();
-  const picks = {
-    Ann: [k(1, 'ml', 'home'), k(2, 'spread', 'home'), k(3, 'total', 'over')],
-    Ben: [k(1, 'ml', 'home'), k(2, 'spread', 'home')],
-    Cal: [k(1, 'ml', 'home'), k(2, 'spread', 'home'), k(3, 'total', 'over')],
-  };
-  const { options } = buildParlays(tally(picks, selections), 3, { now });
-  const unanimous = options.find((o) => o.name === 'Everybody Agrees');
-  assert.deepEqual(unanimous.legs.map((l) => l.key), [k(1, 'ml', 'home'), k(2, 'spread', 'home')]);
+  assert.ok(result.almost.every((s) => s.gameId !== id(1)));
 });
 
 test('skips games that already kicked off', () => {
-  const { selections, k } = fixture();
-  const picks = { Ann: [k(0, 'ml', 'home'), k(1, 'ml', 'home')], Ben: [k(0, 'ml', 'home'), k(1, 'ml', 'home')] };
-  // Game 0 is the Thursday game; by Friday it's locked.
-  const { consensus, options } = buildParlays(tally(picks, selections), 2, { now: new Date('2026-09-25T12:00:00Z') });
-  assert.deepEqual(consensus.map((s) => s.key), [k(1, 'ml', 'home')]);
+  const { gamesById, id, pick } = fixture();
+  const both = [pick(0, 'spread', 'home', -6.5), pick(1, 'spread', 'home', -3.5)];
+  const { consensus, options } = buildParlays(tally({ Ann: both, Ben: both }, gamesById), 2, {
+    startedIds: new Set([id(0)]),
+  });
+  assert.deepEqual(consensus.map((s) => s.gameId), [id(1)]);
   assert.equal(options.length, 0);
 });
 
 test('no picks means no parlays', () => {
-  const r = buildParlays([], 0);
-  assert.deepEqual(r.options, []);
+  assert.deepEqual(buildParlays([], 0).options, []);
 });

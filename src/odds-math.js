@@ -7,18 +7,17 @@ export function decimalToAmerican(decimal) {
   return Math.round(-100 / (decimal - 1));
 }
 
-export function formatAmerican(american) {
-  return american > 0 ? `+${american}` : `${american}`;
-}
-
 // Probability implied by the price, including the book's vig.
 export function impliedProb(american) {
   return 1 / americanToDecimal(american);
 }
 
-// Strip the vig from a two-way market so the two sides sum to 1.
-export function fairProb(price, otherPrice) {
-  const p = impliedProb(price);
-  const q = impliedProb(otherPrice);
-  return p / (p + q);
+// We only know the side people bet, not the other side's price, so strip a
+// typical ~4.5% book margin instead of the exact one. -110 comes out ~50%.
+export function estFairProb(american) {
+  return Math.min(0.99, impliedProb(american) / 1.045);
+}
+
+export function validPrice(price) {
+  return Number.isInteger(price) && Math.abs(price) >= 100 && Math.abs(price) <= 100000;
 }

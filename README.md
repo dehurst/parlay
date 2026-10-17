@@ -3,14 +3,18 @@
 A small website where a group of friends picks NFL games each week. It finds
 the plays most of you agree on and builds a few parlays out of them.
 
-- **Weekly odds** from [The Odds API](https://the-odds-api.com): spread, total,
-  and moneyline for every game in the current Tuesday-to-Tuesday week.
-- **My Picks**: tap the plays you like. Badges show how many friends took each
-  one, and picks lock at kickoff.
-- **Group Board**: every picked play ranked by how many of you took it.
+- **Weekly schedule** pulled automatically from ESPN's public scoreboard (no
+  API key needed). The week runs Tuesday to Tuesday, so Thursday, Sunday, and
+  Monday games are all included.
+- **My Picks**: tap a spread, total, or moneyline and type in the line and odds
+  from your sportsbook. If a friend already entered that game, it fills in
+  their line for you. Orange badges show how many friends took each bet, and
+  picks lock at kickoff.
+- **Group Board**: every bet ranked by how many of you took it. It flags bets
+  where friends typed different lines (Chiefs -3 vs. -3.5).
 - **Parlays**: up to five options built from the majority picks. Each shows the
-  price, the payout for your stake, the chance of hitting, and the expected
-  return. There's also a list of plays that are one vote short.
+  price, the payout for your stake, a rough chance of hitting, and a list of
+  bets that are one vote short.
 
 ## Run it
 
@@ -19,49 +23,46 @@ npm install
 npm start            # http://localhost:3000
 ```
 
-With no API key it runs on demo lines, so you can try it right away.
+If ESPN can't be reached, it shows a demo slate and retries every 5 minutes.
 
-For real odds, get a free key from the-odds-api.com and start with it:
-
-```bash
-ODDS_API_KEY=your_key npm start
-```
-
-The rest of the settings are in `.env.example`, all set as environment
-variables:
+Settings (environment variables, see `.env.example`):
 
 | Variable | Default | What it does |
 | --- | --- | --- |
-| `ODDS_API_KEY` | _(empty = demo)_ | The Odds API key |
-| `BOOKMAKER` | `draftkings` | Book to take lines from (falls back to the first available) |
-| `ODDS_CACHE_HOURS` | `6` | How often odds refresh. Each fetch costs 3 credits; 6h uses ~360 of the free tier's 500/month |
 | `GROUP_CODE` | _(empty)_ | Optional shared code friends enter before they can use the site |
 | `SEASON_START` | Tuesday after Labor Day | Sets the "Week N" label (YYYY-MM-DD, a Tuesday) |
 | `PORT` | `3000` | |
-| `DATA_FILE` | `data/db.json` | Where players, picks, and cached odds are saved |
+| `DATA_FILE` | `data/db.json` | Where players, picks, and the schedule are saved |
 
-Manual "Refresh odds" clicks are capped at once per 15 minutes to protect your
-API credits.
+## Entering lines
+
+- **Spread**: from the side you're picking. Favorites are negative (`-3.5`),
+  underdogs positive (`+3.5`).
+- **Total**: combined points, like `44.5`. Pick Over or Under.
+- **Odds**: American odds like `-110` or `+150`. Spreads and totals default to
+  `-110`; moneylines need odds.
 
 ## How the parlays are built
 
 1. **Voters** are friends who made at least one pick this week.
-2. A play is **consensus** if more than half the voters picked it. With 1 or 2
-   voters, everyone has to agree.
-3. Each game contributes only its most-picked consensus play. Books won't let
+2. A bet counts as **consensus** if more than half the voters picked the same
+   side of it. With 1 or 2 voters, everyone has to agree. Picks with slightly
+   different lines still count together, and the parlay uses the line most of
+   you entered.
+3. Each game contributes only its most-picked consensus bet. Books won't let
    you parlay both sides of a game, and most limit same-game combos in regular
    parlays.
 4. Games that have already kicked off are left out.
 5. From that pool it builds, skipping duplicates:
-   - **Everybody Agrees**: every play all voters picked
+   - **Everybody Agrees**: every bet all voters picked
    - **Crowd Favorites**: the top 3 by votes
-   - **Safest Majority**: the plays most likely to hit
-   - **Plus-Money Swing**: the plays with the biggest payouts
-   - **Full Send**: every consensus play
+   - **Safest Majority**: the bets most likely to hit
+   - **Plus-Money Swing**: the bets with the biggest payouts
+   - **Full Send**: every consensus bet
 
-"Hit chance" and "expected return" come from the book's lines with the vig
-removed. Expected return is almost always negative because the book's edge
-compounds on every leg you add.
+Payouts are only as accurate as the odds you type in. "Hit chance" strips a
+typical ~4.5% book margin from those odds, so it's an estimate. Expected return
+is almost always negative because the book's edge compounds on every leg.
 
 ## Hosting
 

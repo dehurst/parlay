@@ -1,6 +1,7 @@
 const $ = (sel) => document.querySelector(sel);
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 const fmtOdds = (a) => (a > 0 ? `+${a}` : `${a}`);
+const fmtPoint = (p) => (p > 0 ? `+${p}` : `${p}`);
 const pct = (p) => `${(p * 100).toFixed(p < 0.1 ? 1 : 0)}%`;
 const money = (n) => `$${n.toFixed(2)}`;
 
@@ -13,6 +14,7 @@ const storage = {
 let me = storage.get('parlay.name');
 let week = null;
 let tab = 'picks';
+let editing = null; // { key, error }
 
 async function api(path, opts = {}) {
   const res = await fetch(path, {
@@ -36,18 +38,16 @@ function notice(msg) {
 
 // ---- Loading -------------------------------------------------------------
 
-async function load(refresh = false) {
+async function load() {
   try {
-    week = await api(`/api/week${refresh ? '?refresh=1' : ''}`);
+    week = await api('/api/week');
   } catch (err) {
     notice(err.message);
     return;
   }
-  notice(week.demo ? 'Demo mode: these are made-up lines. Set ODDS_API_KEY on the server for real odds.' : week.warning);
+  notice(week.warning);
   $('#week-label').textContent = week.label;
-  const when = new Date(week.fetchedAt).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' });
-  const book = week.games[0]?.book ?? '';
-  $('#odds-meta').textContent = `Lines: ${book} · updated ${when}${week.remaining ? ` · ${week.remaining} API credits left` : ''}`;
+  $('#schedule-meta').textContent = week.demo ? 'Schedule: demo games' : 'Schedule: ESPN';
 
   if (me && !week.players.includes(me)) me = null;
   if (!me) return showJoin();
@@ -79,6 +79,41 @@ async function join(name) {
   }
 }
 
+// ---- Pick helpers --------------------------------------------------------
+
+const myPicks = () => week.picks[me] ?? [];
+const marketOf = (key) => key.split('|').slice(0, 2).join('|');
+
+// Everyone's entries for one bet: [{ user, point, price }].
+function entriesFor(key) {
+  return Object.entries(week.picks).flatMap(([user, picks]) =>
+    picks.filter((p) => p.key === key).map((p) => ({ user, ...p })));
+}
+
+function mostCommon(entries) {
+  const counts = new Map();
+  for (const e of entries) {
+    const id = `${e.point}|${e.price}`;
+    counts.set(id, { ...e, n: (counts.get(id)?.n ?? 0) + 1 });
+  }
+  return [...counts.values()].sort((a, b) => b.n - a.n)[0];
+}
+
+// What to pre-fill when you open a bet: your own entry, else the line friends
+// used, else the mirror of the other side (Bills -3 means Dolphins +3).
+function prefill(key) {
+  const mine = myPicks().find((p) => p.key === key);
+  if (mine) return mine;
+  const same = mostCommon(entriesFor(key));
+  if (same) return same;
+  const [gameId, market, side] = key.split('|');
+  const otherSide = { home: 'away', away: 'home', over: 'under', under: 'over' }[side];
+  const other = mostCommon(entriesFor(`${gameId}|${market}|${otherSide}`));
+  if (other && market === 'spread') return { point: -other.point, price: -110 };
+  if (other && market === 'total') return { point: other.point, price: -110 };
+  return { point: '', price: market === 'ml' ? '' : -110 };
+}
+
 // ---- Rendering -----------------------------------------------------------
 
 function render() {
@@ -89,67 +124,92 @@ function render() {
   if (tab === 'parlays') renderParlays();
 }
 
-function votesFor(key) {
-  return Object.entries(week.picks).filter(([, keys]) => keys.includes(key)).map(([name]) => name);
-}
-
 function renderGames() {
-  const mine = new Set(week.picks[me] ?? []);
-  const now = Date.now();
   if (!week.games.length) {
-    $('#games').innerHTML = '<div class="card muted">No games with odds this week yet. Check back after lines post.</div>';
+    $('#games').innerHTML = '<div class="card muted">No games on the schedule this week.</div>';
     return;
   }
+  const mine = new Map(myPicks().map((p) => [p.key, p]));
   $('#games').innerHTML = week.games.map((g) => {
-    const started = new Date(g.commence) <= now;
-    const find = (market, side) => g.selections.find((s) => s.market === market && s.side === side);
-    const cell = (sel, lineText) => {
-      if (!sel) return '<div></div>';
-      const voters = votesFor(sel.key);
-      return `<button class="pick ${mine.has(sel.key) ? 'on' : ''}" data-key="${esc(sel.key)}"
-        ${started ? 'disabled' : ''} title="${esc(voters.join(', ') || 'No picks yet')}">
-        <span class="line">${esc(lineText)}</span><span class="price">${fmtOdds(sel.price)}</span>
-        ${voters.length ? `<span class="votes">${voters.length}</span>` : ''}
+    const cell = (market, side) => {
+      const key = `${g.id}|${market}|${side}`;
+      const entries = entriesFor(key);
+      const pick = mine.get(key);
+      const shown = pick ?? mostCommon(entries);
+      let line = market === 'total' ? (side === 'over' ? 'Over' : 'Under') : market === 'ml' ? 'ML' : 'Spread';
+      if (shown && market === 'spread') line = fmtPoint(shown.point);
+      if (shown && market === 'total') line = `${side === 'over' ? 'O' : 'U'} ${shown.point}`;
+      return `<button class="pick ${pick ? 'on' : ''} ${shown ? '' : 'empty'}" data-key="${esc(key)}"
+        ${g.started ? 'disabled' : ''} title="${esc(entries.map((e) => e.user).join(', ') || 'No picks yet')}">
+        <span class="line">${esc(line)}</span>
+        <span class="price">${shown ? fmtOdds(shown.price) : '&nbsp;'}</span>
+        ${entries.length ? `<span class="votes">${entries.length}</span>` : ''}
       </button>`;
     };
-    const spread = (s) => (s ? `${s.point > 0 ? '+' : ''}${s.point}` : '');
     const kick = new Date(g.commence).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' });
     const row = (team, side, totalSide) => `
-      <div class="team" title="${esc(team)}">${esc(team.split(' ').pop())}</div>
-      ${cell(find('spread', side), spread(find('spread', side)))}
-      ${cell(find('total', totalSide), `${totalSide === 'over' ? 'O' : 'U'} ${find('total', totalSide)?.point ?? ''}`)}
-      ${cell(find('ml', side), 'ML')}`;
-    return `<div class="card">
+      <div class="team" title="${esc(team)}">${esc(side === 'home' ? g.homeShort : g.awayShort)}</div>
+      ${cell('spread', side)}${cell('total', totalSide)}${cell('ml', side)}`;
+    return `<div class="card" data-game="${esc(g.id)}">
       <div class="game-head">
         <h3>${esc(g.away)} @ ${esc(g.home)}</h3>
-        <span class="${started ? 'locked' : 'muted small'}">${started ? 'Locked' : kick}</span>
+        <span class="${g.started ? 'locked' : 'muted small'}">${g.started ? 'Locked' : kick}</span>
       </div>
       <div class="game-grid">
         <div></div><div class="colhead">Spread</div><div class="colhead">Total</div><div class="colhead">Moneyline</div>
         ${row(g.away, 'away', 'over')}
         ${row(g.home, 'home', 'under')}
       </div>
+      ${editing && editing.key.startsWith(`${g.id}|`) ? editorHtml(g) : ''}
     </div>`;
   }).join('');
+  $('.editor input')?.focus();
 }
 
-async function togglePick(key) {
-  const mine = new Set(week.picks[me] ?? []);
-  if (mine.has(key)) {
-    mine.delete(key);
-  } else {
-    // Only one side of a market per game (can't take both Over and Under).
-    const prefix = key.split('|').slice(0, 2).join('|') + '|';
-    for (const k of mine) if (k.startsWith(prefix)) mine.delete(k);
-    mine.add(key);
-  }
+function editorHtml(g) {
+  const [, market, side] = editing.key.split('|');
+  const team = side === 'home' ? g.homeShort : g.awayShort;
+  const title = market === 'total' ? `${side === 'over' ? 'Over' : 'Under'} (total points)` : `${team} ${market === 'ml' ? 'moneyline' : 'spread'}`;
+  const v = prefill(editing.key);
+  const hint = {
+    spread: `From the ${team}' side: negative if they're favored (-3.5), positive if they're the underdog (+3.5).`,
+    total: 'Combined points for both teams, like 44.5.',
+    ml: `The ${team}' moneyline odds, like -150 or +130.`,
+  }[market];
+  const isMine = myPicks().some((p) => p.key === editing.key);
+  return `<form class="editor" data-key="${esc(editing.key)}">
+    <b>${esc(title)}</b>
+    <div class="fields">
+      ${market === 'ml' ? '' : `<label>${market === 'total' ? 'Total' : 'Spread'}
+        <input name="point" inputmode="decimal" value="${esc(market === 'spread' && typeof v.point === 'number' ? fmtPoint(v.point) : v.point)}" placeholder="${market === 'total' ? '44.5' : '-3.5'}"></label>`}
+      <label>Odds<input name="price" inputmode="numeric" value="${esc(v.price)}" placeholder="${market === 'ml' ? '-150' : '-110'}"></label>
+      <button type="submit">Save</button>
+      ${isMine ? '<button type="button" class="danger" data-act="remove">Remove</button>' : ''}
+      <button type="button" data-act="cancel">Cancel</button>
+    </div>
+    <p class="hint">${esc(hint)}${market === 'ml' ? '' : ' Odds default to -110.'}</p>
+    ${editing.error ? `<p class="err">${esc(editing.error)}</p>` : ''}
+  </form>`;
+}
+
+async function savePicks(list) {
   try {
-    const res = await api('/api/picks', { method: 'PUT', body: { name: me, picks: [...mine] } });
+    const res = await api('/api/picks', { method: 'PUT', body: { name: me, picks: list } });
     week.picks = res.picks;
-    renderGames();
+    editing = null;
   } catch (err) {
-    notice(err.message);
+    editing.error = err.message;
   }
+  renderGames();
+}
+
+function submitEditor(form) {
+  const key = form.dataset.key;
+  const point = form.point?.value.trim().replace(/^\+/, '') ?? null;
+  const price = form.price.value.trim().replace(/^\+/, '');
+  // Swap in this pick and drop anything else on the same bet (e.g. the Under).
+  const others = myPicks().filter((p) => marketOf(p.key) !== marketOf(key));
+  savePicks([...others, { key, point, price }]);
 }
 
 async function renderBoard() {
@@ -172,6 +232,8 @@ async function renderBoard() {
       <div style="flex:1">
         <div><b>${esc(s.label)}</b> <span class="muted">${fmtOdds(s.price)}</span></div>
         <div class="small muted">${esc(s.matchup)} · ${s.pickers.map(esc).join(', ')}</div>
+        ${s.lines.length > 1 ? `<div class="lines">Different lines entered: ${s.lines.map((l) =>
+          `${l.point === null ? '' : `${s.market === 'spread' ? fmtPoint(l.point) : l.point} `}${fmtOdds(l.price)} (${l.users.map(esc).join(', ')})`).join(' · ')}</div>` : ''}
         <div class="bar"><span style="width:${(s.pickers.length / data.voters) * 100}%"></span></div>
       </div>
       <div><b>${s.pickers.length}</b><span class="muted">/${data.voters}</span></div>
@@ -209,7 +271,7 @@ async function renderParlays() {
       <div class="stats">
         <span>${money(p.stake)} pays <b>${money(p.payout)}</b></span>
         <span>Hit chance ~<b>${pct(p.hitProb)}</b></span>
-        <span class="${p.ev < 0 ? 'ev-bad' : ''}">Expected return ${p.ev >= 0 ? '+' : ''}${(p.ev * 100).toFixed(1)}%</span>
+        <span class="${p.ev < 0 ? 'ev-bad' : ''}">Expected return ~${p.ev >= 0 ? '+' : ''}${(p.ev * 100).toFixed(1)}%</span>
       </div>
     </div>`).join('');
 
@@ -220,8 +282,9 @@ async function renderParlays() {
     </div>`;
   }
 
-  html += `<p class="small muted">Hit chance and expected return use the book's lines with the vig removed.
-    A negative expected return is the house edge. Parlays stack it on every leg.</p>`;
+  html += `<p class="small muted">Payouts use the odds you typed in, so double-check them against your sportsbook.
+    Hit chance is a rough estimate that removes a typical book margin. A negative expected return is the house edge,
+    and parlays stack it on every leg.</p>`;
   $('#parlays').innerHTML = html;
 }
 
@@ -229,7 +292,21 @@ async function renderParlays() {
 
 $('#games').addEventListener('click', (e) => {
   const btn = e.target.closest('.pick');
-  if (btn && !btn.disabled) togglePick(btn.dataset.key);
+  if (btn && !btn.disabled) {
+    editing = editing?.key === btn.dataset.key ? null : { key: btn.dataset.key };
+    renderGames();
+    return;
+  }
+  const act = e.target.closest('[data-act]')?.dataset.act;
+  if (act === 'cancel') {
+    editing = null;
+    renderGames();
+  }
+  if (act === 'remove') savePicks(myPicks().filter((p) => p.key !== editing.key));
+});
+$('#games').addEventListener('submit', (e) => {
+  e.preventDefault();
+  submitEditor(e.target);
 });
 $('#tabs').addEventListener('click', (e) => {
   const btn = e.target.closest('button[data-tab]');
@@ -252,6 +329,5 @@ $('#code-save').addEventListener('click', () => {
   load();
 });
 $('#stake').addEventListener('change', renderParlays);
-$('#refresh').addEventListener('click', () => load(true));
 
 load();

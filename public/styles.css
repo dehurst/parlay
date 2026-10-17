@@ -74,6 +74,7 @@ input { min-width: 0; flex: 1; }
 }
 .pick .line { font-weight: 600; }
 .pick .price { color: var(--muted); font-size: 12px; }
+.pick.empty .line { color: var(--muted); font-weight: 400; }
 .pick.on { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
 .pick.on .price { color: var(--accent-ink); }
 .pick:disabled { opacity: .55; cursor: not-allowed; }
@@ -105,3 +106,12 @@ footer { display: flex; justify-content: space-between; gap: 10px; margin-top: 2
   .game-grid { grid-template-columns: 1fr repeat(3, minmax(58px, 1fr)); }
   .pick { font-size: 12px; }
 }
+
+.editor { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
+.editor .fields { display: flex; gap: 8px; flex-wrap: wrap; align-items: flex-end; }
+.editor label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }
+.editor input { width: 96px; flex: none; }
+.editor .hint { font-size: 12px; color: var(--muted); margin: 8px 0 0; }
+.editor .err { font-size: 13px; color: var(--bad); margin: 8px 0 0; }
+.editor button.danger { color: var(--bad); }
+.lines { font-size: 12px; color: var(--warn); }
