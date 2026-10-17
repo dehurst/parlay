@@ -13,6 +13,8 @@
 }
 
 * { box-sizing: border-box; }
+/* Classes like .row and .tabs set display, which would override [hidden]. */
+[hidden] { display: none !important; }
 
 body {
   margin: 0 auto;
