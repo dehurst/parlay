@@ -20,10 +20,14 @@ the plays most of you agree on and builds a few parlays out of them.
   moved since.
 - **Parlays**: up to five options built from the majority picks. Each shows the
   price, the payout for your stake, a rough chance of hitting, and a list of
-  bets that are one vote short. Everyone can **vote** for the parlays they want
-  to place (as many as they like); one with votes from a majority of the group
-  is marked **Group's pick**. Votes belong to a parlay's exact set of bets, so
-  if picks change and a parlay's legs change, its votes start over.
+  bets that are one vote short. Everyone types in how much they want on the
+  parlays they like; one with money from a majority of the group is marked
+  **Group's pick**.
+- **Bet Slip**: for whoever places the bets. Every parlay with money on it,
+  its legs and odds, each person's stake and payout, and a "who owes what"
+  total. A parlay is saved as it was when people bought in, so it stays on
+  the slip after kickoff or if picks change (it gets flagged if it's no
+  longer a current option). Legs flag any line FanDuel has moved since.
 
 ## Run it
 

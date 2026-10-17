@@ -100,8 +100,6 @@ input { min-width: 0; flex: 1; }
 .stats { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 13px; color: var(--muted); }
 .stats b { color: var(--text); }
 .ev-bad { color: var(--bad); }
-.stake-row { align-items: center; margin: 0 0 12px; }
-.stake-row input { max-width: 100px; flex: none; }
 
 footer { display: flex; justify-content: space-between; gap: 10px; margin-top: 24px; flex-wrap: wrap; }
 
@@ -131,8 +129,17 @@ body { padding-bottom: 90px; }
 .submit-bar > span:first-child { min-width: 0; }
 .clear { padding: 4px 10px; font-size: 13px; color: var(--bad); }
 .who { flex-wrap: wrap; }
-.vote-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
-.vote.on { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
+.stake-form { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
+.stake-form label { display: flex; align-items: center; gap: 6px; font-size: 14px; }
+.stake-form input { width: 90px; flex: none; }
+.backers { margin-top: 8px; }
+.danger, button.link.danger { color: var(--bad); }
+table.slip { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 14px; }
+table.slip th, table.slip td { text-align: left; padding: 6px 4px; border-top: 1px solid var(--line); }
+table.slip thead th { color: var(--muted); font-weight: 500; font-size: 12px; border-top: none; }
+table.slip .num { text-align: right; font-variant-numeric: tabular-nums; }
+table.slip tfoot th { font-weight: 700; }
+@media (max-width: 420px) { .tabs button { padding: 10px 8px; } }
 .parlay.group-pick { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
 .badge {
   display: inline-block; margin-bottom: 6px; padding: 2px 8px; border-radius: 999px;

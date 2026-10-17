@@ -32,6 +32,7 @@
     <button data-tab="picks" class="active">My Picks</button>
     <button data-tab="board">Group Board</button>
     <button data-tab="parlays">Parlays</button>
+    <button data-tab="slip">Bet Slip</button>
   </nav>
 
   <main>
@@ -45,11 +46,12 @@
     </section>
 
     <section id="tab-parlays" class="tab" hidden>
-      <div class="row stake-row">
-        <label for="stake">Stake $</label>
-        <input id="stake" type="number" min="1" value="10">
-      </div>
+      <p class="muted small">Put in how much you want on the parlays you like. The person placing the bets sees it all on the Bet Slip tab.</p>
       <div id="parlays"></div>
+    </section>
+
+    <section id="tab-slip" class="tab" hidden>
+      <div id="slip"></div>
     </section>
   </main>
 

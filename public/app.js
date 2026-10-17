@@ -14,7 +14,7 @@ const storage = {
 let me = storage.get('parlay.name');
 let week = null;
 let tab = 'picks';
-let parlayLegs = new Map(); // parlay id -> leg keys, for voting
+
 
 async function api(path, opts = {}) {
   const res = await fetch(path, {
@@ -128,6 +128,7 @@ function render() {
   else $('#submit-bar').hidden = true;
   if (tab === 'board') renderBoard();
   if (tab === 'parlays') renderParlays();
+  if (tab === 'slip') renderSlip();
 }
 
 function renderGames() {
@@ -293,9 +294,8 @@ async function renderBoard() {
 }
 
 async function renderParlays() {
-  const stake = Number($('#stake').value) || 10;
   $('#parlays').innerHTML = '<p class="muted">Building…</p>';
-  const data = await api(`/api/parlays?stake=${stake}`).catch((err) => (notice(err.message), null));
+  const data = await api('/api/parlays').catch((err) => (notice(err.message), null));
   if (!data) return;
 
   if (!data.voters) {
@@ -312,11 +312,12 @@ async function renderParlays() {
     </div>`;
   }
 
-  parlayLegs = new Map(data.options.map((p) => [p.id, p.legs.map((l) => l.key)]));
   const majority = Math.floor(data.players.length / 2) + 1;
   html += data.options.map((p) => {
-    const iVoted = p.votes.includes(me);
-    const groupPick = p.votes.length >= majority;
+    const mine = p.stakes[me];
+    const backers = Object.entries(p.stakes);
+    const total = backers.reduce((sum, [, amt]) => sum + amt, 0);
+    const groupPick = backers.length >= majority;
     return `
     <div class="card parlay ${groupPick ? 'group-pick' : ''}">
       <div class="head">
@@ -332,14 +333,16 @@ async function renderParlays() {
         <span>Hit chance ~<b>${pct(p.hitProb)}</b></span>
         <span class="${p.ev < 0 ? 'ev-bad' : ''}">Est. return ${p.ev >= 0 ? '+' : ''}${(p.ev * 100).toFixed(1)}%</span>
       </div>
-      <div class="vote-row">
-        <button type="button" class="vote ${iVoted ? 'on' : ''}" data-parlay="${esc(p.id)}" data-vote="${iVoted ? '0' : '1'}">
-          ${iVoted ? '✓ You voted for this' : '👍 Vote for this'}
-        </button>
-        <span class="small muted">${p.votes.length
-          ? `${p.votes.length}/${data.players.length} votes: ${p.votes.map(esc).join(', ')}`
-          : 'No votes yet'}</span>
-      </div>
+      <form class="stake-form" data-parlay="${esc(p.id)}">
+        <label>Your stake $
+          <input name="amount" type="number" inputmode="decimal" min="0" step="1" value="${mine ?? ''}" placeholder="10">
+        </label>
+        <button type="submit" class="${mine ? '' : 'primary'}">${mine ? 'Update' : "I'm in"}</button>
+        ${mine ? '<button type="button" class="link danger" data-act="out">Remove</button>' : ''}
+      </form>
+      <div class="small muted backers">${backers.length
+        ? `${backers.map(([who, amt]) => `${esc(who)} ${money(amt)}`).join(' · ')} · <b>${money(total)} total</b>, pays ${money(total * p.decimal)}`
+        : 'Nobody is in yet'}</div>
     </div>`;
   }).join('');
 
@@ -354,6 +357,47 @@ async function renderParlays() {
     Hit chance is a rough estimate that removes a typical book margin. A negative expected return is the house edge,
     and parlays stack it on every leg.</p>`;
   $('#parlays').innerHTML = html;
+}
+
+async function renderSlip() {
+  $('#slip').innerHTML = '<p class="muted">Loading…</p>';
+  const data = await api('/api/slip').catch((err) => (notice(err.message), null));
+  if (!data) return;
+  if (!data.parlays.length) {
+    $('#slip').innerHTML = '<div class="card muted">Nobody has put money on a parlay yet. Do that on the Parlays tab.</div>';
+    return;
+  }
+  const grand = data.parlays.reduce((sum, p) => sum + p.total, 0);
+  const cards = data.parlays.map((p, i) => {
+    const legs = p.legs.map((l) => `<li><b>${esc(l.label)}</b> <span class="muted">${fmtOdds(l.price)} · ${esc(l.matchup)}</span>${lineMoved(l, data.book)}</li>`).join('');
+    const rows = Object.entries(p.stakes).map(([who, amt]) => `<tr>
+        <td>${esc(who)}${who === me ? ` <button type="button" class="link danger" data-slip-out="${esc(p.id)}">remove</button>` : ''}</td>
+        <td class="num">${money(amt)}</td><td class="num">${money(amt * p.decimal)}</td></tr>`).join('');
+    return `<div class="card parlay">
+      <div class="head">
+        <div><span class="muted small">Bet ${i + 1}</span><h3>${esc(p.name)} · ${p.legs.length}-leg parlay</h3></div>
+        <div class="odds">${fmtOdds(p.american)}</div>
+      </div>
+      ${p.stillOption ? '' : '<div class="lines">Picks changed since people bought in, so this parlay is no longer one of the current options. Double-check before placing it.</div>'}
+      <ul>${legs}</ul>
+      <table class="slip">
+        <thead><tr><th>Who</th><th class="num">Stake</th><th class="num">Wins</th></tr></thead>
+        <tbody>${rows}</tbody>
+        <tfoot><tr><th>Total</th><th class="num">${money(p.total)}</th><th class="num">${money(p.payout)}</th></tr></tfoot>
+      </table>
+    </div>`;
+  }).join('');
+  const totals = Object.entries(data.totals).map(([who, amt]) => `<tr><td>${esc(who)}</td><td class="num">${money(amt)}</td></tr>`).join('');
+  $('#slip').innerHTML = `
+    <div class="card"><b>${data.parlays.length} parlay${data.parlays.length === 1 ? '' : 's'} to place, ${money(grand)} total.</b>
+      <div class="small muted">"Wins" is the total payout (stake included) if the parlay hits, at the odds shown.
+      Check each leg in ${esc(data.book ?? 'your sportsbook')} before placing; anything marked "Line moved" will pay differently.</div>
+    </div>
+    ${cards}
+    <div class="card"><b>Who owes what</b>
+      <table class="slip"><tbody>${totals}</tbody>
+        <tfoot><tr><th>Total</th><th class="num">${money(grand)}</th></tr></tfoot></table>
+    </div>`;
 }
 
 // ---- Events --------------------------------------------------------------
@@ -390,20 +434,27 @@ $('#code-save').addEventListener('click', () => {
   $('#code-row').hidden = true;
   load();
 });
-$('#stake').addEventListener('change', renderParlays);
-$('#parlays').addEventListener('click', async (e) => {
-  const btn = e.target.closest('button[data-parlay]');
-  if (!btn) return;
-  btn.disabled = true;
+async function setStake(id, amount, rerender) {
   try {
-    await api('/api/vote', {
-      method: 'POST',
-      body: { name: me, legs: parlayLegs.get(btn.dataset.parlay), vote: btn.dataset.vote === '1' },
-    });
+    await api('/api/stake', { method: 'POST', body: { name: me, id, amount } });
+    notice(null);
   } catch (err) {
     notice(err.message);
   }
-  renderParlays();
+  rerender();
+}
+$('#parlays').addEventListener('submit', (e) => {
+  e.preventDefault();
+  const amount = Number(e.target.amount.value);
+  if (!(amount > 0)) return notice('Enter how many dollars you want on it.');
+  setStake(e.target.dataset.parlay, amount, renderParlays);
+});
+$('#parlays').addEventListener('click', (e) => {
+  if (e.target.closest('[data-act="out"]')) setStake(e.target.closest('form').dataset.parlay, 0, renderParlays);
+});
+$('#slip').addEventListener('click', (e) => {
+  const btn = e.target.closest('[data-slip-out]');
+  if (btn) setStake(btn.dataset.slipOut, 0, renderSlip);
 });
 $('#who').addEventListener('click', (e) => {
   if (e.target.closest('#switch')) {

@@ -234,53 +234,105 @@ app.post('/api/submit', async (req, res, next) => {
   }
 });
 
+// A parlay is identified by its legs, so stakes follow the same set of bets
+// even if its name or position on the page changes.
+const parlayId = (keys) => [...keys].sort().join(',');
+
+// The current parlay options built from everyone's submitted picks.
+async function currentParlays() {
+  const { win, games, gamesById } = await loadWeek();
+  const picks = submitted(win);
+  const voters = Object.keys(picks).length;
+  const now = new Date();
+  const startedIds = new Set(games.filter((g) => hasStarted(g, now)).map((g) => g.id));
+  const tallied = tally(picks, gamesById).map((s) => ({
+    ...s,
+    current: gamesById.get(s.gameId).lines?.[s.market]?.[s.side] ?? null,
+  }));
+  const result = buildParlays(tallied, voters, { startedIds });
+  for (const opt of result.options) opt.id = parlayId(opt.legs.map((l) => l.key));
+  return { win, gamesById, tallied, result };
+}
+
+// Stakes for the parlays people are in on: { player: dollars }.
+function stakesFor(win, id) {
+  const stakes = store.data.stakes[win.key]?.[id]?.stakes ?? {};
+  return Object.fromEntries(Object.entries(stakes).filter(([p]) => players.includes(p)));
+}
+
 app.get('/api/parlays', async (req, res, next) => {
   try {
-    const { win, games, gamesById } = await loadWeek();
-    const picks = submitted(win);
-    const voters = Object.keys(picks).length;
-    const stake = Math.max(1, Number(req.query.stake) || 10);
-    const now = new Date();
-    const startedIds = new Set(games.filter((g) => hasStarted(g, now)).map((g) => g.id));
-    const tallied = tally(picks, gamesById).map((s) => ({
-      ...s,
-      current: gamesById.get(s.gameId).lines?.[s.market]?.[s.side] ?? null,
-    }));
-    const result = buildParlays(tallied, voters, { startedIds, stake });
-    const votes = store.data.votes[win.key] ?? {};
-    for (const opt of result.options) {
-      opt.id = parlayId(opt.legs.map((l) => l.key));
-      opt.votes = (votes[opt.id] ?? []).filter((p) => players.includes(p));
-    }
+    const { win, tallied, result } = await currentParlays();
+    for (const opt of result.options) opt.stakes = stakesFor(win, opt.id);
     res.json({ tallied, book: ODDS_API_KEY ? bookName : null, players, ...result });
   } catch (err) {
     next(err);
   }
 });
 
-// A parlay is identified by its legs, so votes follow the same set of bets
-// even if its name or position on the page changes.
-const parlayId = (keys) => [...keys].sort().join(',');
-
-// Vote yes (or take it back) on a parlay option.
-app.post('/api/vote', async (req, res, next) => {
+// Put money on a parlay (or change/remove it with amount 0). The parlay is
+// saved as it is right now, so it stays on the bet slip even after kickoff or
+// if picks later change.
+app.post('/api/stake', async (req, res, next) => {
   try {
     const name = checkPlayer(req, res);
     if (!name) return;
-    const { win, gamesById } = await loadWeek();
-    const keys = Array.isArray(req.body.legs) ? req.body.legs.map(String) : [];
-    if (keys.length < 2 || !keys.every((k) => gamesById.has(k.split('|')[0]))) {
-      return res.status(400).json({ error: 'Unknown parlay' });
+    const amount = Math.round(Number(req.body.amount || 0) * 100) / 100;
+    if (!Number.isFinite(amount) || amount < 0 || amount > 10000) {
+      return res.status(400).json({ error: 'Enter an amount between $0 and $10,000' });
     }
-    const id = parlayId(keys);
-    const weekVotes = (store.data.votes[win.key] ??= {});
-    const voters = new Set(weekVotes[id] ?? []);
-    if (req.body.vote) voters.add(name);
-    else voters.delete(name);
-    weekVotes[id] = [...voters];
-    if (!voters.size) delete weekVotes[id];
+    const { win, result } = await currentParlays();
+    const weekStakes = (store.data.stakes[win.key] ??= {});
+    const id = String(req.body.id ?? '');
+    const saved = weekStakes[id];
+    const option = result.options.find((o) => o.id === id);
+
+    if (amount > 0) {
+      if (!option) return res.status(409).json({ error: 'That parlay changed. Refresh and try again.' });
+      weekStakes[id] = {
+        id,
+        name: option.name,
+        legs: option.legs.map(({ key, gameId, market, label, matchup, point, price, commence }) =>
+          ({ key, gameId, market, side: key.split('|')[2], label, matchup, point, price, commence })),
+        decimal: option.decimal,
+        american: option.american,
+        stakes: { ...saved?.stakes, [name]: amount },
+      };
+    } else if (saved) {
+      delete saved.stakes[name];
+      if (!Object.keys(saved.stakes).length) delete weekStakes[id];
+    }
     store.save();
-    res.json({ id, votes: weekVotes[id] ?? [] });
+    res.json({ id, stakes: stakesFor(win, id) });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Everything the person placing bets needs: each parlay with money on it,
+// who's in for how much, and whether any line has moved since.
+app.get('/api/slip', async (req, res, next) => {
+  try {
+    const { win, gamesById, result } = await currentParlays();
+    const optionIds = new Set(result.options.map((o) => o.id));
+    const totals = {};
+    const parlays = Object.values(store.data.stakes[win.key] ?? {})
+      .map((p) => {
+        const stakes = stakesFor(win, p.id);
+        const total = Object.values(stakes).reduce((a, b) => a + b, 0);
+        for (const [who, amt] of Object.entries(stakes)) totals[who] = (totals[who] ?? 0) + amt;
+        return {
+          ...p,
+          stakes,
+          total,
+          payout: total * p.decimal,
+          stillOption: optionIds.has(p.id),
+          legs: p.legs.map((l) => ({ ...l, current: gamesById.get(l.gameId)?.lines?.[l.market]?.[l.side] ?? null })),
+        };
+      })
+      .filter((p) => p.total > 0)
+      .sort((a, b) => b.total - a.total);
+    res.json({ book: ODDS_API_KEY ? bookName : null, parlays, totals });
   } catch (err) {
     next(err);
   }
