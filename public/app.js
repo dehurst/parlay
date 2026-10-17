@@ -195,7 +195,7 @@ function renderSubmitBar() {
     const day = copyDay();
     bar.innerHTML = `<span><b>${plural(submittedPicks().length)}</b> in</span>
       <span class="actions">
-        ${day ? `<button type="button" id="copy-picks">Copy ${esc(day.label)} picks</button>` : ''}
+        ${day ? `<button type="button" id="copy-picks">Copy picks</button>` : ''}
         <button type="button" id="edit-picks">Edit picks</button>
       </span>`;
     return;
@@ -230,8 +230,7 @@ function copyDay() {
   const today = new Date().toDateString();
   const upcoming = days.filter((d) => new Date(d) >= new Date(today));
   const day = upcoming[0] ?? days[days.length - 1];
-  const label = day === today ? "today's" : `${new Date(day).toLocaleDateString([], { weekday: 'short' })}`;
-  return { day, label };
+  return { day };
 }
 
 function picksText(day) {
