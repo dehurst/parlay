@@ -114,7 +114,7 @@ export function buildParlays(tallied, voters, { startedIds = new Set(), stake = 
   const size = Math.min(3, consensus.length - 1);
   add(
     'Safest Majority',
-    `The ${size} majority picks most likely to hit, per the odds you entered.`,
+    `The ${size} majority picks most likely to hit, per the lines.`,
     [...consensus].sort((a, b) => b.fairProb - a.fairProb).slice(0, size),
   );
   add(

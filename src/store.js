@@ -13,9 +13,14 @@ export class Store {
     }
     this.data.players ??= [];
     this.data.picks ??= {}; // { weekKey: { player: [{ key, point, price }] } }
-    this.data.schedule ??= {}; // { weekKey: { games, retryAt, demo? } }
-    // Drop data from the old auto-odds version (picks were plain strings then).
+    this.data.schedule ??= {}; // { weekKey: { games, source, retryAt, demo? } }
+    this.data.lines ??= {}; // { weekKey: { byMatchup, fetchedAt, remaining } }
+    // Drop data from older versions: auto-odds picks were plain strings, and
+    // schedules cached before multi-source support used other game IDs.
     delete this.data.odds;
+    for (const [week, sched] of Object.entries(this.data.schedule)) {
+      if (!sched.source) delete this.data.schedule[week];
+    }
     for (const week of Object.values(this.data.picks)) {
       for (const [player, picks] of Object.entries(week)) {
         week[player] = picks.filter((p) => typeof p === 'object');

@@ -1,7 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { americanToDecimal, decimalToAmerican, estFairProb } from '../src/odds-math.js';
-import { demoSchedule, parseScoreboard } from '../src/schedule.js';
+import { demoSchedule, parseScoreboard, makeGame, matchKey } from '../src/schedule.js';
+import { parseLines } from '../src/oddsapi.js';
+import { loadEnvFile } from '../src/env.js';
+import { writeFileSync, mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { tally, buildParlays, priceParlay } from '../src/parlay.js';
 import { weekWindow, weekLabel } from '../src/week.js';
 
@@ -41,15 +46,54 @@ test('parses the ESPN scoreboard shape', () => {
         ],
       }],
     }],
-  });
+  }, '2026-10-13');
   assert.deepEqual(games, [{
-    id: 'espn-401772', commence: '2026-10-18T17:00:00.000Z',
+    id: '2026-10-13-broncos-at-chiefs', commence: '2026-10-18T17:00:00.000Z',
     home: 'Kansas City Chiefs', away: 'Denver Broncos', homeShort: 'Chiefs', awayShort: 'Broncos', state: 'pre',
   }]);
 });
 
+test('the same game gets the same ID from either source', () => {
+  const espn = makeGame({ weekKey: '2026-10-13', home: 'San Francisco 49ers', away: 'Los Angeles Rams', homeShort: '49ers', awayShort: 'Rams', commence: '2026-10-18T20:25Z' });
+  const odds = makeGame({ weekKey: '2026-10-13', home: 'San Francisco 49ers', away: 'Los Angeles Rams', commence: '2026-10-18T20:25:00Z' });
+  assert.equal(espn.id, odds.id);
+  assert.equal(espn.id, '2026-10-13-rams-at-49ers');
+  assert.equal(matchKey('Los Angeles Rams', 'San Francisco 49ers'), matchKey('Rams', '49ers'));
+});
+
+test('parses FanDuel lines from The Odds API', () => {
+  const lines = parseLines([{
+    home_team: 'Kansas City Chiefs', away_team: 'Denver Broncos',
+    bookmakers: [
+      { key: 'draftkings', markets: [{ key: 'h2h', outcomes: [{ name: 'Kansas City Chiefs', price: -999 }] }] },
+      { key: 'fanduel', markets: [
+        { key: 'h2h', outcomes: [{ name: 'Kansas City Chiefs', price: -180 }, { name: 'Denver Broncos', price: 152 }] },
+        { key: 'spreads', outcomes: [{ name: 'Kansas City Chiefs', price: -112, point: -3.5 }, { name: 'Denver Broncos', price: -108, point: 3.5 }] },
+        { key: 'totals', outcomes: [{ name: 'Over', price: -110, point: 44.5 }, { name: 'Under', price: -110, point: 44.5 }] },
+      ] },
+    ],
+  }, { home_team: 'Buffalo Bills', away_team: 'Miami Dolphins', bookmakers: [] }], 'fanduel');
+  assert.deepEqual(Object.keys(lines), ['broncos@chiefs']);
+  assert.deepEqual(lines['broncos@chiefs'], {
+    ml: { home: { point: null, price: -180 }, away: { point: null, price: 152 } },
+    spread: { home: { point: -3.5, price: -112 }, away: { point: 3.5, price: -108 } },
+    total: { over: { point: 44.5, price: -110 }, under: { point: 44.5, price: -110 } },
+  });
+});
+
+test('loads a .env file without overriding real env vars', () => {
+  const file = join(mkdtempSync(join(tmpdir(), 'parlay-')), '.env');
+  writeFileSync(file, '# comment\nPARLAY_T1=abc\nPARLAY_T2 = "quoted"\nPARLAY_T3=from-file\n');
+  process.env.PARLAY_T3 = 'real';
+  loadEnvFile(file);
+  assert.equal(process.env.PARLAY_T1, 'abc');
+  assert.equal(process.env.PARLAY_T2, 'quoted');
+  assert.equal(process.env.PARLAY_T3, 'real');
+  loadEnvFile(join(tmpdir(), 'does-not-exist.env'));
+});
+
 function fixture() {
-  const games = demoSchedule(new Date('2026-09-22T12:00:00Z'));
+  const games = demoSchedule({ key: '2026-09-22', start: new Date('2026-09-22T12:00:00Z') });
   const gamesById = new Map(games.map((g) => [g.id, g]));
   const id = (i) => games[i].id;
   const pick = (i, market, side, point = null, price = -110) => ({ key: `${id(i)}|${market}|${side}`, point, price });

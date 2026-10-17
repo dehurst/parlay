@@ -38,16 +38,25 @@ function notice(msg) {
 
 // ---- Loading -------------------------------------------------------------
 
-async function load() {
+async function load(refresh = false) {
   try {
-    week = await api('/api/week');
+    week = await api(`/api/week${refresh ? '?refresh=1' : ''}`);
   } catch (err) {
     notice(err.message);
     return;
   }
   notice(week.warning);
   $('#week-label').textContent = week.label;
-  $('#schedule-meta').textContent = week.demo ? 'Schedule: demo games' : 'Schedule: ESPN';
+  const time = (t) => new Date(t).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' });
+  $('#schedule-meta').textContent = [
+    `Schedule: ${week.demo ? 'demo games' : week.source}`,
+    week.book && week.linesUpdated && `${week.book} lines updated ${time(week.linesUpdated)}`,
+    week.creditsLeft && `${week.creditsLeft} API credits left`,
+  ].filter(Boolean).join(' · ');
+  $('#refresh').hidden = !week.book;
+  $('#picks-hint').textContent = week.book
+    ? `Tap a bet to take it at ${week.book}'s current line. Tap it again to change the line or remove it. Orange numbers show how many friends took it. Picks lock at kickoff.`
+    : 'Tap a bet you like and type in the line from your sportsbook. Orange numbers show how many friends took it. Picks lock at kickoff.';
 
   if (me && !week.players.includes(me)) me = null;
   if (!me) return showJoin();
@@ -82,6 +91,13 @@ async function join(name) {
 // ---- Pick helpers --------------------------------------------------------
 
 const myPicks = () => week.picks[me] ?? [];
+const gameOf = (key) => week.games.find((g) => g.id === key.split('|')[0]);
+// The sportsbook's current line for one side of a bet, if we have it.
+function bookLine(key) {
+  const [, market, side] = key.split('|');
+  return gameOf(key)?.lines?.[market]?.[side] ?? null;
+}
+const sameLine = (a, b) => a && b && a.point === b.point && a.price === b.price;
 const marketOf = (key) => key.split('|').slice(0, 2).join('|');
 
 // Everyone's entries for one bet: [{ user, point, price }].
@@ -99,11 +115,14 @@ function mostCommon(entries) {
   return [...counts.values()].sort((a, b) => b.n - a.n)[0];
 }
 
-// What to pre-fill when you open a bet: your own entry, else the line friends
-// used, else the mirror of the other side (Bills -3 means Dolphins +3).
+// What to pre-fill when you open a bet: your own entry, else the book's line,
+// else the line friends used, else the mirror of the other side
+// (Bills -3 means Dolphins +3).
 function prefill(key) {
   const mine = myPicks().find((p) => p.key === key);
   if (mine) return mine;
+  const book = bookLine(key);
+  if (book) return book;
   const same = mostCommon(entriesFor(key));
   if (same) return same;
   const [gameId, market, side] = key.split('|');
@@ -135,7 +154,7 @@ function renderGames() {
       const key = `${g.id}|${market}|${side}`;
       const entries = entriesFor(key);
       const pick = mine.get(key);
-      const shown = pick ?? mostCommon(entries);
+      const shown = pick ?? bookLine(key) ?? mostCommon(entries);
       let line = market === 'total' ? (side === 'over' ? 'Over' : 'Under') : market === 'ml' ? 'ML' : 'Spread';
       if (shown && market === 'spread') line = fmtPoint(shown.point);
       if (shown && market === 'total') line = `${side === 'over' ? 'O' : 'U'} ${shown.point}`;
@@ -176,7 +195,12 @@ function editorHtml(g) {
     total: 'Combined points for both teams, like 44.5.',
     ml: `The ${team}' moneyline odds, like -150 or +130.`,
   }[market];
-  const isMine = myPicks().some((p) => p.key === editing.key);
+  const mine = myPicks().find((p) => p.key === editing.key);
+  const isMine = !!mine;
+  const book = bookLine(editing.key);
+  const moved = mine && book && !sameLine(mine, book)
+    ? `${week.book} now has ${market === 'ml' ? '' : `${market === 'spread' ? fmtPoint(book.point) : book.point} `}${fmtOdds(book.price)}. `
+    : '';
   return `<form class="editor" data-key="${esc(editing.key)}">
     <b>${esc(title)}</b>
     <div class="fields">
@@ -187,7 +211,7 @@ function editorHtml(g) {
       ${isMine ? '<button type="button" class="danger" data-act="remove">Remove</button>' : ''}
       <button type="button" data-act="cancel">Cancel</button>
     </div>
-    <p class="hint">${esc(hint)}${market === 'ml' ? '' : ' Odds default to -110.'}</p>
+    <p class="hint">${moved ? `<b class="lines">${esc(moved)}</b>` : ''}${esc(hint)}${market === 'ml' ? '' : ' Odds default to -110.'}</p>
     ${editing.error ? `<p class="err">${esc(editing.error)}</p>` : ''}
   </form>`;
 }
@@ -212,6 +236,13 @@ function submitEditor(form) {
   savePicks([...others, { key, point, price }]);
 }
 
+// Note when the book's line has moved off the one the group took.
+function lineMoved(s, book) {
+  if (!s.current || sameLine(s.current, s)) return '';
+  const pt = s.market === 'ml' ? '' : `${s.market === 'spread' ? fmtPoint(s.current.point) : s.current.point} `;
+  return `<div class="lines">Line moved: ${esc(book)} now ${pt}${fmtOdds(s.current.price)}</div>`;
+}
+
 async function renderBoard() {
   $('#board').innerHTML = '<p class="muted">Loading…</p>';
   const data = await api('/api/parlays').catch((err) => (notice(err.message), null));
@@ -232,6 +263,7 @@ async function renderBoard() {
       <div style="flex:1">
         <div><b>${esc(s.label)}</b> <span class="muted">${fmtOdds(s.price)}</span></div>
         <div class="small muted">${esc(s.matchup)} · ${s.pickers.map(esc).join(', ')}</div>
+        ${lineMoved(s, data.book)}
         ${s.lines.length > 1 ? `<div class="lines">Different lines entered: ${s.lines.map((l) =>
           `${l.point === null ? '' : `${s.market === 'spread' ? fmtPoint(l.point) : l.point} `}${fmtOdds(l.price)} (${l.users.map(esc).join(', ')})`).join(' · ')}</div>` : ''}
         <div class="bar"><span style="width:${(s.pickers.length / data.voters) * 100}%"></span></div>
@@ -267,11 +299,11 @@ async function renderParlays() {
         <div><h3>${esc(p.name)}</h3><div class="small muted">${esc(p.blurb)}</div></div>
         <div class="odds">${fmtOdds(p.american)}</div>
       </div>
-      <ul>${p.legs.map((l) => `<li><b>${esc(l.label)}</b> <span class="muted">${fmtOdds(l.price)} · ${esc(l.matchup)} · ${l.pickers.length}/${data.voters} picked</span></li>`).join('')}</ul>
+      <ul>${p.legs.map((l) => `<li><b>${esc(l.label)}</b> <span class="muted">${fmtOdds(l.price)} · ${esc(l.matchup)} · ${l.pickers.length}/${data.voters} picked</span>${lineMoved(l, data.book)}</li>`).join('')}</ul>
       <div class="stats">
         <span>${money(p.stake)} pays <b>${money(p.payout)}</b></span>
         <span>Hit chance ~<b>${pct(p.hitProb)}</b></span>
-        <span class="${p.ev < 0 ? 'ev-bad' : ''}">Expected return ~${p.ev >= 0 ? '+' : ''}${(p.ev * 100).toFixed(1)}%</span>
+        <span class="${p.ev < 0 ? 'ev-bad' : ''}">Est. return ${p.ev >= 0 ? '+' : ''}${(p.ev * 100).toFixed(1)}%</span>
       </div>
     </div>`).join('');
 
@@ -282,7 +314,7 @@ async function renderParlays() {
     </div>`;
   }
 
-  html += `<p class="small muted">Payouts use the odds you typed in, so double-check them against your sportsbook.
+  html += `<p class="small muted">Payouts use the lines your group took${data.book ? `, which can drift from ${esc(data.book)}'s current lines` : ''}, so double-check them in your sportsbook before you bet.
     Hit chance is a rough estimate that removes a typical book margin. A negative expected return is the house edge,
     and parlays stack it on every leg.</p>`;
   $('#parlays').innerHTML = html;
@@ -293,7 +325,17 @@ async function renderParlays() {
 $('#games').addEventListener('click', (e) => {
   const btn = e.target.closest('.pick');
   if (btn && !btn.disabled) {
-    editing = editing?.key === btn.dataset.key ? null : { key: btn.dataset.key };
+    const key = btn.dataset.key;
+    const book = bookLine(key);
+    const isMine = myPicks().some((p) => p.key === key);
+    if (!isMine && book && editing?.key !== key) {
+      // One tap takes the bet at the book's current line.
+      editing = { key };
+      const others = myPicks().filter((p) => marketOf(p.key) !== marketOf(key));
+      savePicks([...others, { key, point: book.point, price: book.price }]);
+      return;
+    }
+    editing = editing?.key === key ? null : { key };
     renderGames();
     return;
   }
@@ -329,5 +371,6 @@ $('#code-save').addEventListener('click', () => {
   load();
 });
 $('#stake').addEventListener('change', renderParlays);
+$('#refresh').addEventListener('click', () => load(true));
 
 load();

@@ -1,21 +1,33 @@
 import express from 'express';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { loadEnvFile } from './src/env.js';
 import { Store } from './src/store.js';
 import { weekWindow, weekLabel } from './src/week.js';
-import { fetchSchedule, demoSchedule, hasStarted } from './src/schedule.js';
+import { fetchEspnSchedule, demoSchedule, hasStarted, matchKey } from './src/schedule.js';
+import { fetchOddsApiSchedule, fetchBookLines } from './src/oddsapi.js';
 import { tally, buildParlays, MARKETS } from './src/parlay.js';
 import { validPrice } from './src/odds-math.js';
 
 const root = dirname(fileURLToPath(import.meta.url));
+loadEnvFile(join(root, '.env'));
 const {
+  ODDS_API_KEY = '',
+  BOOKMAKER = 'fanduel',
+  ODDS_CACHE_HOURS = '6',
   GROUP_CODE = '',
   PORT = '3000',
   DATA_FILE = join(root, 'data', 'db.json'),
 } = process.env;
 
-const SCHEDULE_TTL = 30 * 60e3; // re-check ESPN every 30 min (kickoff times, game status)
+const SCHEDULE_TTL = 30 * 60e3; // re-check the schedule every 30 min (it's free)
 const RETRY_AFTER_ERROR = 5 * 60e3;
+const LINES_TTL = Number(ODDS_CACHE_HOURS) * 3600e3;
+const MANUAL_REFRESH_GAP = 15 * 60e3; // protects API credits from refresh-button mashing
+const BOOK_NAMES = { fanduel: 'FanDuel', draftkings: 'DraftKings', betmgm: 'BetMGM', williamhill_us: 'Caesars' };
+const bookName = BOOK_NAMES[BOOKMAKER] ?? BOOKMAKER;
+
+const describe = (err) => `${err.message}${err.cause?.code ? ` (${err.cause.code})` : ''}`;
 
 const store = new Store(DATA_FILE);
 const app = express();
@@ -28,46 +40,91 @@ app.use('/api', (req, res, next) => {
   res.status(401).json({ error: 'Wrong or missing group code' });
 });
 
-// This week's games, refreshed from ESPN every SCHEDULE_TTL.
-// Falls back to the last good copy, then to a demo slate.
-async function loadWeek() {
-  const win = weekWindow();
-  const cached = store.data.schedule[win.key];
-  let warning = null;
-
-  if (!cached || Date.now() >= cached.retryAt) {
+// Schedule sources in order of preference. The Odds API's event list is free.
+async function fetchSchedule(win, problems) {
+  if (ODDS_API_KEY) {
     try {
-      const games = await fetchSchedule(win);
-      store.data.schedule[win.key] = { games, retryAt: Date.now() + SCHEDULE_TTL };
+      return { games: await fetchOddsApiSchedule(ODDS_API_KEY, win), source: 'The Odds API' };
     } catch (err) {
-      if (cached && !cached.demo) {
-        cached.retryAt = Date.now() + RETRY_AFTER_ERROR;
-        warning = `Couldn't reach ESPN for schedule updates (${err.message}).`;
-      } else {
-        store.data.schedule[win.key] = { games: demoSchedule(win.start), demo: true, retryAt: Date.now() + RETRY_AFTER_ERROR };
-      }
+      problems.push(`The Odds API schedule failed: ${describe(err)}`);
     }
+  }
+  try {
+    return { games: await fetchEspnSchedule(win), source: 'ESPN' };
+  } catch (err) {
+    problems.push(`ESPN schedule failed: ${describe(err)}`);
+  }
+  return null;
+}
+
+// This week's games plus the book's current lines. Falls back to the last
+// good schedule, then to a demo slate.
+async function loadWeek({ refreshLines = false } = {}) {
+  const win = weekWindow();
+  const problems = [];
+
+  const cached = store.data.schedule[win.key];
+  if (!cached || Date.now() >= cached.retryAt) {
+    const fresh = await fetchSchedule(win, problems);
+    if (fresh) {
+      // Finished games can drop out of a feed; keep the ones we already had.
+      const ids = new Set(fresh.games.map((g) => g.id));
+      const gone = (cached?.demo ? [] : cached?.games ?? []).filter((g) => !ids.has(g.id) && hasStarted(g));
+      const games = [...fresh.games, ...gone].sort((a, b) => a.commence.localeCompare(b.commence));
+      store.data.schedule[win.key] = { ...fresh, games, retryAt: Date.now() + SCHEDULE_TTL };
+    } else if (cached && !cached.demo) {
+      cached.retryAt = Date.now() + RETRY_AFTER_ERROR;
+    } else {
+      store.data.schedule[win.key] = { games: demoSchedule(win), source: 'demo', demo: true, retryAt: Date.now() + RETRY_AFTER_ERROR };
+    }
+    for (const p of problems) console.error(p);
     store.save();
   }
-  if (store.data.schedule[win.key].demo) {
-    warning = "Couldn't load the NFL schedule from ESPN, so these are demo games. It retries every few minutes.";
+  const schedule = store.data.schedule[win.key];
+
+  let lines = store.data.lines[win.key];
+  if (ODDS_API_KEY && !schedule.demo) {
+    const age = lines ? Date.now() - lines.fetchedAt : Infinity;
+    if (age > LINES_TTL || (refreshLines && age > MANUAL_REFRESH_GAP)) {
+      try {
+        const fresh = await fetchBookLines(ODDS_API_KEY, BOOKMAKER, win);
+        // Merge so games that already kicked off keep their last line.
+        lines = { ...fresh, byMatchup: { ...lines?.byMatchup, ...fresh.byMatchup }, fetchedAt: Date.now() };
+        store.data.lines[win.key] = lines;
+        store.save();
+      } catch (err) {
+        console.error(`${bookName} lines failed: ${describe(err)}`);
+        problems.push(`Couldn't get ${bookName} lines: ${describe(err)}`);
+      }
+    }
   }
 
-  const { games, demo = false } = store.data.schedule[win.key];
+  // Attach the book's line to each game. Games that kicked off drop out of the
+  // odds feed, so keep whatever lines we last saw for them.
+  const games = schedule.games.map((g) => ({ ...g, lines: lines?.byMatchup[matchKey(g.away, g.home)] ?? null }));
   const gamesById = new Map(games.map((g) => [g.id, g]));
-  return { win, games, gamesById, demo, warning };
+
+  let warning = problems.join(' ') || null;
+  if (schedule.demo) {
+    warning = `Couldn't load the NFL schedule, so these are demo games. It retries every few minutes. ${warning ?? ''}`.trim();
+  }
+  return { win, games, gamesById, schedule, lines, warning };
 }
 
 const cleanName = (n) => String(n ?? '').trim().replace(/\s+/g, ' ').slice(0, 30);
 
 app.get('/api/week', async (req, res, next) => {
   try {
-    const { win, games, demo, warning } = await loadWeek();
+    const { win, games, schedule, lines, warning } = await loadWeek({ refreshLines: req.query.refresh === '1' });
     const now = new Date();
     res.json({
       key: win.key,
       label: weekLabel(win),
-      demo,
+      demo: !!schedule.demo,
+      source: schedule.source,
+      book: ODDS_API_KEY ? bookName : null,
+      linesUpdated: lines?.fetchedAt ?? null,
+      creditsLeft: lines?.remaining ?? null,
       warning,
       games: games.map((g) => ({ ...g, started: hasStarted(g, now) })),
       players: store.data.players,
@@ -156,8 +213,11 @@ app.get('/api/parlays', async (req, res, next) => {
     const stake = Math.max(1, Number(req.query.stake) || 10);
     const now = new Date();
     const startedIds = new Set(games.filter((g) => hasStarted(g, now)).map((g) => g.id));
-    const tallied = tally(picks, gamesById);
-    res.json({ tallied, ...buildParlays(tallied, voters, { startedIds, stake }) });
+    const tallied = tally(picks, gamesById).map((s) => ({
+      ...s,
+      current: gamesById.get(s.gameId).lines?.[s.market]?.[s.side] ?? null,
+    }));
+    res.json({ tallied, book: ODDS_API_KEY ? bookName : null, ...buildParlays(tallied, voters, { startedIds, stake }) });
   } catch (err) {
     next(err);
   }
@@ -170,4 +230,5 @@ app.use((err, req, res, _next) => {
 
 app.listen(Number(PORT), () => {
   console.log(`Parlay Party on http://localhost:${PORT}`);
+  console.log(ODDS_API_KEY ? `Using ${bookName} lines from The Odds API.` : 'No ODDS_API_KEY: schedule from ESPN, lines typed in by hand.');
 });

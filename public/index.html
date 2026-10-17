@@ -40,7 +40,7 @@
 
   <main>
     <section id="tab-picks" class="tab">
-      <p class="muted small">Tap a bet you like and type in the line from your sportsbook. Orange numbers show how many friends took it. Picks lock at kickoff.</p>
+      <p id="picks-hint" class="muted small"></p>
       <div id="games"></div>
     </section>
 
@@ -59,6 +59,7 @@
 
   <footer class="muted small">
     <span id="schedule-meta"></span>
+    <button id="refresh" class="link" type="button" hidden>Refresh lines</button>
   </footer>
 
   <script src="app.js" type="module"></script>

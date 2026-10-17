@@ -1,17 +1,38 @@
-// NFL schedule from ESPN's public scoreboard feed (no API key needed).
+// Games come from The Odds API (when there's a key) or ESPN's public
+// scoreboard, so IDs are built from the week and teams rather than either
+// source's own IDs. That way picks survive switching between sources.
 const ESPN = 'https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard';
 const DAY = 24 * 60 * 60 * 1000;
 
-const ymd = (d) => d.toISOString().slice(0, 10).replaceAll('-', '');
+export const nickname = (name) => name.trim().split(/\s+/).pop();
+const slug = (s) => s.toLowerCase().replace(/[^a-z0-9]+/g, '');
 
-export async function fetchSchedule({ start, end }) {
-  const dates = `${ymd(start)}-${ymd(new Date(end.getTime() - DAY))}`;
-  const res = await fetch(`${ESPN}?dates=${dates}&limit=100`, { signal: AbortSignal.timeout(8000) });
-  if (!res.ok) throw new Error(`ESPN ${res.status}`);
-  return parseScoreboard(await res.json());
+// Matches the same game across sources ("Denver Broncos" vs "Broncos").
+export const matchKey = (away, home) => `${slug(nickname(away))}@${slug(nickname(home))}`;
+
+export function makeGame({ weekKey, home, away, commence, state = 'pre', homeShort, awayShort }) {
+  return {
+    id: `${weekKey}-${slug(nickname(away))}-at-${slug(nickname(home))}`,
+    commence: new Date(commence).toISOString(),
+    home,
+    away,
+    homeShort: homeShort ?? nickname(home),
+    awayShort: awayShort ?? nickname(away),
+    // 'pre' until kickoff, then 'in' / 'post' (only ESPN reports this).
+    state,
+  };
 }
 
-export function parseScoreboard(data) {
+const ymd = (d) => d.toISOString().slice(0, 10).replaceAll('-', '');
+
+export async function fetchEspnSchedule({ key, start, end }) {
+  const dates = `${ymd(start)}-${ymd(new Date(end.getTime() - DAY))}`;
+  const res = await fetch(`${ESPN}?dates=${dates}&limit=100`, { signal: AbortSignal.timeout(8000) });
+  if (!res.ok) throw new Error(`ESPN returned ${res.status}`);
+  return parseScoreboard(await res.json(), key);
+}
+
+export function parseScoreboard(data, weekKey) {
   return (data.events ?? [])
     .map((ev) => {
       const comp = ev.competitions?.[0];
@@ -19,23 +40,22 @@ export function parseScoreboard(data) {
       const home = team('home');
       const away = team('away');
       if (!home || !away) return null;
-      return {
-        id: `espn-${ev.id}`,
-        commence: new Date(ev.date).toISOString(),
+      return makeGame({
+        weekKey,
+        commence: ev.date,
         home: home.displayName,
         away: away.displayName,
-        homeShort: home.shortDisplayName ?? home.displayName,
-        awayShort: away.shortDisplayName ?? away.displayName,
-        // 'pre' until kickoff, then 'in' / 'post'.
+        homeShort: home.shortDisplayName,
+        awayShort: away.shortDisplayName,
         state: comp.status?.type?.state ?? ev.status?.type?.state ?? 'pre',
-      };
+      });
     })
     .filter(Boolean)
     .sort((a, b) => a.commence.localeCompare(b.commence));
 }
 
-// Made-up slate for when ESPN can't be reached, spread across the given week.
-export function demoSchedule(start) {
+// Made-up slate for when no source can be reached, spread across the given week.
+export function demoSchedule({ key, start }) {
   const matchups = [
     ['Buffalo Bills', 'Miami Dolphins', 'thu'],
     ['Kansas City Chiefs', 'Denver Broncos', 'sun1'],
@@ -54,16 +74,8 @@ export function demoSchedule(start) {
   // Offsets from Tuesday 12:00 UTC to typical ET kickoffs (EDT, UTC-4).
   const at = (day, h, m) => ((day * 24 + h) * 60 + m) * 60 * 1000;
   const slot = { thu: at(2, 12, 15), sun1: at(5, 5, 0), sun4: at(5, 8, 25), snf: at(5, 12, 20), mnf: at(6, 12, 15) };
-  const nick = (name) => name.split(' ').pop();
-  return matchups.map(([home, away, s], i) => ({
-    id: `demo-${start.toISOString().slice(0, 10)}-${i}`,
-    commence: new Date(start.getTime() + slot[s]).toISOString(),
-    home,
-    away,
-    homeShort: nick(home),
-    awayShort: nick(away),
-    state: 'pre',
-  }));
+  return matchups.map(([home, away, s]) =>
+    makeGame({ weekKey: `demo-${key}`, home, away, commence: start.getTime() + slot[s] }));
 }
 
 export const hasStarted = (game, now = new Date()) =>
