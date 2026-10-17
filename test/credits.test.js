@@ -1,34 +1,34 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { creditPause, easternTime } from '../src/credits.js';
+import { canSpend, spend, refreshesLeftToday, creditsUsedToday, easternDate, LINES_COST } from '../src/credits.js';
 
-const win = { key: '2026-10-13', start: new Date('2026-10-13T12:00:00Z') };
-const games = [
-  { commence: '2026-10-16T00:15:00Z' }, // Thursday night
-  { commence: '2026-10-18T17:00:00Z' }, // Sunday
-  { commence: '2026-10-20T00:15:00Z' }, // Monday night (8:15 PM ET)
-];
-const at = (iso) => creditPause(win, games, new Date(iso));
-
-test('Eastern wall-clock times handle daylight saving', () => {
-  assert.equal(easternTime(2026, 9, 14, 19).toISOString(), '2026-10-14T23:00:00.000Z'); // EDT
-  assert.equal(easternTime(2026, 10, 11, 19).toISOString(), '2026-11-12T00:00:00.000Z'); // EST
+test('the credit day runs midnight to midnight Eastern', () => {
+  assert.equal(easternDate(new Date('2026-10-18T03:59:00Z')), '2026-10-17'); // 11:59 PM EDT Saturday
+  assert.equal(easternDate(new Date('2026-10-18T04:00:00Z')), '2026-10-18'); // midnight EDT Sunday
+  assert.equal(easternDate(new Date('2026-11-15T04:30:00Z')), '2026-11-14'); // 11:30 PM EST
 });
 
-test('paid calls pause from Tuesday morning until Wednesday 7 PM Eastern', () => {
-  assert.deepEqual(at('2026-10-13T15:00:00Z'), { paused: true, until: new Date('2026-10-14T23:00:00Z') });
-  assert.equal(at('2026-10-14T22:59:00Z').paused, true);
-  assert.equal(at('2026-10-14T23:00:00Z').paused, false);
-  assert.equal(at('2026-10-18T16:00:00Z').paused, false); // Sunday morning
+test('16 credits a day allows 5 line refreshes', () => {
+  const data = {};
+  const now = new Date('2026-10-18T15:00:00Z');
+  let refreshes = 0;
+  while (canSpend(data, LINES_COST, 16, now)) {
+    spend(data, LINES_COST, now);
+    refreshes++;
+  }
+  assert.equal(refreshes, 5);
+  assert.equal(creditsUsedToday(data, now), 15);
+  assert.equal(refreshesLeftToday(data, 16, now), 0);
+  assert.equal(canSpend(data, 2, 16, now), false); // the 2-credit scores backup doesn't fit either
+  assert.equal(canSpend(data, 1, 16, now), true);
 });
 
-test('paid calls pause again once the last game of the week kicks off', () => {
-  assert.equal(at('2026-10-20T00:14:00Z').paused, false);
-  assert.deepEqual(at('2026-10-20T00:15:00Z'), { paused: true, until: new Date('2026-10-21T23:00:00Z') });
-});
-
-test('the Wednesday resume time follows standard time in November', () => {
-  const nov = { key: '2026-11-10', start: new Date('2026-11-10T12:00:00Z') };
-  assert.deepEqual(creditPause(nov, [], new Date('2026-11-11T23:30:00Z')), { paused: true, until: new Date('2026-11-12T00:00:00Z') });
-  assert.equal(creditPause(nov, [], new Date('2026-11-12T00:00:00Z')).paused, false);
+test('the budget resets the next Eastern day and old days are forgotten', () => {
+  const data = {};
+  spend(data, 15, new Date('2026-10-10T15:00:00Z'));
+  spend(data, 15, new Date('2026-10-18T03:00:00Z')); // Saturday night Eastern
+  const sunday = new Date('2026-10-18T13:00:00Z');
+  assert.equal(refreshesLeftToday(data, 16, sunday), 5);
+  spend(data, 3, sunday);
+  assert.deepEqual(Object.keys(data.creditsUsed).sort(), ['2026-10-17', '2026-10-18']);
 });

@@ -14,6 +14,7 @@ export function normalize(data) {
   data.stakes ??= {};
   data.results ??= {}; // final scores: { weekKey: { gameId: { homeScore, awayScore } } }
   data.scoresCheckedAt ??= {}; // { weekKey: ms }
+  data.creditsUsed ??= {}; // paid Odds API credits: { 'YYYY-MM-DD' (Eastern): n }
 
   delete data.players; // players are configured now (PLAYERS)
   delete data.votes; // replaced by stakes

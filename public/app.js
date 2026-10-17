@@ -54,7 +54,8 @@ async function load(refresh = false) {
   $('#schedule-meta').textContent = [
     `Schedule: ${week.demo ? 'demo games' : week.source}`,
     week.book && week.linesUpdated && `${week.book} lines updated ${time(week.linesUpdated)}`,
-    week.creditsLeft && `${week.creditsLeft} API credits left`,
+    week.refreshesLeft != null && `${week.refreshesLeft} of ${week.refreshesPerDay} refreshes left today`,
+    week.creditsLeft && `${week.creditsLeft} API credits left this month`,
   ].filter(Boolean).join(' · ');
   $('#refresh').hidden = !week.book;
 
@@ -137,8 +138,6 @@ function renderGames() {
     : isEditing()
       ? 'Editing your picks. Your submitted picks still count until you resubmit. Picks you keep stay at the line you got.'
       : `Tap a bet to select it at ${week.book ?? 'the sportsbook'}'s line, tap again to remove it. Hit Submit when you're done.`;
-  // New week before lines arrive: say when they will.
-  if (week.linesPausedUntil && !week.games.some((g) => g.lines)) $('#picks-hint').textContent = pausedText();
 
   if (!week.games.length) {
     $('#games').innerHTML = '<div class="card muted">No games on the schedule this week.</div>';
@@ -611,18 +610,16 @@ $('#who').addEventListener('click', (e) => {
   }
   if (e.target.closest('#clear-picks')) clearPicks();
 });
-const pausedText = () => {
-  const until = new Date(week.linesPausedUntil).toLocaleString([], { weekday: 'long', hour: 'numeric', minute: '2-digit' });
-  return `${week.book} lines are paused to save API credits. They update again ${until}.`;
-};
+const limitText = () =>
+  `You've used today's ${week.refreshesPerDay} line refreshes (that keeps you under the free 500 API credits a month). Showing lines from ${new Date(week.linesUpdated).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}. Refreshes reset at midnight Eastern.`;
 
 $('#refresh').addEventListener('click', async () => {
   const btn = $('#refresh');
-  if (week?.linesPausedUntil) return notice(pausedText());
+  if (week?.refreshesLeft === 0) return notice(limitText());
   const wait = (week?.nextRefreshAt ?? 0) - Date.now();
   if (wait > 0) {
     const ago = Math.max(1, Math.round((Date.now() - week.linesUpdated) / 60e3));
-    notice(`Lines were updated ${ago} min ago. To save API credits you can refresh again in ${Math.ceil(wait / 60e3)} min.`);
+    notice(`Lines were just updated ${ago} min ago. You can refresh again in ${Math.ceil(wait / 60e3)} min.`);
     return;
   }
   btn.disabled = true;
@@ -630,6 +627,7 @@ $('#refresh').addEventListener('click', async () => {
   await load(true);
   btn.disabled = false;
   btn.textContent = '↻ Refresh lines';
+  if (week?.limitHit) notice(limitText());
 });
 
 load();
