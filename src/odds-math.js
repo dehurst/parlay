@@ -17,7 +17,3 @@ export function impliedProb(american) {
 export function estFairProb(american) {
   return Math.min(0.99, impliedProb(american) / 1.045);
 }
-
-export function validPrice(price) {
-  return Number.isInteger(price) && Math.abs(price) >= 100 && Math.abs(price) <= 100000;
-}

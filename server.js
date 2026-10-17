@@ -7,7 +7,6 @@ import { weekWindow, weekLabel } from './src/week.js';
 import { fetchEspnSchedule, demoSchedule, hasStarted, matchKey } from './src/schedule.js';
 import { fetchOddsApiSchedule, fetchBookLines } from './src/oddsapi.js';
 import { tally, buildParlays, MARKETS } from './src/parlay.js';
-import { validPrice } from './src/odds-math.js';
 
 const root = dirname(fileURLToPath(import.meta.url));
 loadEnvFile(join(root, '.env'));
@@ -15,6 +14,7 @@ const {
   ODDS_API_KEY = '',
   BOOKMAKER = 'fanduel',
   ODDS_CACHE_HOURS = '6',
+  PLAYERS = 'Daniel,Asher,Matt',
   GROUP_CODE = '',
   PORT = '3000',
   DATA_FILE = join(root, 'data', 'db.json'),
@@ -26,6 +26,8 @@ const LINES_TTL = Number(ODDS_CACHE_HOURS) * 3600e3;
 const MANUAL_REFRESH_GAP = 15 * 60e3; // protects API credits from refresh-button mashing
 const BOOK_NAMES = { fanduel: 'FanDuel', draftkings: 'DraftKings', betmgm: 'BetMGM', williamhill_us: 'Caesars' };
 const bookName = BOOK_NAMES[BOOKMAKER] ?? BOOKMAKER;
+
+const players = PLAYERS.split(',').map((p) => p.trim()).filter(Boolean);
 
 const describe = (err) => `${err.message}${err.cause?.code ? ` (${err.cause.code})` : ''}`;
 
@@ -111,12 +113,17 @@ async function loadWeek({ refreshLines = false } = {}) {
   return { win, games, gamesById, schedule, lines, warning };
 }
 
-const cleanName = (n) => String(n ?? '').trim().replace(/\s+/g, ' ').slice(0, 30);
+// Submitted picks only count for the configured players (older data may have others).
+function submitted(win) {
+  const all = store.data.picks[win.key] ?? {};
+  return Object.fromEntries(players.filter((p) => all[p]?.length).map((p) => [p, all[p]]));
+}
 
 app.get('/api/week', async (req, res, next) => {
   try {
     const { win, games, schedule, lines, warning } = await loadWeek({ refreshLines: req.query.refresh === '1' });
     const now = new Date();
+    const me = players.includes(req.query.me) ? req.query.me : null;
     res.json({
       key: win.key,
       label: weekLabel(win),
@@ -127,79 +134,78 @@ app.get('/api/week', async (req, res, next) => {
       creditsLeft: lines?.remaining ?? null,
       warning,
       games: games.map((g) => ({ ...g, started: hasStarted(g, now) })),
-      players: store.data.players,
-      picks: store.data.picks[win.key] ?? {},
+      players,
+      picks: submitted(win),
+      // Your own unsubmitted selections; nobody else sees these.
+      draft: me ? store.data.drafts[win.key]?.[me] ?? [] : [],
     });
   } catch (err) {
     next(err);
   }
 });
 
-app.post('/api/players', (req, res) => {
-  const name = cleanName(req.body.name);
-  if (!name) return res.status(400).json({ error: 'Name required' });
-  const existing = store.data.players.find((p) => p.toLowerCase() === name.toLowerCase());
-  if (!existing) {
-    store.data.players.push(name);
-    store.save();
-  }
-  res.json({ name: existing ?? name, players: store.data.players });
-});
-
-// Check one typed-in pick. Returns a clean { key, point, price } or an error string.
-function parsePick(raw, gamesById) {
-  const [gameId, market, side] = String(raw?.key ?? '').split('|');
+// Which bets can still be picked: real game, not started, and the book has a line.
+function pickable(key, gamesById, now = new Date()) {
+  const [gameId, market, side] = String(key).split('|');
   const game = gamesById.get(gameId);
-  if (!game || !MARKETS[market]?.includes(side)) return { error: 'Unknown game or bet' };
-
-  const price = raw.price === '' || raw.price == null ? (market === 'ml' ? null : -110) : Number(raw.price);
-  if (price === null) return { error: 'Moneyline picks need odds, like -150 or +130' };
-  if (!validPrice(price)) return { error: 'Odds should look like -110 or +150' };
-
-  let point = null;
-  if (market !== 'ml') {
-    point = Number(raw.point);
-    if (raw.point === '' || raw.point == null || !Number.isFinite(point)) {
-      return { error: market === 'total' ? 'Enter the total, like 44.5' : 'Enter the spread, like -3.5' };
-    }
-    if (market === 'total' && (point <= 0 || point > 120)) return { error: 'Totals should be between 0 and 120' };
-    if (market === 'spread' && Math.abs(point) > 50) return { error: 'Spreads should be between -50 and +50' };
-    if (Math.round(point * 2) !== point * 2) return { error: 'Lines go in half-point steps' };
-  }
-  return { pick: { key: `${gameId}|${market}|${side}`, point, price }, game };
+  const line = game?.lines?.[market]?.[side];
+  return MARKETS[market]?.includes(side) && line && !hasStarted(game, now) ? line : null;
 }
 
-// Replace a player's picks for the week. Picks on games that already
-// kicked off can't be added, changed, or removed.
-app.put('/api/picks', async (req, res, next) => {
+function checkPlayer(req, res) {
+  const name = req.body?.name;
+  if (!players.includes(name)) {
+    res.status(400).json({ error: 'Pick your name first' });
+    return null;
+  }
+  return name;
+}
+
+// Save your unsubmitted selections (just the bet keys; lines are set on submit).
+app.put('/api/draft', async (req, res, next) => {
   try {
-    const name = cleanName(req.body.name);
-    if (!store.data.players.includes(name)) return res.status(400).json({ error: 'Unknown player' });
+    const name = checkPlayer(req, res);
+    if (!name) return;
     const { win, gamesById } = await loadWeek();
-    const now = new Date();
-    const started = (key) => {
-      const game = gamesById.get(key.split('|')[0]);
-      return !game || hasStarted(game, now);
-    };
-
-    const weekPicks = (store.data.picks[win.key] ??= {});
-    const locked = (weekPicks[name] ?? []).filter((p) => started(p.key));
-
-    const fresh = [];
-    for (const raw of req.body.picks ?? []) {
-      if (started(String(raw?.key ?? ''))) continue;
-      const { pick, error } = parsePick(raw, gamesById);
-      if (error) return res.status(400).json({ error });
-      fresh.push(pick);
+    if (store.data.picks[win.key]?.[name]?.length) {
+      return res.status(409).json({ error: "You've already submitted this week's picks." });
     }
-
+    const keys = [...new Set(req.body.keys ?? [])].filter((k) => pickable(k, gamesById));
     // One side per bet per game (can't take both Over and Under); last one wins.
-    const byMarket = new Map();
-    for (const p of [...locked, ...fresh]) byMarket.set(p.key.split('|').slice(0, 2).join('|'), p);
-    weekPicks[name] = [...byMarket.values()];
-    if (!weekPicks[name].length) delete weekPicks[name];
+    const byMarket = new Map(keys.map((k) => [k.split('|').slice(0, 2).join('|'), k]));
+    const drafts = (store.data.drafts[win.key] ??= {});
+    drafts[name] = [...byMarket.values()];
     store.save();
-    res.json({ picks: weekPicks });
+    res.json({ draft: drafts[name] });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Lock in your picks at the book's current lines. No changes after this.
+app.post('/api/submit', async (req, res, next) => {
+  try {
+    const name = checkPlayer(req, res);
+    if (!name) return;
+    const { win, gamesById } = await loadWeek();
+    const weekPicks = (store.data.picks[win.key] ??= {});
+    if (weekPicks[name]?.length) return res.status(409).json({ error: "You've already submitted this week's picks." });
+
+    const draft = store.data.drafts[win.key]?.[name] ?? [];
+    const picks = [];
+    const dropped = [];
+    for (const key of draft) {
+      const line = pickable(key, gamesById);
+      if (line) picks.push({ key, point: line.point, price: line.price });
+      else dropped.push(key);
+    }
+    if (!picks.length) {
+      return res.status(400).json({ error: dropped.length ? 'Those games already started.' : 'Pick at least one bet first.' });
+    }
+    weekPicks[name] = picks;
+    delete store.data.drafts[win.key][name];
+    store.save();
+    res.json({ picks: submitted(win), dropped: dropped.length });
   } catch (err) {
     next(err);
   }
@@ -208,7 +214,7 @@ app.put('/api/picks', async (req, res, next) => {
 app.get('/api/parlays', async (req, res, next) => {
   try {
     const { win, games, gamesById } = await loadWeek();
-    const picks = store.data.picks[win.key] ?? {};
+    const picks = submitted(win);
     const voters = Object.keys(picks).length;
     const stake = Math.max(1, Number(req.query.stake) || 10);
     const now = new Date();
@@ -230,5 +236,8 @@ app.use((err, req, res, _next) => {
 
 app.listen(Number(PORT), () => {
   console.log(`Parlay Party on http://localhost:${PORT}`);
-  console.log(ODDS_API_KEY ? `Using ${bookName} lines from The Odds API.` : 'No ODDS_API_KEY: schedule from ESPN, lines typed in by hand.');
+  console.log(`Players: ${players.join(', ')}`);
+  console.log(ODDS_API_KEY
+    ? `Using ${bookName} lines from The Odds API.`
+    : 'No ODDS_API_KEY set: picks need sportsbook lines, so add a key to .env (see README).');
 });

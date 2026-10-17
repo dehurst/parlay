@@ -22,8 +22,8 @@ function mode(values) {
 }
 
 // picksByUser: { name: [{ key, point, price }] } where key = "gameId|market|side".
-// Groups everyone's picks of the same side of the same bet, even if they typed
-// slightly different lines, and settles on the line most of them entered.
+// Groups everyone's picks of the same side of the same bet, even if they got
+// slightly different lines, and settles on the most common one.
 export function tally(picksByUser, gamesById) {
   const groups = new Map();
   for (const [user, entries] of Object.entries(picksByUser)) {

@@ -11,10 +11,12 @@ export class Store {
     } catch {
       this.data = {};
     }
-    this.data.players ??= [];
-    this.data.picks ??= {}; // { weekKey: { player: [{ key, point, price }] } }
+    this.data.picks ??= {}; // submitted: { weekKey: { player: [{ key, point, price }] } }
+    this.data.drafts ??= {}; // unsubmitted: { weekKey: { player: [key] } }
     this.data.schedule ??= {}; // { weekKey: { games, source, retryAt, demo? } }
     this.data.lines ??= {}; // { weekKey: { byMatchup, fetchedAt, remaining } }
+    // Players are configured now (PLAYERS), not stored.
+    delete this.data.players;
     // Drop data from older versions: auto-odds picks were plain strings, and
     // schedules cached before multi-source support used other game IDs.
     delete this.data.odds;
