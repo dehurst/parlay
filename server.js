@@ -246,7 +246,64 @@ app.get('/api/parlays', async (req, res, next) => {
       ...s,
       current: gamesById.get(s.gameId).lines?.[s.market]?.[s.side] ?? null,
     }));
-    res.json({ tallied, book: ODDS_API_KEY ? bookName : null, ...buildParlays(tallied, voters, { startedIds, stake }) });
+    const result = buildParlays(tallied, voters, { startedIds, stake });
+    const votes = store.data.votes[win.key] ?? {};
+    for (const opt of result.options) {
+      opt.id = parlayId(opt.legs.map((l) => l.key));
+      opt.votes = (votes[opt.id] ?? []).filter((p) => players.includes(p));
+    }
+    res.json({ tallied, book: ODDS_API_KEY ? bookName : null, players, ...result });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// A parlay is identified by its legs, so votes follow the same set of bets
+// even if its name or position on the page changes.
+const parlayId = (keys) => [...keys].sort().join(',');
+
+// Vote yes (or take it back) on a parlay option.
+app.post('/api/vote', async (req, res, next) => {
+  try {
+    const name = checkPlayer(req, res);
+    if (!name) return;
+    const { win, gamesById } = await loadWeek();
+    const keys = Array.isArray(req.body.legs) ? req.body.legs.map(String) : [];
+    if (keys.length < 2 || !keys.every((k) => gamesById.has(k.split('|')[0]))) {
+      return res.status(400).json({ error: 'Unknown parlay' });
+    }
+    const id = parlayId(keys);
+    const weekVotes = (store.data.votes[win.key] ??= {});
+    const voters = new Set(weekVotes[id] ?? []);
+    if (req.body.vote) voters.add(name);
+    else voters.delete(name);
+    weekVotes[id] = [...voters];
+    if (!voters.size) delete weekVotes[id];
+    store.save();
+    res.json({ id, votes: weekVotes[id] ?? [] });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Clear your picks for the week: submitted ones and unsubmitted selections.
+// Picks on games that already started stay, since those bets are live.
+app.delete('/api/picks', async (req, res, next) => {
+  try {
+    const name = checkPlayer(req, res);
+    if (!name) return;
+    const { win, gamesById } = await loadWeek();
+    const now = new Date();
+    const weekPicks = store.data.picks[win.key] ?? {};
+    const kept = (weekPicks[name] ?? []).filter((p) => {
+      const game = gamesById.get(p.key.split('|')[0]);
+      return game && hasStarted(game, now);
+    });
+    if (kept.length) weekPicks[name] = kept;
+    else delete weekPicks[name];
+    if (store.data.drafts[win.key]) delete store.data.drafts[win.key][name];
+    store.save();
+    res.json({ picks: submitted(win), kept: kept.length });
   } catch (err) {
     next(err);
   }

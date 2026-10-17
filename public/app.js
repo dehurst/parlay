@@ -14,6 +14,7 @@ const storage = {
 let me = storage.get('parlay.name');
 let week = null;
 let tab = 'picks';
+let parlayLegs = new Map(); // parlay id -> leg keys, for voting
 
 async function api(path, opts = {}) {
   const res = await fetch(path, {
@@ -61,8 +62,26 @@ async function load(refresh = false) {
   if (!me) return showJoin();
   $('#join').hidden = true;
   $('#tabs').hidden = false;
-  $('#who').innerHTML = `<span class="muted">Picking as</span> <b>${esc(me)}</b> <button class="link" id="switch">switch</button>`;
-  $('#switch').onclick = () => { me = null; storage.del('parlay.name'); showJoin(); };
+  render();
+}
+
+function renderWho() {
+  const hasAny = hasSubmitted() || (week.draft ?? []).length > 0;
+  $('#who').innerHTML = `<span class="muted">Picking as</span> <b>${esc(me)}</b>
+    <button class="link" id="switch" type="button">switch</button>
+    ${hasAny ? '<button id="clear-picks" class="clear" type="button">Clear my picks</button>' : ''}`;
+}
+
+async function clearPicks() {
+  if (!confirm(`Clear all your picks for ${week.label}?`)) return;
+  try {
+    const res = await api('/api/picks', { method: 'DELETE', body: { name: me } });
+    week.picks = res.picks;
+    week.draft = null;
+    notice(res.kept ? `Kept ${res.kept} pick${res.kept === 1 ? '' : 's'} on games that already started.` : null);
+  } catch (err) {
+    notice(err.message);
+  }
   render();
 }
 
@@ -102,6 +121,7 @@ function votersFor(key) {
 // ---- Rendering -----------------------------------------------------------
 
 function render() {
+  renderWho();
   document.querySelectorAll('.tabs button').forEach((b) => b.classList.toggle('active', b.dataset.tab === tab));
   document.querySelectorAll('.tab').forEach((t) => (t.hidden = t.id !== `tab-${tab}`));
   if (tab === 'picks') renderGames();
@@ -111,6 +131,7 @@ function render() {
 }
 
 function renderGames() {
+  renderWho();
   const locked = isLocked();
   $('#picks-hint').textContent = locked
     ? `Your picks are in for ${week.label}. Tap Edit picks to change them before kickoff. Orange numbers show how many friends took each bet.`
@@ -291,10 +312,18 @@ async function renderParlays() {
     </div>`;
   }
 
-  html += data.options.map((p) => `
-    <div class="card parlay">
+  parlayLegs = new Map(data.options.map((p) => [p.id, p.legs.map((l) => l.key)]));
+  const majority = Math.floor(data.players.length / 2) + 1;
+  html += data.options.map((p) => {
+    const iVoted = p.votes.includes(me);
+    const groupPick = p.votes.length >= majority;
+    return `
+    <div class="card parlay ${groupPick ? 'group-pick' : ''}">
       <div class="head">
-        <div><h3>${esc(p.name)}</h3><div class="small muted">${esc(p.blurb)}</div></div>
+        <div>
+          ${groupPick ? '<span class="badge">Group\'s pick</span>' : ''}
+          <h3>${esc(p.name)}</h3><div class="small muted">${esc(p.blurb)}</div>
+        </div>
         <div class="odds">${fmtOdds(p.american)}</div>
       </div>
       <ul>${p.legs.map((l) => `<li><b>${esc(l.label)}</b> <span class="muted">${fmtOdds(l.price)} · ${esc(l.matchup)} · ${l.pickers.length}/${data.voters} picked</span>${lineMoved(l, data.book)}</li>`).join('')}</ul>
@@ -303,7 +332,16 @@ async function renderParlays() {
         <span>Hit chance ~<b>${pct(p.hitProb)}</b></span>
         <span class="${p.ev < 0 ? 'ev-bad' : ''}">Est. return ${p.ev >= 0 ? '+' : ''}${(p.ev * 100).toFixed(1)}%</span>
       </div>
-    </div>`).join('');
+      <div class="vote-row">
+        <button type="button" class="vote ${iVoted ? 'on' : ''}" data-parlay="${esc(p.id)}" data-vote="${iVoted ? '0' : '1'}">
+          ${iVoted ? '✓ You voted for this' : '👍 Vote for this'}
+        </button>
+        <span class="small muted">${p.votes.length
+          ? `${p.votes.length}/${data.players.length} votes: ${p.votes.map(esc).join(', ')}`
+          : 'No votes yet'}</span>
+      </div>
+    </div>`;
+  }).join('');
 
   if (data.almost.length) {
     html += `<div class="card"><b>One vote away</b>
@@ -353,6 +391,28 @@ $('#code-save').addEventListener('click', () => {
   load();
 });
 $('#stake').addEventListener('change', renderParlays);
+$('#parlays').addEventListener('click', async (e) => {
+  const btn = e.target.closest('button[data-parlay]');
+  if (!btn) return;
+  btn.disabled = true;
+  try {
+    await api('/api/vote', {
+      method: 'POST',
+      body: { name: me, legs: parlayLegs.get(btn.dataset.parlay), vote: btn.dataset.vote === '1' },
+    });
+  } catch (err) {
+    notice(err.message);
+  }
+  renderParlays();
+});
+$('#who').addEventListener('click', (e) => {
+  if (e.target.closest('#switch')) {
+    me = null;
+    storage.del('parlay.name');
+    showJoin();
+  }
+  if (e.target.closest('#clear-picks')) clearPicks();
+});
 $('#refresh').addEventListener('click', async () => {
   const btn = $('#refresh');
   const wait = (week?.nextRefreshAt ?? 0) - Date.now();

@@ -13,6 +13,7 @@ export class Store {
     }
     this.data.picks ??= {}; // submitted: { weekKey: { player: [{ key, point, price }] } }
     this.data.drafts ??= {}; // unsubmitted: { weekKey: { player: [key] } }
+    this.data.votes ??= {}; // parlay votes: { weekKey: { parlayId: [player] } }
     this.data.schedule ??= {}; // { weekKey: { games, source, retryAt, demo? } }
     this.data.lines ??= {}; // { weekKey: { byMatchup, fetchedAt, remaining } }
     // Players are configured now (PLAYERS), not stored.

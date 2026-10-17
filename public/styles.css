@@ -129,3 +129,13 @@ body { padding-bottom: 90px; }
 .submit-bar .actions { display: flex; gap: 8px; }
 .submit-bar button { white-space: nowrap; }
 .submit-bar > span:first-child { min-width: 0; }
+.clear { padding: 4px 10px; font-size: 13px; color: var(--bad); }
+.who { flex-wrap: wrap; }
+.vote-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
+.vote.on { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
+.parlay.group-pick { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+.badge {
+  display: inline-block; margin-bottom: 6px; padding: 2px 8px; border-radius: 999px;
+  background: var(--accent); color: var(--accent-ink); font-size: 11px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: .04em;
+}
