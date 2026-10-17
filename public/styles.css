@@ -48,6 +48,10 @@ button:hover { border-color: var(--muted); }
 button[type=submit], .primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
 button.link { background: none; border: none; color: var(--muted); text-decoration: underline; padding: 0; }
 input { min-width: 0; flex: 1; }
+/* iPhones zoom in when you tap a text box under 16px, so keep them at 16. */
+input, select, textarea { font-size: 16px; }
+/* No double-tap zoom. */
+html { touch-action: manipulation; -webkit-text-size-adjust: 100%; }
 
 .row { display: flex; gap: 8px; margin-top: 10px; }
 .chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0; }
