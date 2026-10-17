@@ -172,3 +172,9 @@ details.week summary .num { margin-left: auto; font-weight: 700; }
 .team-line { display: block; }
 .rec { font-weight: 400; color: var(--muted); font-size: 14px; }
 .kick { white-space: nowrap; flex: none; }
+@media (max-width: 420px) {
+  h1 { font-size: 19px; }
+  .brand { gap: 8px; }
+  .brand #week-label { font-size: 14px; }
+  .refresh { padding: 4px 8px; font-size: 12px; }
+}

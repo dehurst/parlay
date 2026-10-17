@@ -1,4 +1,4 @@
-# Parlay Party
+# Parlay Builder
 
 A small website where a group of friends picks NFL games each week. It finds
 the plays most of you agree on and builds a few parlays out of them.
@@ -70,12 +70,16 @@ Settings (in `.env` or as environment variables):
 
 ## API credits
 
-The free tier has 500 credits a month. The schedule doesn't use any. Lines
-cost 3 credits per refresh and only refresh when someone opens the site and
-they're older than `ODDS_CACHE_HOURS`, so 6 hours means at most ~360 a month.
-The **Refresh lines** button at the top forces an update, at most once per 15
-minutes. The
-footer shows how many credits are left.
+The free tier has 500 credits a month. The schedule, team records, and final
+scores (from ESPN) don't use any. FanDuel lines cost 3 credits per refresh and
+only refresh when someone opens the site and they're older than
+`ODDS_CACHE_HOURS`. The **Refresh lines** button at the top forces an update,
+at most once per 15 minutes. The footer shows how many credits are left.
+
+Paid calls pause from the kickoff of the week's last game (normally Monday
+night) until **Wednesday 7:00 PM Eastern**. Next week's games show up
+Tuesday morning, but their lines arrive Wednesday evening. That keeps it
+around 60 credits a week at most.
 
 ## How the parlays are built
 

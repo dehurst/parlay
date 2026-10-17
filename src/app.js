@@ -10,6 +10,7 @@ import { tally, buildParlays, MARKETS } from './parlay.js';
 import { gradeLeg, gradeParlay } from './grading.js';
 import { fetchEspnScores, fetchOddsApiScores } from './results.js';
 import { computeStats } from './stats.js';
+import { creditPause } from './credits.js';
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 loadEnvFile(join(root, '.env'));
@@ -113,8 +114,10 @@ async function loadWeek({ refreshLines = false } = {}) {
   }
   const schedule = store.data.schedule[win.key];
 
+  // No paid calls between the week's last kickoff and Wednesday 7 PM Eastern.
+  const pause = creditPause(win, schedule.games);
   let lines = store.data.lines[win.key];
-  if (ODDS_API_KEY && !schedule.demo) {
+  if (ODDS_API_KEY && !schedule.demo && !pause.paused) {
     const age = lines ? Date.now() - lines.fetchedAt : Infinity;
     if (age > LINES_TTL || (refreshLines && age > MANUAL_REFRESH_GAP)) {
       try {
@@ -145,7 +148,7 @@ async function loadWeek({ refreshLines = false } = {}) {
   if (schedule.demo) {
     warning = `Couldn't load the NFL schedule, so these are demo games. It retries every few minutes. ${warning ?? ''}`.trim();
   }
-  return { win, games, gamesById, schedule, lines, warning };
+  return { win, games, gamesById, schedule, lines, warning, pause };
 }
 
 // Submitted picks only count for the configured players (older data may have others).
@@ -156,7 +159,7 @@ function submitted(win) {
 
 app.get('/api/week', async (req, res, next) => {
   try {
-    const { win, games, schedule, lines, warning } = await loadWeek({ refreshLines: req.query.refresh === '1' });
+    const { win, games, schedule, lines, warning, pause } = await loadWeek({ refreshLines: req.query.refresh === '1' });
     const now = new Date();
     const me = players.includes(req.query.me) ? req.query.me : null;
     res.json({
@@ -174,6 +177,8 @@ app.get('/api/week', async (req, res, next) => {
       // Your own unsubmitted selections (null if you have none); nobody else sees these.
       draft: (me && store.data.drafts[win.key]?.[me]) ?? null,
       nextRefreshAt: lines ? lines.fetchedAt + MANUAL_REFRESH_GAP : null,
+      // While paid calls are paused: when lines start updating again.
+      linesPausedUntil: ODDS_API_KEY && pause.paused ? pause.until.toISOString() : null,
     });
   } catch (err) {
     next(err);
@@ -396,7 +401,8 @@ async function refreshResults() {
     } catch (err) {
       console.error(`ESPN scores failed: ${describe(err)}`);
       const recent = due.some((g) => Date.now() - new Date(g.commence).getTime() < 3 * 24 * 3600e3);
-      if (ODDS_API_KEY && recent) {
+      const { paused } = creditPause(weekWindow(), store.data.schedule[weekWindow().key]?.games ?? []);
+      if (ODDS_API_KEY && recent && !paused) {
         try {
           found = await fetchOddsApiScores(ODDS_API_KEY, week);
         } catch (err2) {
