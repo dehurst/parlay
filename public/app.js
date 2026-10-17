@@ -113,11 +113,6 @@ function bookLine(key) {
 }
 const sameLine = (a, b) => a && b && a.point === b.point && a.price === b.price;
 
-// Friends who submitted this bet.
-function votersFor(key) {
-  return Object.entries(week.picks).filter(([, picks]) => picks.some((p) => p.key === key)).map(([name]) => name);
-}
-
 // ---- Rendering -----------------------------------------------------------
 
 function render() {
@@ -136,10 +131,10 @@ function renderGames() {
   renderWho();
   const locked = isLocked();
   $('#picks-hint').textContent = locked
-    ? `Your picks are in for ${week.label}. Tap Edit picks to change them before kickoff. Orange numbers show how many friends took each bet.`
+    ? `Your picks are in for ${week.label}. Tap Edit picks to change them before kickoff.`
     : isEditing()
       ? 'Editing your picks. Your submitted picks still count until you resubmit. Picks you keep stay at the line you got.'
-      : `Tap a bet to select it at ${week.book ?? 'the sportsbook'}'s line, tap again to remove it. Hit Submit when you're done. Orange numbers show how many friends have submitted each bet.`;
+      : `Tap a bet to select it at ${week.book ?? 'the sportsbook'}'s line, tap again to remove it. Hit Submit when you're done.`;
 
   if (!week.games.length) {
     $('#games').innerHTML = '<div class="card muted">No games on the schedule this week.</div>';
@@ -155,17 +150,16 @@ function renderGames() {
   $('#games').innerHTML = week.games.map((g) => {
     const cell = (market, side) => {
       const key = `${g.id}|${market}|${side}`;
-      const voters = votersFor(key);
       const line = savedLine.get(key) ?? bookLine(key);
       let label = market === 'ml' ? 'ML' : '–';
       if (line && market === 'spread') label = fmtPoint(line.point);
       if (line && market === 'total') label = `${side === 'over' ? 'O' : 'U'} ${line.point}`;
       const disabled = locked || g.started || !line;
+      // Friends' picks aren't shown here, so everyone picks on their own.
       return `<button class="pick ${mine.has(key) ? 'on' : ''}" data-key="${esc(key)}" ${disabled ? 'disabled' : ''}
-        title="${esc(voters.join(', ') || (line ? 'No picks yet' : 'No line yet'))}">
+        ${line ? '' : 'title="No line yet"'}>
         <span class="line">${esc(label)}</span>
         <span class="price">${line ? fmtOdds(line.price) : 'N/A'}</span>
-        ${voters.length ? `<span class="votes">${voters.length}</span>` : ''}
       </button>`;
     };
     const kick = new Date(g.commence).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' });

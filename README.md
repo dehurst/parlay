@@ -12,8 +12,8 @@ the plays most of you agree on and builds a few parlays out of them.
   remove it. Picks stay private until you hit **Submit**, which saves them at
   FanDuel's line at that moment. Tap **Edit picks** to change them later:
   your submitted picks keep counting until you resubmit, bets you keep stay
-  at the line you got, and picks on games that started can't change. Orange
-  badges show how many friends submitted each bet. **Clear my picks** (next to
+  at the line you got, and picks on games that started can't change. Only
+  your own picks show here, so nobody copies anybody. **Clear my picks** (next to
   your name) wipes your picks for the week, except games already under way.
 - **Group Board**: every submitted bet ranked by how many of you took it,
   plus who still needs to submit. It flags bets where FanDuel's line has
