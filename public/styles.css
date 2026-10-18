@@ -215,3 +215,6 @@ h3.section.first { margin-top: 4px; }
 .parlay.custom { border-color: rgba(224, 165, 38, .45); }
 .calc-sum .link { align-self: flex-start; margin-top: 2px; }
 #build-custom { white-space: nowrap; padding: 6px 12px; font-size: 14px; flex: none; }
+
+.odds-col { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; flex: none; }
+.copy-parlay { padding: 4px 10px; font-size: 13px; white-space: nowrap; }

@@ -296,19 +296,41 @@ function copyDay() {
   return { day };
 }
 
+// One bet as short text, like "KC -3.5", "GB/DET O 49.5", or "JAX ML".
+function betText(key, point, away, home) {
+  const [, market, side] = key.split('|');
+  if (market === 'total') return `${abbr(away)}/${abbr(home)} ${side === 'over' ? 'O' : 'U'} ${point}`;
+  const team = abbr(side === 'home' ? home : away);
+  return market === 'ml' ? `${team} ML` : `${team} ${fmtPoint(point)}`;
+}
+
 function picksText(day) {
-  const lines = (submittedPicks() ?? [])
+  return (submittedPicks() ?? [])
     .map((p) => ({ p, g: gameOf(p.key) }))
     .filter(({ g }) => g && dayKey(g.commence) === day)
     .sort((a, b) => a.g.commence.localeCompare(b.g.commence))
-    .map(({ p, g }) => {
-      const [, market, side] = p.key.split('|');
-      if (market === 'total') return `${abbr(g.away)}/${abbr(g.home)} ${side === 'over' ? 'O' : 'U'} ${p.point}`;
-      const team = abbr(side === 'home' ? g.home : g.away);
-      return market === 'ml' ? `${team} ML` : `${team} ${fmtPoint(p.point)}`;
-    });
-  return lines.join('\n');
+    .map(({ p, g }) => betText(p.key, p.point, g.away, g.home))
+    .join('\n');
 }
+
+// A parlay's legs as text, in kickoff order. Legs carry their matchup
+// ("Away @ Home"), so this works for past games too.
+function parlayText(legs) {
+  return [...legs]
+    .sort((a, b) => (a.commence ?? '').localeCompare(b.commence ?? ''))
+    .map((l) => {
+      const [away, home] = l.matchup.split(' @ ');
+      return betText(l.key, l.point, away, home);
+    })
+    .join('\n');
+}
+
+// Parlays on screen, by id, for their Copy buttons.
+const copyable = new Map();
+const copyButton = (p) => {
+  copyable.set(p.id, p.legs);
+  return `<button type="button" class="copy-parlay" data-copy="${esc(p.id)}">Copy</button>`;
+};
 
 async function copyText(text) {
   try {
@@ -327,6 +349,14 @@ async function copyText(text) {
     box.remove();
     return ok;
   }
+}
+
+async function copyParlay(btn) {
+  const legs = copyable.get(btn.dataset.copy);
+  if (!legs) return;
+  const ok = await copyText(parlayText(legs));
+  btn.textContent = ok ? 'Copied ✓' : "Couldn't copy";
+  setTimeout(() => (btn.textContent = 'Copy'), 1800);
 }
 
 async function copyPicks(btn) {
@@ -450,7 +480,7 @@ function customHtml(data) {
     <div class="card parlay custom">
       <div class="head">
         <div><h3>${esc(p.name)}</h3><div class="small muted">${p.legs.length}-leg custom parlay</div></div>
-        <div class="odds">${fmtOdds(p.american)}</div>
+        <div class="odds-col"><div class="odds">${fmtOdds(p.american)}</div>${copyButton(p)}</div>
       </div>
       <ul>${p.legs.map((l) => `<li><b>${esc(l.label)}</b> <span class="muted">${fmtOdds(l.price)} · ${esc(l.matchup)}</span>${lineMoved(l, data.book)}</li>`).join('')}</ul>
       <div class="stats"><span>$10.00 pays <b>${money(10 * p.decimal)}</b></span></div>
@@ -489,7 +519,7 @@ async function renderParlays() {
           ${groupPick ? '<span class="badge">Group\'s pick</span>' : ''}
           <h3>${esc(p.name)}</h3><div class="small muted">${esc(p.blurb)}</div>
         </div>
-        <div class="odds">${fmtOdds(p.american)}</div>
+        <div class="odds-col"><div class="odds">${fmtOdds(p.american)}</div>${copyButton(p)}</div>
       </div>
       <ul>${p.legs.map((l) => `<li><b>${esc(l.label)}</b> <span class="muted">${fmtOdds(l.price)} · ${esc(l.matchup)} · ${l.pickers.length}/${data.voters} picked</span>${lineMoved(l, data.book)}</li>`).join('')}</ul>
       <div class="stats">
@@ -608,7 +638,7 @@ async function renderSlip() {
     return `<div class="card parlay">
       <div class="head">
         <div><span class="muted small">Bet ${i + 1}</span> ${statusChip(p.status, p.returned, p.total)}<h3>${esc(p.name)} · ${p.legs.length}-leg parlay</h3></div>
-        <div class="odds">${fmtOdds(p.american)}</div>
+        <div class="odds-col"><div class="odds">${fmtOdds(p.american)}</div>${copyButton(p)}</div>
       </div>
       ${p.stillOption ? '' : '<div class="lines">Picks changed since people bought in, so this parlay is no longer one of the current options. Double-check before placing it.</div>'}
       <ul>${legs}</ul>
@@ -704,6 +734,12 @@ $('#parlays').addEventListener('submit', (e) => {
   if (!(amount > 0)) return notice('Enter how many dollars you want on it.');
   setStake(e.target.dataset.parlay, amount, renderParlays);
 });
+for (const el of ['#parlays', '#slip']) {
+  $(el).addEventListener('click', (e) => {
+    const btn = e.target.closest('.copy-parlay');
+    if (btn) copyParlay(btn);
+  });
+}
 $('#parlays').addEventListener('click', (e) => {
   if (e.target.closest('#build-custom')) {
     tab = 'picks';
