@@ -40,7 +40,8 @@ the plays most of you agree on and builds a few parlays out of them.
   flows into the Bet Slip and Stats like the group parlays. Needs 2+ legs from
   different games, and closes to new money once any of its games starts. If
   everyone pulls out, it disappears. Every parlay card (here and on the Bet
-  Slip) has a **Copy** button that copies its legs, one per line.
+  Slip) has a **Copy** button that copies its legs, one per line, then the odds,
+  what $10 pays, and the total bet and payout if anyone is in.
 - **Bet Slip**: for whoever places the bets. Every parlay with money on it,
   its legs and odds, each person's stake and payout, and a "who owes what"
   total. A parlay is saved as it was when people bought in, so it stays on

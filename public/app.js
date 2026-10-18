@@ -315,20 +315,25 @@ function picksText(day) {
 
 // A parlay's legs as text, in kickoff order. Legs carry their matchup
 // ("Away @ Home"), so this works for past games too.
-function parlayText(legs) {
-  return [...legs]
+// Followed by the odds, the payout on $10, and (if anyone's in) the total
+// bet and what it pays.
+function parlayText(p) {
+  const legs = [...p.legs]
     .sort((a, b) => (a.commence ?? '').localeCompare(b.commence ?? ''))
     .map((l) => {
       const [away, home] = l.matchup.split(' @ ');
       return betText(l.key, l.point, away, home);
-    })
-    .join('\n');
+    });
+  const total = Object.values(p.stakes ?? {}).reduce((sum, amt) => sum + amt, 0);
+  const lines = [...legs, '', `Odds: ${fmtOdds(p.american)}`, `$10 pays ${money(10 * p.decimal)}`];
+  if (total > 0) lines.push(`Total bet: ${money(total)}, pays ${money(total * p.decimal)}`);
+  return lines.join('\n');
 }
 
 // Parlays on screen, by id, for their Copy buttons.
 const copyable = new Map();
 const copyButton = (p) => {
-  copyable.set(p.id, p.legs);
+  copyable.set(p.id, p);
   return `<button type="button" class="copy-parlay" data-copy="${esc(p.id)}">Copy</button>`;
 };
 
@@ -352,9 +357,9 @@ async function copyText(text) {
 }
 
 async function copyParlay(btn) {
-  const legs = copyable.get(btn.dataset.copy);
-  if (!legs) return;
-  const ok = await copyText(parlayText(legs));
+  const parlay = copyable.get(btn.dataset.copy);
+  if (!parlay) return;
+  const ok = await copyText(parlayText(parlay));
   btn.textContent = ok ? 'Copied ✓' : "Couldn't copy";
   setTimeout(() => (btn.textContent = 'Copy'), 1800);
 }
