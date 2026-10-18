@@ -346,11 +346,16 @@ app.get('/api/parlays', async (req, res, next) => {
   try {
     await refreshResults();
     const { win, gamesById, tallied, result } = await currentParlays();
-    // Parlays with money on them that are decided (won, lost, or push).
-    const settled = gradedParlays(win, gamesById, new Set(result.options.map((o) => o.id)))
+    // Parlays with money on them, split by where they stand: decided (won,
+    // lost, or push), or in play (a game has started, not decided yet).
+    const graded = gradedParlays(win, gamesById, new Set(result.options.map((o) => o.id)));
+    const settled = graded
       .filter((p) => p.status !== 'pending')
       .sort((a, b) => (a.status === 'won' ? 0 : 1) - (b.status === 'won' ? 0 : 1) || b.total - a.total);
-    const settledIds = new Set(settled.map((p) => p.id));
+    const inPlay = graded
+      .filter((p) => p.status === 'pending' && customStarted(p, gamesById))
+      .sort((a, b) => b.total - a.total);
+    const settledIds = new Set([...settled, ...inPlay].map((p) => p.id));
     for (const opt of result.options) {
       opt.stakes = stakesFor(win, opt.id);
       opt.placed = store.data.stakes[win.key]?.[opt.id]?.placed ?? null;
@@ -364,13 +369,13 @@ app.get('/api/parlays', async (req, res, next) => {
         started: customStarted(p, gamesById),
         legs: p.legs.map((l) => ({ ...l, current: gamesById.get(l.gameId)?.lines?.[l.market]?.[l.side] ?? null })),
       }));
-    res.json({ tallied, book: ODDS_API_KEY ? bookName : null, players, ...result, custom, settled });
+    res.json({ tallied, book: ODDS_API_KEY ? bookName : null, players, ...result, custom, inPlay, settled });
   } catch (err) {
     next(err);
   }
 });
 
-// True once any game in a custom parlay has kicked off.
+// True once any game in a parlay has kicked off.
 function customStarted(p, gamesById, now = new Date()) {
   return p.legs.some((l) => {
     const game = gamesById.get(l.gameId);

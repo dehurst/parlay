@@ -544,6 +544,25 @@ function stakeHtml(p, closed) {
       : 'Nobody is in yet'}</div>`;
 }
 
+// Parlays with money on them whose games have started but aren't decided:
+// legs that finished get a check or X; no more stakes can go in.
+function inPlayHtml(data) {
+  if (!data.inPlay?.length) return '';
+  const cards = data.inPlay.map((p) => {
+    const backers = Object.entries(p.stakes).map(([who, amt]) => `${esc(who)} ${money(amt)}`).join(' · ');
+    return `<div class="card parlay ${p.custom ? 'custom' : ''}">
+      <div class="head">
+        <div>${p.placed ? '<span class="chip placed">✓ Placed</span>' : '<span class="chip pending">Not placed</span>'}
+          <h3>${esc(p.name)}</h3><div class="small muted">${p.legs.length}-leg ${p.custom ? 'custom ' : ''}parlay</div></div>
+        <div class="odds-col"><div class="odds">${fmtOdds(shownOdds(p))}</div>${copyButton(p)}</div>
+      </div>
+      <ul class="graded-legs">${p.legs.map((l) => `<li>${gradeMark(l.grade) || '<span class="mark">·</span>'}<b>${esc(l.label)}</b> <span class="muted">${fmtOdds(l.price)} · ${esc(l.matchup)}</span></li>`).join('')}</ul>
+      <div class="small muted backers">${backers} · <b>${money(p.total)} bet</b>, pays ${money(p.payout)} if it hits</div>
+    </div>`;
+  }).join('');
+  return `<h3 class="section">In play</h3>${cards}`;
+}
+
 // Parlays with money on them that are decided: result badge, leg marks,
 // and what came back. Grayed out at the bottom of the Parlays tab.
 function settledHtml(data) {
@@ -578,7 +597,7 @@ function customHtml(data) {
       <h3 class="section">Custom parlays</h3>
       <button type="button" class="primary" id="build-custom">+ Build your own</button>
     </div>
-    ${cards || '<div class="card muted small">No custom parlays yet. Build one with any bets you like, and the others can join in.</div>'}`;
+    ${cards || '<div class="card muted small">No open custom parlays right now. Build one with any bets you like, and the others can join in.</div>'}`;
 }
 
 async function renderParlays() {
@@ -586,7 +605,7 @@ async function renderParlays() {
   const data = await api('/api/parlays').catch((err) => (notice(err.message), null));
   if (!data) return;
 
-  let html = customHtml(data) + '<h3 class="section">Suggested parlays</h3>';
+  let html = customHtml(data) + inPlayHtml(data) + '<h3 class="section">Suggested parlays</h3>';
   if (!data.voters) {
     html += '<div class="card muted">Nobody has submitted picks yet.</div>';
   } else if (!data.options.length) {
