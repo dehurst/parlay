@@ -226,15 +226,3 @@ h3.section.first { margin-top: 4px; }
 .payout-form label { display: flex; align-items: center; gap: 6px; font-size: 14px; }
 .payout-form input { width: 110px; flex: none; }
 .payout-form p { margin: 0; flex-basis: 100%; }
-
-/* Alternate lines (calculator) */
-.alt-bar { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap;
-  margin: 0 0 12px; padding: 10px 12px; border: 1px dashed var(--warn); border-radius: var(--radius); }
-.alt-bar .small { display: flex; flex-direction: column; gap: 2px; }
-details.alt { margin-top: 10px; border-top: 1px solid var(--line); padding-top: 8px; }
-details.alt summary { cursor: pointer; font-weight: 600; font-size: 14px; color: var(--warn); }
-details.alt h4 { margin: 10px 0 4px; }
-.alt-row { display: flex; align-items: center; gap: 8px; margin: 4px 0; }
-.alt-label { width: 84px; flex: none; font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.chips-scroll { display: flex; gap: 6px; overflow-x: auto; padding: 8px 2px 4px; scrollbar-width: thin; }
-.alt-chip { flex: none; min-width: 62px; }

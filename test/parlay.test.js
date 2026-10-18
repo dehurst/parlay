@@ -187,26 +187,3 @@ test('demo schedules are dropped on restart so real sources get retried', async 
   await store.load();
   assert.deepEqual(Object.keys(store.data.schedule), ['b']);
 });
-
-test('parses alternate spreads and totals for one game', async () => {
-  const { parseAltLines } = await import('../src/oddsapi.js');
-  const alt = parseAltLines({
-    home_team: 'Tampa Bay Buccaneers', away_team: 'Pittsburgh Steelers',
-    bookmakers: [{ key: 'fanduel', markets: [
-      { key: 'alternate_spreads', outcomes: [
-        { name: 'Tampa Bay Buccaneers', point: -4.5, price: 120 },
-        { name: 'Tampa Bay Buccaneers', point: -1.5, price: -150 },
-        { name: 'Pittsburgh Steelers', point: 1.5, price: 125 },
-      ] },
-      { key: 'alternate_totals', outcomes: [
-        { name: 'Under', point: 38.5, price: -122 },
-        { name: 'Over', point: 38.5, price: -102 },
-        { name: 'Under', point: 36.5, price: 105 },
-      ] },
-    ] }],
-  }, 'fanduel');
-  assert.deepEqual(alt.spread.home, [{ point: -4.5, price: 120 }, { point: -1.5, price: -150 }]);
-  assert.deepEqual(alt.spread.away, [{ point: 1.5, price: 125 }]);
-  assert.deepEqual(alt.total.under, [{ point: 36.5, price: 105 }, { point: 38.5, price: -122 }]);
-  assert.equal(parseAltLines({ bookmakers: [] }, 'fanduel'), null);
-});
