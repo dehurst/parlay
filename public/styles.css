@@ -196,3 +196,15 @@ details.week summary .num { margin-left: auto; font-weight: 700; }
     padding: 12px 14px; /* same side padding as the cards */
   }
 }
+
+/* My picks / Payout calculator switch */
+.mode-switch { display: inline-flex; padding: 3px; gap: 3px; margin-bottom: 8px; background: var(--card); border: 1px solid var(--line); border-radius: 999px; }
+.mode-switch button { border: none; background: none; border-radius: 999px; padding: 6px 14px; font-size: 14px; color: var(--muted); }
+.mode-switch button.active { background: var(--line); color: var(--text); font-weight: 600; }
+/* Calculator selections look different from real picks. */
+.pick.on.calc { background: #2a2410; border-color: var(--warn); color: var(--text); }
+.pick.on.calc .price { color: var(--warn); }
+.calc-sum { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.warn-text { color: var(--warn); }
+.stake-box { display: flex; align-items: center; gap: 4px; }
+.stake-box input { width: 72px; flex: none; }

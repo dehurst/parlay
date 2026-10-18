@@ -14,6 +14,10 @@ const storage = {
 let me = storage.get('parlay.name');
 let week = null;
 let tab = 'picks';
+// Payout calculator: a scratch parlay that's never saved or shared.
+let calc = false;
+const calcKeys = new Set();
+let calcStake = 10;
 
 
 async function api(path, opts = {}) {
@@ -132,8 +136,11 @@ const rec = (r) => (r ? ` <span class="rec">(${esc(r)})</span>` : '');
 
 function renderGames() {
   renderWho();
-  const locked = isLocked();
-  $('#picks-hint').textContent = locked
+  document.querySelectorAll('.mode-switch button').forEach((b) => b.classList.toggle('active', (b.dataset.mode === 'calc') === calc));
+  const locked = isLocked() && !calc;
+  $('#picks-hint').textContent = calc
+    ? `Tap any bets to see what a parlay would pay at ${week.book ?? 'the sportsbook'}'s current lines. Nothing here is saved or shared.`
+    : locked
     ? `Your picks are in for ${week.label}. Tap Edit picks to change them before kickoff.`
     : isEditing()
       ? 'Editing your picks. Your submitted picks still count until you resubmit. Picks you keep stay at the line you got.'
@@ -146,9 +153,9 @@ function renderGames() {
   }
   // Picks on started games can't change, so they stay selected while editing.
   const startedPicks = (submittedPicks() ?? []).filter((p) => gameOf(p.key)?.started).map((p) => p.key);
-  const mine = new Set(locked ? submittedPicks().map((p) => p.key) : [...(week.draft ?? []), ...startedPicks]);
+  const mine = calc ? calcKeys : new Set(locked ? submittedPicks().map((p) => p.key) : [...(week.draft ?? []), ...startedPicks]);
   // Bets you already submitted show the line you got, not today's line.
-  const savedLine = new Map((submittedPicks() ?? []).filter((p) => mine.has(p.key)).map((p) => [p.key, p]));
+  const savedLine = calc ? new Map() : new Map((submittedPicks() ?? []).filter((p) => mine.has(p.key)).map((p) => [p.key, p]));
 
   $('#games').innerHTML = week.games.map((g) => {
     const cell = (market, side) => {
@@ -159,7 +166,7 @@ function renderGames() {
       if (line && market === 'total') label = `${side === 'over' ? 'O' : 'U'} ${line.point}`;
       const disabled = locked || g.started || !line;
       // Friends' picks aren't shown here, so everyone picks on their own.
-      return `<button class="pick ${mine.has(key) ? 'on' : ''}" data-key="${esc(key)}" ${disabled ? 'disabled' : ''}
+      return `<button class="pick ${mine.has(key) ? (calc ? 'on calc' : 'on') : ''}" data-key="${esc(key)}" ${disabled ? 'disabled' : ''}
         ${line ? '' : 'title="No line yet"'}>
         <span class="line">${esc(label)}</span>
         <span class="price">${line ? fmtOdds(line.price) : 'N/A'}</span>
@@ -190,6 +197,7 @@ function renderGames() {
 function renderSubmitBar() {
   const bar = $('#submit-bar');
   bar.hidden = tab !== 'picks';
+  if (calc) return renderCalcBar(bar);
   const plural = (n) => `${n} pick${n === 1 ? '' : 's'}`;
   if (isLocked()) {
     const day = copyDay();
@@ -206,6 +214,44 @@ function renderSubmitBar() {
       ${isEditing() ? '<button type="button" id="cancel-edit">Cancel</button>' : ''}
       <button type="button" class="primary" id="submit-picks" ${n ? '' : 'disabled'}>${isEditing() ? 'Resubmit' : 'Submit picks'}</button>
     </span>`;
+}
+
+// ---- Payout calculator -----------------------------------------------------
+
+const toDecimal = (a) => (a > 0 ? 1 + a / 100 : 1 + 100 / Math.abs(a));
+const toAmerican = (d) => (d >= 2 ? Math.round((d - 1) * 100) : Math.round(-100 / (d - 1)));
+
+function renderCalcBar(bar) {
+  // Drop bets whose game started or whose line disappeared.
+  for (const key of calcKeys) if (!bookLine(key) || gameOf(key)?.started) calcKeys.delete(key);
+  const legs = [...calcKeys].map(bookLine);
+  if (!legs.length) {
+    bar.innerHTML = '<span class="muted">Tap bets to build a parlay</span>';
+    return;
+  }
+  const decimal = legs.reduce((d, l) => d * toDecimal(l.price), 1);
+  const games = new Set([...calcKeys].map((k) => k.split('|')[0]));
+  const sameGame = games.size < calcKeys.size;
+  const payout = calcStake * decimal;
+  bar.innerHTML = `<span class="calc-sum">
+      <b>${legs.length === 1 ? 'Straight bet' : `${legs.length}-leg parlay`} ${fmtOdds(toAmerican(decimal))}</b>
+      <span class="small">$${esc(calcStake)} pays <b>${money(payout)}</b> (profit ${money(payout - calcStake)})</span>
+      ${sameGame ? '<span class="small warn-text">Same-game legs: FanDuel will pay a different amount.</span>' : ''}
+    </span>
+    <span class="actions">
+      <label class="stake-box">$<input id="calc-stake" type="number" inputmode="decimal" min="1" step="1" value="${esc(calcStake)}"></label>
+      <button type="button" id="calc-clear">Clear</button>
+    </span>`;
+}
+
+function toggleCalc(key) {
+  if (calcKeys.has(key)) calcKeys.delete(key);
+  else {
+    // One side per bet per game (can't have both Over and Under).
+    for (const k of calcKeys) if (marketOf(k) === marketOf(key)) calcKeys.delete(k);
+    calcKeys.add(key);
+  }
+  renderGames();
 }
 
 // ---- Copy picks as text ----------------------------------------------------
@@ -548,12 +594,33 @@ async function renderSlip() {
 
 $('#games').addEventListener('click', (e) => {
   const btn = e.target.closest('.pick');
-  if (btn && !btn.disabled) toggle(btn.dataset.key);
+  if (btn && !btn.disabled) (calc ? toggleCalc : toggle)(btn.dataset.key);
+});
+$('#tab-picks').addEventListener('click', (e) => {
+  const mode = e.target.closest('.mode-switch button')?.dataset.mode;
+  if (!mode) return;
+  calc = mode === 'calc';
+  renderGames();
+});
+$('#submit-bar').addEventListener('input', (e) => {
+  if (e.target.id !== 'calc-stake') return;
+  const v = Number(e.target.value);
+  if (!(v > 0)) return;
+  calcStake = Math.round(v * 100) / 100;
+  // Update the numbers without re-rendering the input (keeps the keyboard up).
+  const legs = [...calcKeys].map(bookLine);
+  const decimal = legs.reduce((d, l) => d * toDecimal(l.price), 1);
+  const line = document.querySelector('.calc-sum .small');
+  if (line) line.innerHTML = `$${esc(calcStake)} pays <b>${money(calcStake * decimal)}</b> (profit ${money(calcStake * decimal - calcStake)})`;
 });
 $('#submit-bar').addEventListener('click', (e) => {
   if (e.target.closest('#submit-picks')) submit();
   if (e.target.closest('#edit-picks')) startEditing();
   if (e.target.closest('#copy-picks')) copyPicks(e.target.closest('#copy-picks'));
+  if (e.target.closest('#calc-clear')) {
+    calcKeys.clear();
+    renderGames();
+  }
   if (e.target.closest('#cancel-edit')) cancelEditing();
   const go = e.target.closest('[data-tab-go]')?.dataset.tabGo;
   if (go) {
