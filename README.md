@@ -34,6 +34,12 @@ the plays most of you agree on and builds a few parlays out of them.
   how the group's consensus picks have done, and a week-by-week history.
   Games are graded automatically from ESPN's final scores (free), about 3
   hours after kickoff.
+- **Custom parlays** (Parlays tab, **+ Build your own**): pick any bets in the
+  payout calculator, set your stake, and **Post**. It shows up as "Daniel's
+  Parlay 1" (then 2, ...) for the others to join with their own stakes, and
+  flows into the Bet Slip and Stats like the group parlays. Needs 2+ legs from
+  different games, and closes to new money once any of its games starts. If
+  everyone pulls out, it disappears.
 - **Bet Slip**: for whoever places the bets. Every parlay with money on it,
   its legs and odds, each person's stake and payout, and a "who owes what"
   total. A parlay is saved as it was when people bought in, so it stays on

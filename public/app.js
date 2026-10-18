@@ -139,7 +139,7 @@ function renderGames() {
   document.querySelectorAll('.mode-switch button').forEach((b) => b.classList.toggle('active', (b.dataset.mode === 'calc') === calc));
   const locked = isLocked() && !calc;
   $('#picks-hint').textContent = calc
-    ? `Tap any bets to see what a parlay would pay at ${week.book ?? 'the sportsbook'}'s current lines. Nothing here is saved or shared.`
+    ? `Tap any bets to see what a parlay would pay at ${week.book ?? 'the sportsbook'}'s current lines. Nothing is shared unless you hit Post, which adds it to the Parlays tab for others to join.`
     : locked
     ? `Your picks are in for ${week.label}. Tap Edit picks to change them before kickoff.`
     : isEditing()
@@ -233,15 +233,32 @@ function renderCalcBar(bar) {
   const games = new Set([...calcKeys].map((k) => k.split('|')[0]));
   const sameGame = games.size < calcKeys.size;
   const payout = calcStake * decimal;
+  const canPost = legs.length >= 2 && !sameGame;
   bar.innerHTML = `<span class="calc-sum">
       <b>${legs.length === 1 ? 'Straight bet' : `${legs.length}-leg parlay`} ${fmtOdds(toAmerican(decimal))}</b>
       <span class="small">$${esc(calcStake)} pays <b>${money(payout)}</b> (profit ${money(payout - calcStake)})</span>
-      ${sameGame ? '<span class="small warn-text">Same-game legs: FanDuel will pay a different amount.</span>' : ''}
+      ${sameGame ? '<span class="small warn-text">Same-game legs: FanDuel will pay a different amount, so this can’t be posted.</span>' : ''}
+      <button type="button" class="link small" id="calc-clear">Clear</button>
     </span>
     <span class="actions">
       <label class="stake-box">$<input id="calc-stake" type="number" inputmode="decimal" min="1" step="1" value="${esc(calcStake)}"></label>
-      <button type="button" id="calc-clear">Clear</button>
+      <button type="button" class="primary" id="calc-post" ${canPost ? '' : 'disabled'}
+        title="${canPost ? 'Post to the Parlays tab so others can join' : 'Needs 2+ legs from different games'}">Post</button>
     </span>`;
+}
+
+// Post the calculator's parlay to the Parlays tab with your stake.
+async function postCustom() {
+  try {
+    const res = await api('/api/custom', { method: 'POST', body: { name: me, keys: [...calcKeys], amount: calcStake } });
+    calcKeys.clear();
+    calc = false;
+    tab = 'parlays';
+    render();
+    notice(`Posted ${res.name}. Others can join it on the Parlays tab.`);
+  } catch (err) {
+    notice(err.message);
+  }
 }
 
 function toggleCalc(key) {
@@ -408,18 +425,53 @@ async function renderBoard() {
   $('#board').innerHTML = header + `<div class="card">${rows}</div>`;
 }
 
+// Stake box + who's in, shared by group and custom parlay cards.
+function stakeHtml(p, closed) {
+  const mine = p.stakes[me];
+  const backers = Object.entries(p.stakes);
+  const total = backers.reduce((sum, [, amt]) => sum + amt, 0);
+  const form = closed
+    ? '<p class="small muted">A game in this parlay has started, so it’s closed to new money.</p>'
+    : `<form class="stake-form" data-parlay="${esc(p.id)}">
+        <label>Your stake $
+          <input name="amount" type="number" inputmode="decimal" min="0" step="1" value="${mine ?? ''}" placeholder="10">
+        </label>
+        <button type="submit" class="${mine ? '' : 'primary'}">${mine ? 'Update' : "I'm in"}</button>
+        ${mine ? '<button type="button" class="link danger" data-act="out">Remove</button>' : ''}
+      </form>`;
+  return `${form}
+    <div class="small muted backers">${backers.length
+      ? `${backers.map(([who, amt]) => `${esc(who)} ${money(amt)}`).join(' · ')} · <b>${money(total)} total</b>, pays ${money(total * p.decimal)}`
+      : 'Nobody is in yet'}</div>`;
+}
+
+function customHtml(data) {
+  const cards = data.custom.map((p) => `
+    <div class="card parlay custom">
+      <div class="head">
+        <div><h3>${esc(p.name)}</h3><div class="small muted">${p.legs.length}-leg custom parlay</div></div>
+        <div class="odds">${fmtOdds(p.american)}</div>
+      </div>
+      <ul>${p.legs.map((l) => `<li><b>${esc(l.label)}</b> <span class="muted">${fmtOdds(l.price)} · ${esc(l.matchup)}</span>${lineMoved(l, data.book)}</li>`).join('')}</ul>
+      <div class="stats"><span>$10.00 pays <b>${money(10 * p.decimal)}</b></span></div>
+      ${stakeHtml(p, p.started)}
+    </div>`).join('');
+  return `<div class="section-head">
+      <h3 class="section">Custom parlays</h3>
+      <button type="button" class="primary" id="build-custom">+ Build your own</button>
+    </div>
+    ${cards || '<div class="card muted small">No custom parlays yet. Build one with any bets you like, and the others can join in.</div>'}`;
+}
+
 async function renderParlays() {
   $('#parlays').innerHTML = '<p class="muted">Building…</p>';
   const data = await api('/api/parlays').catch((err) => (notice(err.message), null));
   if (!data) return;
 
+  let html = '<h3 class="section first">Group parlays</h3>';
   if (!data.voters) {
-    $('#parlays').innerHTML = '<div class="card muted">Nobody has submitted picks yet.</div>';
-    return;
-  }
-
-  let html = '';
-  if (!data.options.length) {
+    html += '<div class="card muted">Nobody has submitted picks yet.</div>';
+  } else if (!data.options.length) {
     html += `<div class="card">
       <b>Not enough agreement yet.</b>
       <p class="muted">Parlays need at least 2 games where ${data.need}+ of the ${data.voters} who submitted agree.
@@ -429,10 +481,7 @@ async function renderParlays() {
 
   const majority = Math.floor(data.players.length / 2) + 1;
   html += data.options.map((p) => {
-    const mine = p.stakes[me];
-    const backers = Object.entries(p.stakes);
-    const total = backers.reduce((sum, [, amt]) => sum + amt, 0);
-    const groupPick = backers.length >= majority;
+    const groupPick = Object.keys(p.stakes).length >= majority;
     return `
     <div class="card parlay ${groupPick ? 'group-pick' : ''}">
       <div class="head">
@@ -448,16 +497,7 @@ async function renderParlays() {
         <span>Hit chance ~<b>${pct(p.hitProb)}</b></span>
         <span class="${p.ev < 0 ? 'ev-bad' : ''}">Est. return ${p.ev >= 0 ? '+' : ''}${(p.ev * 100).toFixed(1)}%</span>
       </div>
-      <form class="stake-form" data-parlay="${esc(p.id)}">
-        <label>Your stake $
-          <input name="amount" type="number" inputmode="decimal" min="0" step="1" value="${mine ?? ''}" placeholder="10">
-        </label>
-        <button type="submit" class="${mine ? '' : 'primary'}">${mine ? 'Update' : "I'm in"}</button>
-        ${mine ? '<button type="button" class="link danger" data-act="out">Remove</button>' : ''}
-      </form>
-      <div class="small muted backers">${backers.length
-        ? `${backers.map(([who, amt]) => `${esc(who)} ${money(amt)}`).join(' · ')} · <b>${money(total)} total</b>, pays ${money(total * p.decimal)}`
-        : 'Nobody is in yet'}</div>
+      ${stakeHtml(p, false)}
     </div>`;
   }).join('');
 
@@ -467,6 +507,8 @@ async function renderParlays() {
       <ul>${data.almost.map((s) => `<li>${esc(s.label)} <span class="muted">${fmtOdds(s.price)} · ${s.pickers.map(esc).join(', ')}</span></li>`).join('')}</ul>
     </div>`;
   }
+
+  html += customHtml(data);
 
   html += `<p class="small muted">Payouts use the lines at the time each pick was submitted${data.book ? `, which can drift from ${esc(data.book)}'s current lines` : ''}, so double-check them in your sportsbook before you bet.
     Hit chance is a rough estimate that removes a typical book margin. A negative expected return is the house edge,
@@ -621,6 +663,7 @@ $('#submit-bar').addEventListener('click', (e) => {
     calcKeys.clear();
     renderGames();
   }
+  if (e.target.closest('#calc-post')) postCustom();
   if (e.target.closest('#cancel-edit')) cancelEditing();
   const go = e.target.closest('[data-tab-go]')?.dataset.tabGo;
   if (go) {
@@ -662,6 +705,14 @@ $('#parlays').addEventListener('submit', (e) => {
   setStake(e.target.dataset.parlay, amount, renderParlays);
 });
 $('#parlays').addEventListener('click', (e) => {
+  if (e.target.closest('#build-custom')) {
+    tab = 'picks';
+    calc = true;
+    render();
+    notice('Tap the bets you want, set your stake in the bar at the bottom, then hit Post.');
+    window.scrollTo(0, 0);
+    return;
+  }
   if (e.target.closest('[data-act="out"]')) setStake(e.target.closest('form').dataset.parlay, 0, renderParlays);
 });
 $('#slip').addEventListener('click', (e) => {

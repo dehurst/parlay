@@ -6,7 +6,7 @@ import { createStore } from './store.js';
 import { weekWindow, weekLabel } from './week.js';
 import { fetchEspnSchedule, fetchEspnRecords, demoSchedule, hasStarted, matchKey, teamKey } from './schedule.js';
 import { fetchOddsApiSchedule, fetchBookLines } from './oddsapi.js';
-import { tally, buildParlays, MARKETS } from './parlay.js';
+import { tally, buildParlays, priceParlay, selectionLabel, MARKETS } from './parlay.js';
 import { gradeLeg, gradeParlay } from './grading.js';
 import { fetchEspnScores, fetchOddsApiScores } from './results.js';
 import { computeStats } from './stats.js';
@@ -312,9 +312,72 @@ function stakesFor(win, id) {
 
 app.get('/api/parlays', async (req, res, next) => {
   try {
-    const { win, tallied, result } = await currentParlays();
+    const { win, gamesById, tallied, result } = await currentParlays();
     for (const opt of result.options) opt.stakes = stakesFor(win, opt.id);
-    res.json({ tallied, book: ODDS_API_KEY ? bookName : null, players, ...result });
+    const custom = Object.values(store.data.stakes[win.key] ?? {})
+      .filter((p) => p.custom)
+      .sort((a, b) => a.createdAt - b.createdAt)
+      .map((p) => ({
+        ...p,
+        stakes: stakesFor(win, p.id),
+        started: customStarted(p, gamesById),
+        legs: p.legs.map((l) => ({ ...l, current: gamesById.get(l.gameId)?.lines?.[l.market]?.[l.side] ?? null })),
+      }));
+    res.json({ tallied, book: ODDS_API_KEY ? bookName : null, players, ...result, custom });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// True once any game in a custom parlay has kicked off.
+function customStarted(p, gamesById, now = new Date()) {
+  return p.legs.some((l) => {
+    const game = gamesById.get(l.gameId);
+    return !game || hasStarted(game, now);
+  });
+}
+
+// Post your own parlay ("Daniel's Parlay 2") with your stake; others can join.
+// Legs are priced at the book's current lines and saved as they are now.
+app.post('/api/custom', async (req, res, next) => {
+  try {
+    const name = checkPlayer(req, res);
+    if (!name) return;
+    const amount = Math.round(Number(req.body.amount || 0) * 100) / 100;
+    if (!(amount > 0) || amount > 10000) return res.status(400).json({ error: 'Enter how much you want on it ($1 to $10,000).' });
+    const { win, gamesById } = await loadWeek();
+    const keys = [...new Set(Array.isArray(req.body.keys) ? req.body.keys.map(String) : [])];
+    if (keys.length < 2) return res.status(400).json({ error: 'A parlay needs at least 2 legs.' });
+    const games = keys.map((k) => k.split('|')[0]);
+    if (new Set(games).size < games.length) {
+      return res.status(400).json({ error: 'Custom parlays can’t have two bets from the same game (FanDuel prices those differently).' });
+    }
+    const legs = [];
+    for (const key of keys) {
+      const line = pickable(key, gamesById);
+      if (!line) return res.status(409).json({ error: 'One of those bets has started or lost its line. Refresh and try again.' });
+      const [gameId, market, side] = key.split('|');
+      const game = gamesById.get(gameId);
+      legs.push({
+        key, gameId, market, side,
+        label: selectionLabel(game, market, side, line.point),
+        matchup: `${game.away} @ ${game.home}`,
+        point: line.point, price: line.price, commence: game.commence,
+      });
+    }
+    const weekStakes = (store.data.stakes[win.key] ??= {});
+    const mine = Object.values(weekStakes).filter((p) => p.custom && p.owner === name);
+    const number = Math.max(0, ...mine.map((p) => p.number)) + 1;
+    const id = `custom:${name}:${number}`;
+    const priced = priceParlay(legs.map((l) => ({ ...l, fairProb: 0.5 })));
+    weekStakes[id] = {
+      id, custom: true, owner: name, number, createdAt: Date.now(),
+      name: `${name}'s Parlay ${number}`,
+      legs, decimal: priced.decimal, american: priced.american,
+      stakes: { [name]: amount },
+    };
+    await save();
+    res.json({ id, name: weekStakes[id].name });
   } catch (err) {
     next(err);
   }
@@ -331,13 +394,19 @@ app.post('/api/stake', async (req, res, next) => {
     if (!Number.isFinite(amount) || amount < 0 || amount > 10000) {
       return res.status(400).json({ error: 'Enter an amount between $0 and $10,000' });
     }
-    const { win, result } = await currentParlays();
+    const { win, gamesById, result } = await currentParlays();
     const weekStakes = (store.data.stakes[win.key] ??= {});
     const id = String(req.body.id ?? '');
     const saved = weekStakes[id];
     const option = result.options.find((o) => o.id === id);
 
-    if (amount > 0) {
+    if (amount > 0 && saved?.custom) {
+      // Custom parlays keep their legs and odds; you can only join before kickoff.
+      if (customStarted(saved, gamesById)) {
+        return res.status(409).json({ error: 'A game in that parlay already started, so it can’t take new money.' });
+      }
+      saved.stakes[name] = amount;
+    } else if (amount > 0) {
       if (!option) return res.status(409).json({ error: 'That parlay changed. Refresh and try again.' });
       weekStakes[id] = {
         id,
@@ -379,7 +448,8 @@ app.get('/api/slip', async (req, res, next) => {
           grade: gradeLeg(l, results[l.gameId]),
         }));
         const { status, returned } = gradeParlay(legs, total);
-        return { ...p, stakes, total, payout: total * p.decimal, stillOption: optionIds.has(p.id), legs, status, returned };
+        const stillOption = p.custom || optionIds.has(p.id);
+        return { ...p, stakes, total, payout: total * p.decimal, stillOption, legs, status, returned };
       })
       .filter((p) => p.total > 0)
       .sort((a, b) => b.total - a.total);
