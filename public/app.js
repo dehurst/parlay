@@ -465,7 +465,9 @@ function stakeHtml(p, closed) {
   const mine = p.stakes[me];
   const backers = Object.entries(p.stakes);
   const total = backers.reduce((sum, [, amt]) => sum + amt, 0);
-  const form = closed
+  const form = p.placed
+    ? `<p class="small"><span class="chip placed">✓ Placed</span> <span class="muted">by ${esc(p.placed.by)}, so stakes are locked.</span></p>`
+    : closed
     ? '<p class="small muted">A game in this parlay has started, so it’s closed to new money.</p>'
     : `<form class="stake-form" data-parlay="${esc(p.id)}">
         <label>Your stake $
@@ -635,28 +637,40 @@ async function renderSlip() {
     return;
   }
   const grand = data.parlays.reduce((sum, p) => sum + p.total, 0);
+  const placed = data.parlays.filter((p) => p.placed);
+  const left = grand - placed.reduce((sum, p) => sum + p.total, 0);
+  const at = (t) => new Date(t).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' });
   const cards = data.parlays.map((p, i) => {
     const legs = p.legs.map((l) => `<li>${gradeMark(l.grade)}<b>${esc(l.label)}</b> <span class="muted">${fmtOdds(l.price)} · ${esc(l.matchup)}</span>${l.grade === 'pending' ? lineMoved(l, data.book) : ''}</li>`).join('');
     const rows = Object.entries(p.stakes).map(([who, amt]) => `<tr>
-        <td>${esc(who)}${who === me ? ` <button type="button" class="link danger" data-slip-out="${esc(p.id)}">remove</button>` : ''}</td>
+        <td>${esc(who)}${who === me && !p.placed ? ` <button type="button" class="link danger" data-slip-out="${esc(p.id)}">remove</button>` : ''}</td>
         <td class="num">${money(amt)}</td><td class="num">${money(amt * p.decimal)}</td></tr>`).join('');
-    return `<div class="card parlay">
+    return `<div class="card parlay ${p.placed ? 'placed' : ''}">
       <div class="head">
-        <div><span class="muted small">Bet ${i + 1}</span> ${statusChip(p.status, p.returned, p.total)}<h3>${esc(p.name)} · ${p.legs.length}-leg parlay</h3></div>
+        <div><span class="muted small">Bet ${i + 1}</span> ${p.placed ? '<span class="chip placed">✓ Placed</span>' : ''} ${statusChip(p.status, p.returned, p.total)}<h3>${esc(p.name)} · ${p.legs.length}-leg parlay</h3></div>
         <div class="odds-col"><div class="odds">${fmtOdds(p.american)}</div>${copyButton(p)}</div>
       </div>
-      ${p.stillOption ? '' : '<div class="lines">Picks changed since people bought in, so this parlay is no longer one of the current options. Double-check before placing it.</div>'}
+      ${p.stillOption || p.placed ? '' : '<div class="lines">Picks changed since people bought in, so this parlay is no longer one of the current options. Double-check before placing it.</div>'}
       <ul>${legs}</ul>
       <table class="slip">
         <thead><tr><th>Who</th><th class="num">Stake</th><th class="num">Wins</th></tr></thead>
         <tbody>${rows}</tbody>
         <tfoot><tr><th>Total</th><th class="num">${money(p.total)}</th><th class="num">${money(p.payout)}</th></tr></tfoot>
       </table>
+      <div class="place-row">
+        ${p.placed
+          ? `<span class="small muted">Placed by ${esc(p.placed.by)} ${esc(at(p.placed.at))}. Stakes are locked.</span>
+             <button type="button" class="link" data-place="${esc(p.id)}" data-val="0">Undo</button>`
+          : `<button type="button" class="primary" data-place="${esc(p.id)}" data-val="1">Mark placed</button>
+             <span class="small muted">Tap after you've placed it at ${esc(data.book ?? 'the sportsbook')}.</span>`}
+      </div>
     </div>`;
   }).join('');
   const totals = Object.entries(data.totals).map(([who, amt]) => `<tr><td>${esc(who)}</td><td class="num">${money(amt)}</td></tr>`).join('');
   $('#slip').innerHTML = `
-    <div class="card"><b>${data.parlays.length} parlay${data.parlays.length === 1 ? '' : 's'} to place, ${money(grand)} total.</b>
+    <div class="card"><b>${placed.length === data.parlays.length
+        ? `All ${data.parlays.length} placed ✓ (${money(grand)} total)`
+        : `${data.parlays.length - placed.length} of ${data.parlays.length} left to place, ${money(left)}${placed.length ? ` (${placed.length} placed)` : ''}.`}</b>
       <div class="small muted">"Wins" is the total payout (stake included) if the parlay hits, at the odds shown.
       Check each leg in ${esc(data.book ?? 'your sportsbook')} before placing; anything marked "Line moved" will pay differently.</div>
     </div>
@@ -756,7 +770,18 @@ $('#parlays').addEventListener('click', (e) => {
   }
   if (e.target.closest('[data-act="out"]')) setStake(e.target.closest('form').dataset.parlay, 0, renderParlays);
 });
-$('#slip').addEventListener('click', (e) => {
+$('#slip').addEventListener('click', async (e) => {
+  const place = e.target.closest('[data-place]');
+  if (place) {
+    place.disabled = true;
+    try {
+      await api('/api/placed', { method: 'POST', body: { name: me, id: place.dataset.place, placed: place.dataset.val === '1' } });
+    } catch (err) {
+      notice(err.message);
+    }
+    renderSlip();
+    return;
+  }
   const btn = e.target.closest('[data-slip-out]');
   if (btn) setStake(btn.dataset.slipOut, 0, renderSlip);
 });

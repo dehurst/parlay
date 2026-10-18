@@ -232,6 +232,24 @@ app.put('/api/draft', async (req, res, next) => {
   }
 });
 
+// Mark a parlay as placed at the sportsbook (or undo). Placed parlays lock
+// their stakes so the slip keeps matching the real bet.
+app.post('/api/placed', async (req, res, next) => {
+  try {
+    const name = checkPlayer(req, res);
+    if (!name) return;
+    const win = weekWindow();
+    const saved = store.data.stakes[win.key]?.[String(req.body.id ?? '')];
+    if (!saved) return res.status(404).json({ error: 'That parlay isn’t on the slip anymore. Refresh and try again.' });
+    if (req.body.placed) saved.placed = { by: name, at: Date.now() };
+    else delete saved.placed;
+    await save();
+    res.json({ placed: saved.placed ?? null });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // Throw away edits and keep what you submitted.
 app.delete('/api/draft', async (req, res, next) => {
   try {
@@ -313,7 +331,10 @@ function stakesFor(win, id) {
 app.get('/api/parlays', async (req, res, next) => {
   try {
     const { win, gamesById, tallied, result } = await currentParlays();
-    for (const opt of result.options) opt.stakes = stakesFor(win, opt.id);
+    for (const opt of result.options) {
+      opt.stakes = stakesFor(win, opt.id);
+      opt.placed = store.data.stakes[win.key]?.[opt.id]?.placed ?? null;
+    }
     const custom = Object.values(store.data.stakes[win.key] ?? {})
       .filter((p) => p.custom)
       .sort((a, b) => a.createdAt - b.createdAt)
@@ -399,6 +420,9 @@ app.post('/api/stake', async (req, res, next) => {
     const id = String(req.body.id ?? '');
     const saved = weekStakes[id];
     const option = result.options.find((o) => o.id === id);
+    if (saved?.placed) {
+      return res.status(409).json({ error: `${saved.placed.by} already placed this bet, so stakes are locked. They can undo "placed" on the Bet Slip.` });
+    }
 
     if (amount > 0 && saved?.custom) {
       // Custom parlays keep their legs and odds; you can only join before kickoff.
@@ -452,7 +476,8 @@ app.get('/api/slip', async (req, res, next) => {
         return { ...p, stakes, total, payout: total * p.decimal, stillOption, legs, status, returned };
       })
       .filter((p) => p.total > 0)
-      .sort((a, b) => b.total - a.total);
+      // Still to place first, then placed; bigger bets first within each.
+      .sort((a, b) => !!a.placed - !!b.placed || b.total - a.total);
     res.json({ book: ODDS_API_KEY ? bookName : null, parlays, totals });
   } catch (err) {
     next(err);

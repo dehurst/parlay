@@ -218,3 +218,7 @@ h3.section.first { margin-top: 4px; }
 
 .odds-col { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; flex: none; }
 .copy-parlay { padding: 4px 10px; font-size: 13px; white-space: nowrap; }
+
+.place-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
+.chip.placed { background: rgba(47, 191, 113, .18); color: var(--accent); border: 1px solid var(--bar-line); }
+.parlay.placed { opacity: .85; }
