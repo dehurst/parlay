@@ -226,3 +226,9 @@ h3.section.first { margin-top: 4px; }
 .payout-form label { display: flex; align-items: center; gap: 6px; font-size: 14px; }
 .payout-form input { width: 110px; flex: none; }
 .payout-form p { margin: 0; flex-basis: 100%; }
+
+/* Games that have kicked off: grayed out at the bottom of the Picks tab. */
+.card.done { opacity: .55; }
+.card.done .pick.on { opacity: 1; }
+.card .score { margin: -4px 0 8px; color: var(--muted); font-weight: 600; }
+.score .live { color: var(--bad); }

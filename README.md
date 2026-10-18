@@ -17,6 +17,9 @@ the plays most of you agree on and builds a few parlays out of them.
   **Copy picks** copies a plain-text list of that day's picks (like
   `KC -3.5`, `GB/DET O 49.5`, `JAX ML`, one per line) for a group chat. **Clear my picks** (next to
   your name) wipes your picks for the week, except games already under way.
+- **Completed games**: once a game kicks off it moves to a grayed-out
+  **Live & completed games** section at the bottom of the Picks tab (live games
+  first), with the final score for games anyone bet on.
 - **Payout calculator** (switch at the top of the Picks tab): tap any bets to
   see what a one-off parlay would pay at FanDuel's current lines for any
   stake. Nothing in it is saved or shared, and it warns when two legs come

@@ -150,6 +150,8 @@ async function loadWeek({ refreshLines = false } = {}) {
     lines: lines?.byMatchup[matchKey(g.away, g.home)] ?? null,
     homeRecord: records[teamKey(g.home)] ?? null,
     awayRecord: records[teamKey(g.away)] ?? null,
+    // Final score, once known (looked up for games someone bet on).
+    result: store.data.results[win.key]?.[g.id] ?? null,
   }));
   const gamesById = new Map(games.map((g) => [g.id, g]));
 
@@ -168,6 +170,7 @@ function submitted(win) {
 
 app.get('/api/week', async (req, res, next) => {
   try {
+    await refreshResults(); // free (ESPN), at most every 10 min, so finished games show scores
     const { win, games, schedule, lines, warning, limitHit } = await loadWeek({ refreshLines: req.query.refresh === '1' });
     const now = new Date();
     const me = players.includes(req.query.me) ? req.query.me : null;

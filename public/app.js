@@ -157,7 +157,8 @@ function renderGames() {
   // Bets you already submitted show the line you got, not today's line.
   const savedLine = calc ? new Map() : new Map((submittedPicks() ?? []).filter((p) => mine.has(p.key)).map((p) => [p.key, p]));
 
-  $('#games').innerHTML = week.games.map((g) => {
+  // Games that have kicked off go to a grayed-out section at the bottom.
+  const gameCard = (g) => {
     const cell = (market, side) => {
       const key = `${g.id}|${market}|${side}`;
       const line = savedLine.get(key) ?? bookLine(key);
@@ -176,21 +177,35 @@ function renderGames() {
     const row = (team, side, totalSide) => `
       <div class="team" title="${esc(team)}">${esc(side === 'home' ? g.homeShort : g.awayShort)}</div>
       ${cell('spread', side)}${cell('total', totalSide)}${cell('ml', side)}`;
-    return `<div class="card" data-game="${esc(g.id)}">
+    const status = g.result
+      ? `Final: ${esc(abbr(g.away))} ${g.result.awayScore}, ${esc(abbr(g.home))} ${g.result.homeScore}`
+      // No score on file: a game runs about 3½ hours from kickoff.
+      : Date.now() - new Date(g.commence) > 3.5 * 3600e3 ? 'Final' : '<span class="live">● Live</span>';
+    return `<div class="card ${g.started ? 'done' : ''}" data-game="${esc(g.id)}">
       <div class="game-head">
         <h3>
           <span class="team-line">${esc(g.away)}${rec(g.awayRecord)} @</span>
           <span class="team-line">${esc(g.home)}${rec(g.homeRecord)}</span>
         </h3>
       </div>
+      ${g.started ? `<div class="score small">${status}</div>` : ''}
       <div class="game-grid ${locked ? 'is-locked' : ''}">
-        <div class="kick ${g.started ? 'locked' : ''}">${g.started ? 'Started' : kick}</div>
+        <div class="kick">${kick}</div>
         <div class="colhead">Spread</div><div class="colhead">Total</div><div class="colhead">Moneyline</div>
         ${row(g.away, 'away', 'over')}
         ${row(g.home, 'home', 'under')}
       </div>
     </div>`;
-  }).join('');
+  };
+  const upcoming = week.games.filter((g) => !g.started);
+  // Live games first, then finished ones, most recent first.
+  const isLive = (g) => !g.result && Date.now() - new Date(g.commence) <= 3.5 * 3600e3;
+  const done = week.games.filter((g) => g.started)
+    .sort((a, b) => isLive(b) - isLive(a) || b.commence.localeCompare(a.commence));
+  const heading = done.some(isLive) ? 'Live & completed games' : 'Completed games';
+  $('#games').innerHTML = upcoming.map(gameCard).join('')
+    + (upcoming.length ? '' : '<div class="card muted">Every game this week has kicked off.</div>')
+    + (done.length ? `<h3 class="section">${heading}</h3>${done.map(gameCard).join('')}` : '');
   renderSubmitBar();
 }
 
