@@ -7,7 +7,7 @@ import { weekWindow, weekLabel } from './week.js';
 import { fetchEspnSchedule, fetchEspnRecords, demoSchedule, hasStarted, matchKey, teamKey } from './schedule.js';
 import { fetchOddsApiSchedule, fetchBookLines } from './oddsapi.js';
 import { tally, buildParlays, priceParlay, selectionLabel, MARKETS } from './parlay.js';
-import { gradeLeg, gradeParlay } from './grading.js';
+import { gradeLeg, gradeParlay, actualDecimal } from './grading.js';
 import { fetchEspnScores, fetchOddsApiScores } from './results.js';
 import { computeStats } from './stats.js';
 import { canSpend, spend, refreshesLeftToday, limitFor, LINES_COST, SCORES_COST } from './credits.js';
@@ -241,8 +241,19 @@ app.post('/api/placed', async (req, res, next) => {
     const win = weekWindow();
     const saved = store.data.stakes[win.key]?.[String(req.body.id ?? '')];
     if (!saved) return res.status(404).json({ error: 'That parlay isn’t on the slip anymore. Refresh and try again.' });
-    if (req.body.placed) saved.placed = { by: name, at: Date.now() };
-    else delete saved.placed;
+    if (req.body.placed) {
+      // Optional: the real total payout from the sportsbook (stake included).
+      let payout = null;
+      if (req.body.payout != null && req.body.payout !== '') {
+        payout = Math.round(Number(req.body.payout) * 100) / 100;
+        const total = Object.values(saved.stakes).reduce((a, b) => a + b, 0);
+        if (!Number.isFinite(payout) || payout <= total || payout > 10000000) {
+          return res.status(400).json({ error: `Enter the total payout FanDuel shows (more than the $${total.toFixed(2)} bet).` });
+        }
+      }
+      // Editing the payout keeps who placed it and when.
+      saved.placed = { by: saved.placed?.by ?? name, at: saved.placed?.at ?? Date.now(), payout };
+    } else delete saved.placed;
     await save();
     res.json({ placed: saved.placed ?? null });
   } catch (err) {
@@ -471,9 +482,10 @@ app.get('/api/slip', async (req, res, next) => {
           current: gamesById.get(l.gameId)?.lines?.[l.market]?.[l.side] ?? null,
           grade: gradeLeg(l, results[l.gameId]),
         }));
-        const { status, returned } = gradeParlay(legs, total);
+        const decimal = actualDecimal(p, total);
+        const { status, returned } = gradeParlay(legs, total, decimal / p.decimal);
         const stillOption = p.custom || optionIds.has(p.id);
-        return { ...p, stakes, total, payout: total * p.decimal, stillOption, legs, status, returned };
+        return { ...p, stakes, total, estimate: total * p.decimal, decimal, payout: total * decimal, stillOption, legs, status, returned };
       })
       .filter((p) => p.total > 0)
       // Still to place first, then placed; bigger bets first within each.

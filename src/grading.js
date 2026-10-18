@@ -17,13 +17,21 @@ export function gradeLeg(leg, result) {
 // Grade a parlay whose legs already carry a `grade`. Any loss loses it; a
 // pushed leg drops out and the rest pay as a smaller parlay; all pushes
 // refund the stake. `returned` is the total paid back (stake included).
-export function gradeParlay(legs, stake) {
+// `scale` adjusts for the real payout when it differs from the legs' odds
+// (e.g. the bet was placed at moved lines): actual multiplier / estimated.
+export function gradeParlay(legs, stake, scale = 1) {
   if (legs.some((l) => l.grade === 'loss')) return { status: 'lost', returned: 0 };
   if (legs.some((l) => l.grade === 'pending')) return { status: 'pending', returned: null };
   const wins = legs.filter((l) => l.grade === 'win');
   if (!wins.length) return { status: 'push', returned: stake };
   const decimal = wins.reduce((d, l) => d * americanToDecimal(l.price), 1);
-  return { status: 'won', returned: stake * decimal };
+  return { status: 'won', returned: stake * decimal * scale };
+}
+
+// Multiplier the parlay actually pays: the payout entered when it was placed
+// (divided by the total stake), else the estimate from its legs' odds.
+export function actualDecimal(p, totalStake) {
+  return p.placed?.payout && totalStake > 0 ? p.placed.payout / totalStake : p.decimal;
 }
 
 // Profit from betting `stake` on a single pick (used for "if you'd bet $10 on

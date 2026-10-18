@@ -47,9 +47,12 @@ the plays most of you agree on and builds a few parlays out of them.
   total. A parlay is saved as it was when people bought in, so it stays on
   the slip after kickoff or if picks change (it gets flagged if it's no
   longer a current option). Legs flag any line FanDuel has moved since.
-  **Mark placed** records who placed each parlay and when, moves it below the
-  ones still to place, and locks its stakes so the slip keeps matching the real
-  bet (Undo unlocks).
+  **Mark placed** asks for the total payout FanDuel shows (pre-filled with the
+  site's estimate), records who placed it and when, moves it below the ones
+  still to place, and locks its stakes so the slip keeps matching the real bet
+  (Undo unlocks). From then on the real payout is used everywhere: each
+  person's winnings, the odds shown, copied text, and season Stats. **Edit
+  payout** fixes a typo.
 
 ## Run it
 

@@ -134,3 +134,42 @@ test('reads season records from ESPN', async () => {
   ] }] }] };
   assert.deepEqual(parseEspnRecords(board), { texans: '3-2', jaguars: '4-1-1' });
 });
+
+test('a placed parlay pays what the sportsbook said, not the estimate', async () => {
+  const { actualDecimal } = await import('../src/grading.js');
+  // Daniel's slip: -156, -290, -122 = x4.0158; $15 pays $60.24.
+  const legs = [{ grade: 'win', price: -156 }, { grade: 'win', price: -290 }, { grade: 'win', price: -110 }];
+  const estimate = legs.reduce((d, l) => d * (1 + 100 / -l.price), 1); // site priced the total at -110
+  const p = { decimal: estimate, placed: { payout: 60.24 }, stakes: { Daniel: 10, Asher: 5 } };
+  const real = actualDecimal(p, 15);
+  assert.equal((15 * real).toFixed(2), '60.24');
+  assert.equal(gradeParlay(legs, 15, real / estimate).returned.toFixed(2), '60.24');
+  assert.equal(gradeParlay(legs, 10, real / estimate).returned.toFixed(2), '40.16'); // Daniel's share
+  // A pushed leg shrinks the real payout in proportion.
+  const pushed = [legs[0], legs[1], { grade: 'push', price: -110 }];
+  assert.equal(gradeParlay(pushed, 15, real / estimate).returned.toFixed(2), (60.24 / 1.9091).toFixed(2));
+  // Without an entered payout, the estimate is used.
+  assert.equal(actualDecimal({ decimal: 2.5 }, 15), 2.5);
+});
+
+test('season stats use the entered payout', () => {
+  const wk = '2026-10-13';
+  const games = [
+    { id: 'a', home: 'Eagles', away: 'Panthers', homeShort: 'Eagles', awayShort: 'Panthers', commence: '2026-10-18T17:00:00Z' },
+    { id: 'b', home: 'Colts', away: 'Titans', homeShort: 'Colts', awayShort: 'Titans', commence: '2026-10-18T17:00:00Z' },
+  ];
+  const data = {
+    schedule: { [wk]: { games } },
+    results: { [wk]: { a: final(17, 24), b: final(27, 10) } },
+    picks: {},
+    stakes: { [wk]: { x: {
+      name: 'Custom', american: 200, decimal: 3,
+      legs: [{ key: 'a|ml|away', gameId: 'a', price: 100, point: null }, { key: 'b|ml|home', gameId: 'b', price: -200, point: null }],
+      stakes: { Daniel: 10 },
+      placed: { by: 'Daniel', at: 0, payout: 28 },
+    } } },
+  };
+  const daniel = computeStats(data, ['Daniel']).players[0];
+  assert.equal(daniel.returned.toFixed(2), '28.00');
+  assert.equal(daniel.net.toFixed(2), '18.00');
+});

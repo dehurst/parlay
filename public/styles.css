@@ -222,3 +222,7 @@ h3.section.first { margin-top: 4px; }
 .place-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
 .chip.placed { background: rgba(47, 191, 113, .18); color: var(--accent); border: 1px solid var(--bar-line); }
 .parlay.placed { opacity: .85; }
+.payout-form { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; width: 100%; }
+.payout-form label { display: flex; align-items: center; gap: 6px; font-size: 14px; }
+.payout-form input { width: 110px; flex: none; }
+.payout-form p { margin: 0; flex-basis: 100%; }

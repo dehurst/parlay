@@ -1,5 +1,5 @@
 import { tally, selectionLabel } from './parlay.js';
-import { gradeLeg, gradeParlay, singleProfit } from './grading.js';
+import { gradeLeg, gradeParlay, singleProfit, actualDecimal } from './grading.js';
 import { weekLabel } from './week.js';
 
 const record = () => ({ win: 0, loss: 0, push: 0, pending: 0 });
@@ -63,10 +63,12 @@ export function computeStats(data, players) {
       const legs = p.legs.map((l) => ({ ...l, grade: grade(l) }));
       const stakes = Object.fromEntries(Object.entries(p.stakes).filter(([who]) => people[who]));
       const total = Object.values(stakes).reduce((a, b) => a + b, 0);
-      const { status, returned } = gradeParlay(legs, total);
+      // Use the real payout from the sportsbook when one was entered.
+      const scale = p.decimal ? actualDecimal(p, total) / p.decimal : 1;
+      const { status, returned } = gradeParlay(legs, total, scale);
       parlayRecord[status]++;
       for (const [who, amt] of Object.entries(stakes)) {
-        const share = gradeParlay(legs, amt).returned;
+        const share = gradeParlay(legs, amt, scale).returned;
         if (status === 'pending') people[who].inPlay += amt;
         else {
           people[who].staked += amt;

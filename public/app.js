@@ -325,10 +325,25 @@ function parlayText(p) {
       return betText(l.key, l.point, away, home);
     });
   const total = Object.values(p.stakes ?? {}).reduce((sum, amt) => sum + amt, 0);
-  const lines = [...legs, '', `Odds: ${fmtOdds(p.american)}`, `$10 pays ${money(10 * p.decimal)}`];
-  if (total > 0) lines.push(`Total bet: ${money(total)}, pays ${money(total * p.decimal)}`);
+  const real = p.placed?.payout ? payMultiplier(p) : null;
+  const odds = real ? oddsFromMultiplier(real) : p.american;
+  const mult = real ?? p.decimal;
+  const lines = [...legs, '', `Odds: ${fmtOdds(odds)}`, `$10 pays ${money(10 * mult)}`];
+  if (total > 0) lines.push(`Total bet: ${money(total)}, pays ${money(total * mult)}`);
   return lines.join('\n');
 }
+
+// What the parlay really pays per $1: the payout entered when it was placed,
+// else the estimate from its legs' odds.
+function payMultiplier(p) {
+  const total = Object.values(p.stakes ?? {}).reduce((sum, amt) => sum + amt, 0);
+  return p.placed?.payout && total > 0 ? p.placed.payout / total : p.decimal;
+}
+// FanDuel shows odds rounded toward zero (+301.6 -> +301).
+const oddsFromMultiplier = (d) => (d >= 2 ? Math.trunc((d - 1) * 100) : Math.trunc(-100 / (d - 1)));
+
+// Odds to show: what the sportsbook actually gave once a payout is entered.
+const shownOdds = (p) => (p.placed?.payout ? oddsFromMultiplier(payMultiplier(p)) : p.american);
 
 // Parlays on screen, by id, for their Copy buttons.
 const copyable = new Map();
@@ -478,7 +493,7 @@ function stakeHtml(p, closed) {
       </form>`;
   return `${form}
     <div class="small muted backers">${backers.length
-      ? `${backers.map(([who, amt]) => `${esc(who)} ${money(amt)}`).join(' · ')} · <b>${money(total)} total</b>, pays ${money(total * p.decimal)}`
+      ? `${backers.map(([who, amt]) => `${esc(who)} ${money(amt)}`).join(' · ')} · <b>${money(total)} total</b>, pays ${money(total * payMultiplier(p))}`
       : 'Nobody is in yet'}</div>`;
 }
 
@@ -487,7 +502,7 @@ function customHtml(data) {
     <div class="card parlay custom">
       <div class="head">
         <div><h3>${esc(p.name)}</h3><div class="small muted">${p.legs.length}-leg custom parlay</div></div>
-        <div class="odds-col"><div class="odds">${fmtOdds(p.american)}</div>${copyButton(p)}</div>
+        <div class="odds-col"><div class="odds">${fmtOdds(shownOdds(p))}</div>${copyButton(p)}</div>
       </div>
       <ul>${p.legs.map((l) => `<li><b>${esc(l.label)}</b> <span class="muted">${fmtOdds(l.price)} · ${esc(l.matchup)}</span>${lineMoved(l, data.book)}</li>`).join('')}</ul>
       <div class="stats"><span>$10.00 pays <b>${money(10 * p.decimal)}</b></span></div>
@@ -526,7 +541,7 @@ async function renderParlays() {
           ${groupPick ? '<span class="badge">Group\'s pick</span>' : ''}
           <h3>${esc(p.name)}</h3><div class="small muted">${esc(p.blurb)}</div>
         </div>
-        <div class="odds-col"><div class="odds">${fmtOdds(p.american)}</div>${copyButton(p)}</div>
+        <div class="odds-col"><div class="odds">${fmtOdds(shownOdds(p))}</div>${copyButton(p)}</div>
       </div>
       <ul>${p.legs.map((l) => `<li><b>${esc(l.label)}</b> <span class="muted">${fmtOdds(l.price)} · ${esc(l.matchup)} · ${l.pickers.length}/${data.voters} picked</span>${lineMoved(l, data.book)}</li>`).join('')}</ul>
       <div class="stats">
@@ -628,6 +643,8 @@ async function renderStats() {
   $('#stats').innerHTML = parlayCard + money_ + picksCard + `<h3 class="section">Week by week</h3>` + weeks;
 }
 
+let placingId = null; // Bet Slip parlay whose payout box is open
+
 async function renderSlip() {
   $('#slip').innerHTML = '<p class="muted">Loading…</p>';
   const data = await api('/api/slip').catch((err) => (notice(err.message), null));
@@ -648,7 +665,7 @@ async function renderSlip() {
     return `<div class="card parlay ${p.placed ? 'placed' : ''}">
       <div class="head">
         <div><span class="muted small">Bet ${i + 1}</span> ${p.placed ? '<span class="chip placed">✓ Placed</span>' : ''} ${statusChip(p.status, p.returned, p.total)}<h3>${esc(p.name)} · ${p.legs.length}-leg parlay</h3></div>
-        <div class="odds-col"><div class="odds">${fmtOdds(p.american)}</div>${copyButton(p)}</div>
+        <div class="odds-col"><div class="odds">${fmtOdds(shownOdds(p))}</div>${copyButton(p)}</div>
       </div>
       ${p.stillOption || p.placed ? '' : '<div class="lines">Picks changed since people bought in, so this parlay is no longer one of the current options. Double-check before placing it.</div>'}
       <ul>${legs}</ul>
@@ -658,10 +675,21 @@ async function renderSlip() {
         <tfoot><tr><th>Total</th><th class="num">${money(p.total)}</th><th class="num">${money(p.payout)}</th></tr></tfoot>
       </table>
       <div class="place-row">
-        ${p.placed
-          ? `<span class="small muted">Placed by ${esc(p.placed.by)} ${esc(at(p.placed.at))}. Stakes are locked.</span>
+        ${placingId === p.id
+          ? `<form class="payout-form" data-id="${esc(p.id)}">
+               <label>${esc(data.book ?? 'Sportsbook')} total payout $
+                 <input name="payout" type="number" inputmode="decimal" step="0.01" min="0" value="${(p.placed?.payout ?? p.estimate).toFixed(2)}"></label>
+               <button type="submit" class="primary">Save</button>
+               <button type="button" class="link" data-act="cancel-place">Cancel</button>
+               <p class="small muted">The payout ${esc(data.book ?? 'the sportsbook')} shows for the whole bet, stake included.
+                 The site estimated ${money(p.estimate)}${p.legs.some((l) => l.current && !sameLine(l.current, l)) ? ' (some lines have moved since)' : ''}.</p>
+             </form>`
+          : p.placed
+          ? `<span class="small muted">Placed by ${esc(p.placed.by)} ${esc(at(p.placed.at))}. Stakes are locked.
+               ${p.placed.payout ? `<br>${esc(data.book ?? 'Sportsbook')} pays <b>${money(p.placed.payout)}</b>${Math.abs(p.placed.payout - p.estimate) >= 0.01 ? ` (site estimated ${money(p.estimate)})` : ''}.` : ''}</span>
+             <button type="button" class="link" data-edit-payout="${esc(p.id)}">${p.placed.payout ? 'Edit payout' : 'Add payout'}</button>
              <button type="button" class="link" data-place="${esc(p.id)}" data-val="0">Undo</button>`
-          : `<button type="button" class="primary" data-place="${esc(p.id)}" data-val="1">Mark placed</button>
+          : `<button type="button" class="primary" data-edit-payout="${esc(p.id)}">Mark placed</button>
              <span class="small muted">Tap after you've placed it at ${esc(data.book ?? 'the sportsbook')}.</span>`}
       </div>
     </div>`;
@@ -770,7 +798,32 @@ $('#parlays').addEventListener('click', (e) => {
   }
   if (e.target.closest('[data-act="out"]')) setStake(e.target.closest('form').dataset.parlay, 0, renderParlays);
 });
+$('#slip').addEventListener('submit', async (e) => {
+  const form = e.target.closest('.payout-form');
+  if (!form) return;
+  e.preventDefault();
+  try {
+    await api('/api/placed', { method: 'POST', body: { name: me, id: form.dataset.id, placed: true, payout: form.payout.value } });
+    placingId = null;
+    notice(null);
+  } catch (err) {
+    notice(err.message);
+  }
+  renderSlip();
+});
 $('#slip').addEventListener('click', async (e) => {
+  const open = e.target.closest('[data-edit-payout]');
+  if (open) {
+    placingId = open.dataset.editPayout;
+    await renderSlip();
+    $('.payout-form input')?.select();
+    return;
+  }
+  if (e.target.closest('[data-act="cancel-place"]')) {
+    placingId = null;
+    renderSlip();
+    return;
+  }
   const place = e.target.closest('[data-place]');
   if (place) {
     place.disabled = true;
