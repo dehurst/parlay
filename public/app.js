@@ -132,6 +132,9 @@ function render() {
   if (tab === 'stats') renderStats();
 }
 
+// A game is over once its final score is in, or ~3½ hours after kickoff.
+const isFinal = (g) => g.started && (!!g.result || Date.now() - new Date(g.commence) > 3.5 * 3600e3);
+
 const rec = (r) => (r ? ` <span class="rec">(${esc(r)})</span>` : '');
 
 function renderGames() {
@@ -181,7 +184,7 @@ function renderGames() {
       ? `Final: ${esc(abbr(g.away))} ${g.result.awayScore}, ${esc(abbr(g.home))} ${g.result.homeScore}`
       // No score on file: a game runs about 3½ hours from kickoff.
       : Date.now() - new Date(g.commence) > 3.5 * 3600e3 ? 'Final' : '<span class="live">● Live</span>';
-    return `<div class="card ${g.started ? 'done' : ''}" data-game="${esc(g.id)}">
+    return `<div class="card ${isFinal(g) ? 'done' : ''}" data-game="${esc(g.id)}">
       <div class="game-head">
         <h3>
           <span class="team-line">${esc(g.away)}${rec(g.awayRecord)} @</span>
@@ -197,15 +200,13 @@ function renderGames() {
       </div>
     </div>`;
   };
-  const upcoming = week.games.filter((g) => !g.started);
-  // Live games first, then finished ones, most recent first.
-  const isLive = (g) => !g.result && Date.now() - new Date(g.commence) <= 3.5 * 3600e3;
-  const done = week.games.filter((g) => g.started)
-    .sort((a, b) => isLive(b) - isLive(a) || b.commence.localeCompare(a.commence));
-  const heading = done.some(isLive) ? 'Live & completed games' : 'Completed games';
-  $('#games').innerHTML = upcoming.map(gameCard).join('')
-    + (upcoming.length ? '' : '<div class="card muted">Every game this week has kicked off.</div>')
-    + (done.length ? `<h3 class="section">${heading}</h3>${done.map(gameCard).join('')}` : '');
+  // Upcoming and live games stay on top in kickoff order; finished games
+  // move to a grayed-out section below, most recent first.
+  const current = week.games.filter((g) => !isFinal(g));
+  const finished = week.games.filter(isFinal).sort((a, b) => b.commence.localeCompare(a.commence));
+  $('#games').innerHTML = current.map(gameCard).join('')
+    + (current.length ? '' : '<div class="card muted">Every game this week is over.</div>')
+    + (finished.length ? `<h3 class="section">Completed games</h3>${finished.map(gameCard).join('')}` : '');
   renderSubmitBar();
 }
 
@@ -535,7 +536,7 @@ async function renderParlays() {
   const data = await api('/api/parlays').catch((err) => (notice(err.message), null));
   if (!data) return;
 
-  let html = '<h3 class="section first">Group parlays</h3>';
+  let html = customHtml(data) + '<h3 class="section">Suggested parlays</h3>';
   if (!data.voters) {
     html += '<div class="card muted">Nobody has submitted picks yet.</div>';
   } else if (!data.options.length) {
@@ -575,7 +576,6 @@ async function renderParlays() {
     </div>`;
   }
 
-  html += customHtml(data);
 
   html += `<p class="small muted">Payouts use the lines at the time each pick was submitted${data.book ? `, which can drift from ${esc(data.book)}'s current lines` : ''}, so double-check them in your sportsbook before you bet.
     Hit chance is a rough estimate that removes a typical book margin. A negative expected return is the house edge,
@@ -629,14 +629,16 @@ async function renderStats() {
     </div></div>`;
 
   const c = data.consensus;
+  const winPct = (r) => (r.win + r.loss ? r.win / (r.win + r.loss) : 0);
+  const wlp = (r) => `<td class="num">${r.win}</td><td class="num">${r.loss}</td><td class="num">${r.push}</td>`;
   const picksCard = `<div class="card"><h3>Pick records</h3>
-    <p class="small muted">Every submitted pick graded as a single bet. "$10 a pick" is what you'd be up or down betting $10 on each one.</p>
+    <p class="small muted">Every submitted pick, graded win, loss, or push.</p>
     <table class="slip">
-      <thead><tr><th>Who</th><th class="num">W-L-P</th><th class="num">$10 a pick</th></tr></thead>
-      <tbody>${[...data.players].sort((a, b) => b.flatNet - a.flatNet).map((p) => `<tr>
+      <thead><tr><th>Who</th><th class="num">W</th><th class="num">L</th><th class="num">P</th></tr></thead>
+      <tbody>${[...data.players].sort((a, b) => winPct(b.picks) - winPct(a.picks) || b.picks.win - a.picks.win).map((p) => `<tr>
         <td>${esc(p.name)}<div class="small muted">ATS ${recordText(p.byMarket.spread)} · Totals ${recordText(p.byMarket.total)} · ML ${recordText(p.byMarket.ml)}</div></td>
-        <td class="num">${recordText(p.picks)}</td><td class="num ${netClass(p.flatNet)}">${signed(p.flatNet)}</td></tr>`).join('')}</tbody>
-      <tfoot><tr><th>Group consensus<div class="small muted">Bets most of you agreed on</div></th><th class="num">${recordText(c)}</th><th></th></tr></tfoot>
+        ${wlp(p.picks)}</tr>`).join('')}</tbody>
+      <tfoot><tr><th>Group consensus<div class="small muted">Bets most of you agreed on</div></th>${wlp(c)}</tr></tfoot>
     </table></div>`;
 
   const weeks = data.weeks.map((w, i) => {
@@ -669,15 +671,19 @@ async function renderSlip() {
     return;
   }
   const grand = data.parlays.reduce((sum, p) => sum + p.total, 0);
-  const placed = data.parlays.filter((p) => p.placed);
-  const left = grand - placed.reduce((sum, p) => sum + p.total, 0);
+  // Parlays still in play (to place, or placed and waiting on games) stay on
+  // top; finished ones move to a grayed-out section at the bottom.
+  const active = data.parlays.filter((p) => p.status === 'pending');
+  const finished = data.parlays.filter((p) => p.status !== 'pending');
+  const toPlace = active.filter((p) => !p.placed);
+  const left = toPlace.reduce((sum, p) => sum + p.total, 0);
   const at = (t) => new Date(t).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' });
-  const cards = data.parlays.map((p, i) => {
+  const card = (p, i) => {
     const legs = p.legs.map((l) => `<li>${gradeMark(l.grade)}<b>${esc(l.label)}</b> <span class="muted">${fmtOdds(l.price)} · ${esc(l.matchup)}</span>${l.grade === 'pending' ? lineMoved(l, data.book) : ''}</li>`).join('');
     const rows = Object.entries(p.stakes).map(([who, amt]) => `<tr>
         <td>${esc(who)}${who === me && !p.placed ? ` <button type="button" class="link danger" data-slip-out="${esc(p.id)}">remove</button>` : ''}</td>
         <td class="num">${money(amt)}</td><td class="num">${money(amt * p.decimal)}</td></tr>`).join('');
-    return `<div class="card parlay ${p.placed ? 'placed' : ''}">
+    return `<div class="card parlay ${p.placed ? 'placed' : ''} ${p.status !== 'pending' ? 'done' : ''}">
       <div class="head">
         <div><span class="muted small">Bet ${i + 1}</span> ${p.placed ? '<span class="chip placed">✓ Placed</span>' : ''} ${statusChip(p.status, p.returned, p.total)}<h3>${esc(p.name)} · ${p.legs.length}-leg parlay</h3></div>
         <div class="odds-col"><div class="odds">${fmtOdds(shownOdds(p))}</div>${copyButton(p)}</div>
@@ -708,12 +714,15 @@ async function renderSlip() {
              <span class="small muted">Tap after you've placed it at ${esc(data.book ?? 'the sportsbook')}.</span>`}
       </div>
     </div>`;
-  }).join('');
+  };
+  const cards = active.map((p, i) => card(p, i)).join('')
+    + (finished.length ? `<h3 class="section">Completed</h3>${finished.map((p, i) => card(p, active.length + i)).join('')}` : '');
   const totals = Object.entries(data.totals).map(([who, amt]) => `<tr><td>${esc(who)}</td><td class="num">${money(amt)}</td></tr>`).join('');
   $('#slip').innerHTML = `
-    <div class="card"><b>${placed.length === data.parlays.length
-        ? `All ${data.parlays.length} placed ✓ (${money(grand)} total)`
-        : `${data.parlays.length - placed.length} of ${data.parlays.length} left to place, ${money(left)}${placed.length ? ` (${placed.length} placed)` : ''}.`}</b>
+    <div class="card"><b>${toPlace.length
+        ? `${toPlace.length} parlay${toPlace.length === 1 ? '' : 's'} left to place, ${money(left)}.`
+        : active.length ? `All placed ✓ · ${active.length} still in play` : 'All parlays are settled.'}</b>
+      <span class="small muted">${data.parlays.length} this week, ${money(grand)} total${finished.length ? `, ${finished.length} settled` : ''}.</span>
       <div class="small muted">"Wins" is the total payout (stake included) if the parlay hits, at the odds shown.
       Check each leg in ${esc(data.book ?? 'your sportsbook')} before placing; anything marked "Line moved" will pay differently.</div>
     </div>

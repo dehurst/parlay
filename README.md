@@ -17,9 +17,10 @@ the plays most of you agree on and builds a few parlays out of them.
   **Copy picks** copies a plain-text list of that day's picks (like
   `KC -3.5`, `GB/DET O 49.5`, `JAX ML`, one per line) for a group chat. **Clear my picks** (next to
   your name) wipes your picks for the week, except games already under way.
-- **Completed games**: once a game kicks off it moves to a grayed-out
-  **Live & completed games** section at the bottom of the Picks tab (live games
-  first), with the final score for games anyone bet on.
+- **Completed games**: live games stay at the top of the Picks tab (marked
+  Live); once a game is over it moves to a grayed-out **Completed games**
+  section at the bottom, with the final score for games anyone bet on. The Bet
+  Slip does the same for settled parlays.
 - **Payout calculator** (switch at the top of the Picks tab): tap any bets to
   see what a one-off parlay would pay at FanDuel's current lines for any
   stake. Nothing in it is saved or shared, and it warns when two legs come
@@ -27,7 +28,8 @@ the plays most of you agree on and builds a few parlays out of them.
 - **Group Board**: every submitted bet ranked by how many of you took it,
   plus who still needs to submit. It flags bets where FanDuel's line has
   moved since.
-- **Parlays**: up to five options built from the majority picks. Each shows the
+- **Parlays**: custom parlays first, then up to five suggested parlays built
+  from the majority picks. Each shows the
   price, the payout for your stake, a rough chance of hitting, and a list of
   bets that are one vote short. Everyone types in how much they want on the
   parlays they like; one with money from a majority of the group is marked
