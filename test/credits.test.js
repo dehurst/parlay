@@ -32,3 +32,13 @@ test('the budget resets the next Eastern day and old days are forgotten', () => 
   spend(data, 3, sunday);
   assert.deepEqual(Object.keys(data.creditsUsed).sort(), ['2026-10-17', '2026-10-18']);
 });
+
+test('Sundays (Eastern) get 30 credits, 10 refreshes; other days 16', async () => {
+  const { limitFor } = await import('../src/credits.js');
+  const limits = { daily: 16, sunday: 30 };
+  assert.equal(limitFor(new Date('2026-10-18T04:00:00Z'), limits), 30); // Sunday 12:00 AM EDT
+  assert.equal(limitFor(new Date('2026-10-19T03:59:00Z'), limits), 30); // Sunday 11:59 PM EDT
+  assert.equal(limitFor(new Date('2026-10-19T04:00:00Z'), limits), 16); // Monday
+  assert.equal(limitFor(new Date('2026-10-18T03:59:00Z'), limits), 16); // Saturday night
+  assert.equal(refreshesLeftToday({}, 30, new Date('2026-10-18T15:00:00Z')), 10);
+});

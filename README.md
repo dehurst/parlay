@@ -66,6 +66,7 @@ Settings (in `.env` or as environment variables):
 | `BOOKMAKER` | `fanduel` | Book to pull lines from (`draftkings`, `betmgm`, `williamhill_us`, ...) |
 | `ODDS_CACHE_HOURS` | `6` | Hours between automatic line refreshes. Each costs 3 credits; the schedule is free |
 | `DAILY_CREDIT_LIMIT` | `16` | Most Odds API credits to spend per day (Eastern). 16 = 5 line refreshes |
+| `SUNDAY_CREDIT_LIMIT` | `30` | The same, on Sundays. 30 = 10 line refreshes |
 | `GROUP_CODE` | _(empty)_ | Optional shared code friends enter before they can use the site |
 | `SEASON_START` | Tuesday after Labor Day | Sets the "Week N" label (YYYY-MM-DD, a Tuesday) |
 | `PORT` | `3000` | |
@@ -78,7 +79,10 @@ scores (from ESPN) don't use any. FanDuel lines cost 3 credits per refresh
 (spreads, totals, and moneylines).
 
 The site spends at most `DAILY_CREDIT_LIMIT` credits a day (default 16, so 5
-line refreshes; 31 x 16 = 496 a month). The day resets at midnight Eastern.
+line refreshes) and `SUNDAY_CREDIT_LIMIT` on Sundays (default 30, so 10). The
+day resets at midnight Eastern. Maxing out every day would top 500 in a month,
+but real use is far lower, and the free plan can't be overcharged: if the 500
+ran out, lines would just stop updating until the monthly reset.
 Lines refresh automatically when someone opens the site and they're older than
 `ODDS_CACHE_HOURS`, and the **Refresh lines** button at the top refreshes on
 demand while there's budget left. Once every game of the week has kicked off,

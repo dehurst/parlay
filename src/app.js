@@ -10,7 +10,7 @@ import { tally, buildParlays, MARKETS } from './parlay.js';
 import { gradeLeg, gradeParlay } from './grading.js';
 import { fetchEspnScores, fetchOddsApiScores } from './results.js';
 import { computeStats } from './stats.js';
-import { canSpend, spend, refreshesLeftToday, LINES_COST, SCORES_COST } from './credits.js';
+import { canSpend, spend, refreshesLeftToday, limitFor, LINES_COST, SCORES_COST } from './credits.js';
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 loadEnvFile(join(root, '.env'));
@@ -19,6 +19,7 @@ const {
   BOOKMAKER = 'fanduel',
   ODDS_CACHE_HOURS = '6',
   DAILY_CREDIT_LIMIT = '16',
+  SUNDAY_CREDIT_LIMIT = '30',
   PLAYERS = 'Daniel,Asher,Matt',
   GROUP_CODE = '',
   DATA_FILE = join(root, 'data', 'db.json'),
@@ -28,7 +29,8 @@ const SCHEDULE_TTL = 30 * 60e3; // re-check the schedule every 30 min (it's free
 const RETRY_AFTER_ERROR = 5 * 60e3;
 const LINES_TTL = Number(ODDS_CACHE_HOURS) * 3600e3;
 const MANUAL_REFRESH_GAP = 5 * 60e3; // so a double tap doesn't spend two refreshes
-const creditLimit = Number(DAILY_CREDIT_LIMIT);
+const limits = { daily: Number(DAILY_CREDIT_LIMIT), sunday: Number(SUNDAY_CREDIT_LIMIT) };
+const creditLimit = () => limitFor(new Date(), limits);
 const BOOK_NAMES = { fanduel: 'FanDuel', draftkings: 'DraftKings', betmgm: 'BetMGM', williamhill_us: 'Caesars' };
 const bookName = BOOK_NAMES[BOOKMAKER] ?? BOOKMAKER;
 
@@ -124,7 +126,7 @@ async function loadWeek({ refreshLines = false } = {}) {
   if (ODDS_API_KEY && !schedule.demo && anyUpcoming) {
     const age = lines ? Date.now() - lines.fetchedAt : Infinity;
     const wanted = age > LINES_TTL || (refreshLines && age > MANUAL_REFRESH_GAP);
-    limitHit = wanted && !canSpend(store.data, LINES_COST, creditLimit);
+    limitHit = wanted && !canSpend(store.data, LINES_COST, creditLimit());
     if (wanted && !limitHit) {
       try {
         const fresh = await fetchBookLines(ODDS_API_KEY, BOOKMAKER, win);
@@ -184,8 +186,8 @@ app.get('/api/week', async (req, res, next) => {
       // Your own unsubmitted selections (null if you have none); nobody else sees these.
       draft: (me && store.data.drafts[win.key]?.[me]) ?? null,
       nextRefreshAt: lines ? lines.fetchedAt + MANUAL_REFRESH_GAP : null,
-      refreshesLeft: ODDS_API_KEY ? refreshesLeftToday(store.data, creditLimit) : null,
-      refreshesPerDay: Math.floor(creditLimit / LINES_COST),
+      refreshesLeft: ODDS_API_KEY ? refreshesLeftToday(store.data, creditLimit()) : null,
+      refreshesPerDay: Math.floor(creditLimit() / LINES_COST),
       limitHit,
     });
   } catch (err) {
@@ -409,7 +411,7 @@ async function refreshResults() {
     } catch (err) {
       console.error(`ESPN scores failed: ${describe(err)}`);
       const recent = due.some((g) => Date.now() - new Date(g.commence).getTime() < 3 * 24 * 3600e3);
-      if (ODDS_API_KEY && recent && canSpend(store.data, SCORES_COST, creditLimit)) {
+      if (ODDS_API_KEY && recent && canSpend(store.data, SCORES_COST, creditLimit())) {
         try {
           found = await fetchOddsApiScores(ODDS_API_KEY, week);
           spend(store.data, SCORES_COST);

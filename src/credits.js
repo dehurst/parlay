@@ -1,13 +1,22 @@
-// A daily budget for paid Odds API calls. The free plan has 500 credits a
-// month; 16 a day keeps a 31-day month under that (31 x 16 = 496). Lines cost
-// 3 credits per refresh (spreads + totals + moneylines), so that's 5 a day.
-// The day resets at midnight Eastern.
+// A daily budget for paid Odds API calls. Lines cost 3 credits per refresh
+// (spreads + totals + moneylines). By default that's 16 credits (5 refreshes)
+// a day, and 30 (10 refreshes) on Sundays, when everyone's checking lines.
+// The free plan's 500 a month is a hard stop on The Odds API's side, never a
+// charge. The day resets at midnight Eastern.
 
 export const LINES_COST = 3;
 export const SCORES_COST = 2;
 
 export const easternDate = (now = new Date()) =>
   new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit' }).format(now);
+
+const easternWeekday = (now) =>
+  new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', weekday: 'short' }).format(now);
+
+// Today's credit limit: the Sunday limit on Sundays (Eastern), else the daily one.
+export function limitFor(now, { daily, sunday }) {
+  return easternWeekday(now) === 'Sun' ? sunday : daily;
+}
 
 export function creditsUsedToday(data, now = new Date()) {
   return data.creditsUsed?.[easternDate(now)] ?? 0;
