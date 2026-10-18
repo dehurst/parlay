@@ -31,7 +31,9 @@ the plays most of you agree on and builds a few parlays out of them.
   plus who still needs to submit. It flags bets where FanDuel's line has
   moved since.
 - **Parlays**: custom parlays first, then up to five suggested parlays built
-  from the majority picks. Each shows the
+  from the majority picks. Every parlay anyone had money on moves to a grayed
+  **Completed** section once it's decided, marked Won (with the payout), Lost,
+  or Push, with a ✓ or ✗ on each leg. Each shows the
   price, the payout for your stake, a rough chance of hitting, and a list of
   bets that are one vote short. Everyone types in how much they want on the
   parlays they like; one with money from a majority of the group is marked

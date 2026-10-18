@@ -344,13 +344,19 @@ function stakesFor(win, id) {
 
 app.get('/api/parlays', async (req, res, next) => {
   try {
+    await refreshResults();
     const { win, gamesById, tallied, result } = await currentParlays();
+    // Parlays with money on them that are decided (won, lost, or push).
+    const settled = gradedParlays(win, gamesById, new Set(result.options.map((o) => o.id)))
+      .filter((p) => p.status !== 'pending')
+      .sort((a, b) => (a.status === 'won' ? 0 : 1) - (b.status === 'won' ? 0 : 1) || b.total - a.total);
+    const settledIds = new Set(settled.map((p) => p.id));
     for (const opt of result.options) {
       opt.stakes = stakesFor(win, opt.id);
       opt.placed = store.data.stakes[win.key]?.[opt.id]?.placed ?? null;
     }
     const custom = Object.values(store.data.stakes[win.key] ?? {})
-      .filter((p) => p.custom)
+      .filter((p) => p.custom && !settledIds.has(p.id))
       .sort((a, b) => a.createdAt - b.createdAt)
       .map((p) => ({
         ...p,
@@ -358,7 +364,7 @@ app.get('/api/parlays', async (req, res, next) => {
         started: customStarted(p, gamesById),
         legs: p.legs.map((l) => ({ ...l, current: gamesById.get(l.gameId)?.lines?.[l.market]?.[l.side] ?? null })),
       }));
-    res.json({ tallied, book: ODDS_API_KEY ? bookName : null, players, ...result, custom });
+    res.json({ tallied, book: ODDS_API_KEY ? bookName : null, players, ...result, custom, settled });
   } catch (err) {
     next(err);
   }
@@ -468,29 +474,35 @@ app.post('/api/stake', async (req, res, next) => {
 
 // Everything the person placing bets needs: each parlay with money on it,
 // who's in for how much, and whether any line has moved since.
+// Every parlay with money on it this week, graded against final scores:
+// each leg's result, the parlay's status, and what it pays back.
+function gradedParlays(win, gamesById, optionIds) {
+  const results = store.data.results[win.key] ?? {};
+  return Object.values(store.data.stakes[win.key] ?? {})
+    .map((p) => {
+      const stakes = stakesFor(win, p.id);
+      const total = Object.values(stakes).reduce((a, b) => a + b, 0);
+      const legs = p.legs.map((l) => ({
+        ...l,
+        current: gamesById.get(l.gameId)?.lines?.[l.market]?.[l.side] ?? null,
+        grade: gradeLeg(l, results[l.gameId]),
+      }));
+      const decimal = actualDecimal(p, total);
+      const { status, returned } = gradeParlay(legs, total, decimal / p.decimal);
+      const stillOption = p.custom || optionIds.has(p.id);
+      return { ...p, stakes, total, estimate: total * p.decimal, decimal, payout: total * decimal, stillOption, legs, status, returned };
+    })
+    .filter((p) => p.total > 0);
+}
+
 app.get('/api/slip', async (req, res, next) => {
   try {
     await refreshResults();
     const { win, gamesById, result } = await currentParlays();
-    const results = store.data.results[win.key] ?? {};
-    const optionIds = new Set(result.options.map((o) => o.id));
     const totals = {};
-    const parlays = Object.values(store.data.stakes[win.key] ?? {})
-      .map((p) => {
-        const stakes = stakesFor(win, p.id);
-        const total = Object.values(stakes).reduce((a, b) => a + b, 0);
-        for (const [who, amt] of Object.entries(stakes)) totals[who] = (totals[who] ?? 0) + amt;
-        const legs = p.legs.map((l) => ({
-          ...l,
-          current: gamesById.get(l.gameId)?.lines?.[l.market]?.[l.side] ?? null,
-          grade: gradeLeg(l, results[l.gameId]),
-        }));
-        const decimal = actualDecimal(p, total);
-        const { status, returned } = gradeParlay(legs, total, decimal / p.decimal);
-        const stillOption = p.custom || optionIds.has(p.id);
-        return { ...p, stakes, total, estimate: total * p.decimal, decimal, payout: total * decimal, stillOption, legs, status, returned };
-      })
-      .filter((p) => p.total > 0)
+    const parlays = gradedParlays(win, gamesById, new Set(result.options.map((o) => o.id)));
+    for (const p of parlays) for (const [who, amt] of Object.entries(p.stakes)) totals[who] = (totals[who] ?? 0) + amt;
+    parlays
       // Still to place first, then placed; bigger bets first within each.
       .sort((a, b) => !!a.placed - !!b.placed || b.total - a.total);
     res.json({ book: ODDS_API_KEY ? bookName : null, parlays, totals });

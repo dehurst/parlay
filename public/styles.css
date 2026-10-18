@@ -250,3 +250,10 @@ h3.section.first { margin-top: 4px; }
 .card .score { margin: -4px 0 8px; color: var(--muted); font-weight: 600; }
 .score .live { color: var(--bad); }
 .pick.graded.push .price, .pick.graded.right .price { color: var(--muted); }
+
+/* Settled parlays on the Parlays tab and Bet Slip: grayed, with the result badge bright. */
+.parlay.done { background: #151b22; }
+.parlay.done h3, .parlay.done .odds, .parlay.done .backers, .parlay.done ul, .parlay.done table { opacity: .6; }
+.parlay.done.won { border-color: rgba(47, 191, 113, .5); }
+.parlay.done.lost { border-color: rgba(229, 72, 77, .4); }
+.graded-legs { list-style: none; padding-left: 0; }

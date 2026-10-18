@@ -544,6 +544,25 @@ function stakeHtml(p, closed) {
       : 'Nobody is in yet'}</div>`;
 }
 
+// Parlays with money on them that are decided: result badge, leg marks,
+// and what came back. Grayed out at the bottom of the Parlays tab.
+function settledHtml(data) {
+  if (!data.settled?.length) return '';
+  const cards = data.settled.map((p) => {
+    const backers = Object.entries(p.stakes).map(([who, amt]) => `${esc(who)} ${money(amt)}`).join(' · ');
+    const back = p.status === 'won' ? `paid ${money(p.returned)}` : p.status === 'push' ? 'refunded' : 'paid $0.00';
+    return `<div class="card parlay done ${p.status}">
+      <div class="head">
+        <div>${statusChip(p.status, p.returned, p.total)}<h3>${esc(p.name)}</h3><div class="small muted">${p.legs.length}-leg parlay</div></div>
+        <div class="odds-col"><div class="odds">${fmtOdds(shownOdds(p))}</div>${copyButton(p)}</div>
+      </div>
+      <ul class="graded-legs">${p.legs.map((l) => `<li>${gradeMark(l.grade)}<b>${esc(l.label)}</b> <span class="muted">${fmtOdds(l.price)} · ${esc(l.matchup)}</span></li>`).join('')}</ul>
+      <div class="small muted backers">${backers} · <b>${money(p.total)} bet</b>, ${back}</div>
+    </div>`;
+  }).join('');
+  return `<h3 class="section">Completed</h3>${cards}`;
+}
+
 function customHtml(data) {
   const cards = data.custom.map((p) => `
     <div class="card parlay custom">
@@ -607,6 +626,8 @@ async function renderParlays() {
     </div>`;
   }
 
+
+  html += settledHtml(data);
 
   html += `<p class="small muted">Payouts use the lines at the time each pick was submitted${data.book ? `, which can drift from ${esc(data.book)}'s current lines` : ''}, so double-check them in your sportsbook before you bet.
     Hit chance is a rough estimate that removes a typical book margin. A negative expected return is the house edge,
@@ -714,7 +735,7 @@ async function renderSlip() {
     const rows = Object.entries(p.stakes).map(([who, amt]) => `<tr>
         <td>${esc(who)}${who === me && !p.placed ? ` <button type="button" class="link danger" data-slip-out="${esc(p.id)}">remove</button>` : ''}</td>
         <td class="num">${money(amt)}</td><td class="num">${money(amt * p.decimal)}</td></tr>`).join('');
-    return `<div class="card parlay ${p.placed ? 'placed' : ''} ${p.status !== 'pending' ? 'done' : ''}">
+    return `<div class="card parlay ${p.placed ? 'placed' : ''} ${p.status !== 'pending' ? `done ${p.status}` : ''}">
       <div class="head">
         <div><span class="muted small">Bet ${i + 1}</span> ${p.placed ? '<span class="chip placed">✓ Placed</span>' : ''} ${statusChip(p.status, p.returned, p.total)}<h3>${esc(p.name)} · ${p.legs.length}-leg parlay</h3></div>
         <div class="odds-col"><div class="odds">${fmtOdds(shownOdds(p))}</div>${copyButton(p)}</div>
