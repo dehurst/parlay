@@ -113,7 +113,10 @@ const marketOf = (key) => key.split('|').slice(0, 2).join('|');
 
 // The sportsbook's current line for one side of a bet, if we have it.
 function bookLine(key) {
-  const [, market, side] = key.split('|');
+  const [, market, side, altPoint] = key.split('|');
+  if (altPoint !== undefined) {
+    return gameOf(key)?.alt?.[market]?.[side]?.find((o) => o.point === Number(altPoint)) ?? null;
+  }
   return gameOf(key)?.lines?.[market]?.[side] ?? null;
 }
 const sameLine = (a, b) => a && b && a.point === b.point && a.price === b.price;
@@ -189,8 +192,10 @@ function renderGames() {
         ${row(g.away, 'away', 'over')}
         ${row(g.home, 'home', 'under')}
       </div>
+      ${calc && g.alt ? altHtml(g, mine) : ''}
     </div>`;
   }).join('');
+  renderAltBar();
   renderSubmitBar();
 }
 
@@ -214,6 +219,61 @@ function renderSubmitBar() {
       ${isEditing() ? '<button type="button" id="cancel-edit">Cancel</button>' : ''}
       <button type="button" class="primary" id="submit-picks" ${n ? '' : 'disabled'}>${isEditing() ? 'Resubmit' : 'Submit picks'}</button>
     </span>`;
+}
+
+// ---- Alternate lines (calculator only) --------------------------------------
+
+const altOpen = new Set(); // games whose alt-lines section is expanded
+
+function altHtml(g, selected) {
+  const chips = (market, side, list) => list.map((o) => {
+    const key = `${g.id}|${market}|${side}|${o.point}`;
+    const label = market === 'total' ? `${side === 'over' ? 'O' : 'U'} ${o.point}` : fmtPoint(o.point);
+    return `<button class="pick alt-chip ${selected.has(key) ? 'on calc' : ''}" data-key="${esc(key)}" ${g.started ? 'disabled' : ''}>
+      <span class="line">${esc(label)}</span><span class="price">${fmtOdds(o.price)}</span></button>`;
+  }).join('');
+  const row = (label, market, side) => {
+    const list = g.alt[market]?.[side] ?? [];
+    return list.length ? `<div class="alt-row"><span class="alt-label">${esc(label)}</span><div class="chips-scroll">${chips(market, side, list)}</div></div>` : '';
+  };
+  const count = ['home', 'away'].reduce((n, s) => n + (g.alt.spread?.[s]?.length ?? 0), 0)
+    + ['over', 'under'].reduce((n, s) => n + (g.alt.total?.[s]?.length ?? 0), 0);
+  return `<details class="alt" data-game="${esc(g.id)}" ${altOpen.has(g.id) ? 'open' : ''}>
+    <summary>Alt lines <span class="muted small">(${count})</span></summary>
+    <h4>Alt spreads</h4>
+    ${row(g.awayShort, 'spread', 'away')}${row(g.homeShort, 'spread', 'home')}
+    <h4>Alt totals</h4>
+    ${row('Over', 'total', 'over')}${row('Under', 'total', 'under')}
+  </details>`;
+}
+
+// Calculator-only bar: load alt lines for the whole slate, within the weekly allowance.
+function renderAltBar() {
+  const bar = $('#alt-bar');
+  const info = week.altInfo;
+  bar.hidden = !calc || !info;
+  if (bar.hidden) return;
+  const when = info.loadedAt
+    ? `Alt lines loaded ${new Date(info.loadedAt).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' })}.`
+    : 'Alt spreads and totals aren’t loaded this week yet.';
+  bar.innerHTML = `<span class="small">${when}
+      <span class="muted">${info.creditsUsed} of ${info.weeklyLimit} weekly alt-line credits used.</span>
+      ${info.canLoad ? '' : `<span class="muted">${esc(info.reason)}</span>`}</span>
+    ${info.canLoad ? `<button type="button" id="load-alt">${info.loadedAt ? 'Reload' : 'Load'} alt lines (~${info.estimate} credits)</button>` : ''}`;
+}
+
+async function loadAlt(btn) {
+  btn.disabled = true;
+  btn.textContent = 'Loading…';
+  let msg;
+  try {
+    const res = await api('/api/alt/load', { method: 'POST', body: { name: me } });
+    msg = `Loaded alt lines for ${res.games} games (${res.credits} credits)${res.failed ? `; ${res.failed} couldn't load` : ''}. Open "Alt lines" on any game.`;
+  } catch (err) {
+    msg = err.message;
+  }
+  await load(); // shows the new lines (and resets the notice), so show the message after
+  notice(msg);
 }
 
 // ---- Payout calculator -----------------------------------------------------
@@ -715,6 +775,17 @@ $('#games').addEventListener('click', (e) => {
   const btn = e.target.closest('.pick');
   if (btn && !btn.disabled) (calc ? toggleCalc : toggle)(btn.dataset.key);
 });
+$('#alt-bar').addEventListener('click', (e) => {
+  const btn = e.target.closest('#load-alt');
+  if (btn) loadAlt(btn);
+});
+// <details> toggle events don't bubble, so listen in the capture phase.
+$('#games').addEventListener('toggle', (e) => {
+  const d = e.target.closest?.('details.alt');
+  if (!d) return;
+  if (d.open) altOpen.add(d.dataset.game);
+  else altOpen.delete(d.dataset.game);
+}, true);
 $('#tab-picks').addEventListener('click', (e) => {
   const mode = e.target.closest('.mode-switch button')?.dataset.mode;
   if (!mode) return;

@@ -5,7 +5,7 @@ import { loadEnvFile } from './env.js';
 import { createStore } from './store.js';
 import { weekWindow, weekLabel } from './week.js';
 import { fetchEspnSchedule, fetchEspnRecords, demoSchedule, hasStarted, matchKey, teamKey } from './schedule.js';
-import { fetchOddsApiSchedule, fetchBookLines } from './oddsapi.js';
+import { fetchOddsApiSchedule, fetchBookLines, fetchAltLines } from './oddsapi.js';
 import { tally, buildParlays, priceParlay, selectionLabel, MARKETS } from './parlay.js';
 import { gradeLeg, gradeParlay, actualDecimal } from './grading.js';
 import { fetchEspnScores, fetchOddsApiScores } from './results.js';
@@ -20,6 +20,8 @@ const {
   ODDS_CACHE_HOURS = '6',
   DAILY_CREDIT_LIMIT = '16',
   SUNDAY_CREDIT_LIMIT = '30',
+  ALT_WEEKLY_CREDIT_LIMIT = '56', // two full-slate loads of alt spreads + totals
+  ALT_MONTHLY_RESERVE = '100', // never let alt lines take the month below this
   PLAYERS = 'Daniel,Asher,Matt',
   GROUP_CODE = '',
   DATA_FILE = join(root, 'data', 'db.json'),
@@ -31,6 +33,8 @@ const LINES_TTL = Number(ODDS_CACHE_HOURS) * 3600e3;
 const MANUAL_REFRESH_GAP = 5 * 60e3; // so a double tap doesn't spend two refreshes
 const limits = { daily: Number(DAILY_CREDIT_LIMIT), sunday: Number(SUNDAY_CREDIT_LIMIT) };
 const creditLimit = () => limitFor(new Date(), limits);
+const ALT_COST_PER_GAME = 2; // alternate_spreads + alternate_totals
+const ALT_MIN_GAP = 6 * 3600e3;
 const BOOK_NAMES = { fanduel: 'FanDuel', draftkings: 'DraftKings', betmgm: 'BetMGM', williamhill_us: 'Caesars' };
 const bookName = BOOK_NAMES[BOOKMAKER] ?? BOOKMAKER;
 
@@ -148,6 +152,7 @@ async function loadWeek({ refreshLines = false } = {}) {
   const games = schedule.games.map((g) => ({
     ...g,
     lines: lines?.byMatchup[matchKey(g.away, g.home)] ?? null,
+    alt: store.data.alt[win.key]?.byGame[g.id] ?? null,
     homeRecord: records[teamKey(g.home)] ?? null,
     awayRecord: records[teamKey(g.away)] ?? null,
   }));
@@ -188,6 +193,7 @@ app.get('/api/week', async (req, res, next) => {
       nextRefreshAt: lines ? lines.fetchedAt + MANUAL_REFRESH_GAP : null,
       refreshesLeft: ODDS_API_KEY ? refreshesLeftToday(store.data, creditLimit()) : null,
       refreshesPerDay: Math.floor(creditLimit() / LINES_COST),
+      altInfo: ODDS_API_KEY ? altStatus(win, games) : null,
       limitHit,
     });
   } catch (err) {
@@ -196,12 +202,70 @@ app.get('/api/week', async (req, res, next) => {
 });
 
 // Which bets can still be picked: real game, not started, and the book has a line.
+// Alternate lines use keys like "gameId|spread|home|-2.5" (the point is the
+// 4th part); main lines are "gameId|spread|home".
 function pickable(key, gamesById, now = new Date()) {
-  const [gameId, market, side] = String(key).split('|');
+  const [gameId, market, side, altPoint] = String(key).split('|');
   const game = gamesById.get(gameId);
-  const line = game?.lines?.[market]?.[side];
+  const line = altPoint === undefined
+    ? game?.lines?.[market]?.[side]
+    : market !== 'ml' && game?.alt?.[market]?.[side]?.find((o) => o.point === Number(altPoint));
   return MARKETS[market]?.includes(side) && line && !hasStarted(game, now) ? line : null;
 }
+
+// Whether a full-slate alt-lines load is allowed right now, and why not.
+function altStatus(win, games) {
+  const alt = store.data.alt[win.key];
+  const upcoming = games.filter((g) => !hasStarted(g)).length;
+  const estimate = upcoming * ALT_COST_PER_GAME;
+  const used = alt?.credits ?? 0;
+  const weekly = Number(ALT_WEEKLY_CREDIT_LIMIT);
+  const remaining = store.data.lines[win.key]?.remaining;
+  let reason = null;
+  if (!upcoming) reason = 'Every game this week has started.';
+  else if (used + estimate > weekly) reason = `This week's alt-line allowance is used up (${used} of ${weekly} credits).`;
+  else if (remaining != null && Number(remaining) - estimate < Number(ALT_MONTHLY_RESERVE)) {
+    reason = `Saving the last ${ALT_MONTHLY_RESERVE} API credits this month for regular lines.`;
+  } else if (alt?.loadedAt && Date.now() - alt.loadedAt < ALT_MIN_GAP) {
+    reason = `Alt lines were loaded less than ${ALT_MIN_GAP / 3600e3} hours ago.`;
+  }
+  return {
+    loadedAt: alt?.loadedAt ?? null,
+    creditsUsed: used,
+    weeklyLimit: weekly,
+    estimate,
+    loadsLeft: Math.max(0, Math.floor((weekly - used) / Math.max(estimate, 1))),
+    canLoad: !reason,
+    reason,
+  };
+}
+
+// Load alternate spreads and totals for every game that hasn't started.
+app.post('/api/alt/load', async (req, res, next) => {
+  try {
+    const name = checkPlayer(req, res);
+    if (!name) return;
+    if (!ODDS_API_KEY) return res.status(400).json({ error: 'Alt lines need an Odds API key.' });
+    const { win, games } = await loadWeek();
+    const status = altStatus(win, games);
+    if (!status.canLoad) return res.status(409).json({ error: status.reason });
+    const upcoming = games.filter((g) => !hasStarted(g));
+    const fresh = await fetchAltLines(ODDS_API_KEY, BOOKMAKER, win, upcoming);
+    const prev = store.data.alt[win.key];
+    store.data.alt[win.key] = {
+      // Keep alt lines for games that already started (picks may use them).
+      byGame: { ...prev?.byGame, ...fresh.byGame },
+      loadedAt: Date.now(),
+      loadedBy: name,
+      credits: (prev?.credits ?? 0) + fresh.credits,
+    };
+    if (fresh.remaining != null && store.data.lines[win.key]) store.data.lines[win.key].remaining = String(fresh.remaining);
+    await save();
+    res.json({ games: Object.keys(fresh.byGame).length, credits: fresh.credits, failed: fresh.failed });
+  } catch (err) {
+    next(err);
+  }
+});
 
 function checkPlayer(req, res) {
   const name = req.body?.name;
@@ -220,7 +284,8 @@ app.put('/api/draft', async (req, res, next) => {
     const name = checkPlayer(req, res);
     if (!name) return;
     const { win, gamesById } = await loadWeek();
-    const keys = [...new Set(req.body.keys ?? [])].filter((k) => pickable(k, gamesById));
+    // Regular picks use main lines only; alt lines are for custom parlays.
+    const keys = [...new Set(req.body.keys ?? [])].filter((k) => String(k).split('|').length === 3 && pickable(k, gamesById));
     // One side per bet per game (can't take both Over and Under); last one wins.
     const byMarket = new Map(keys.map((k) => [k.split('|').slice(0, 2).join('|'), k]));
     const drafts = (store.data.drafts[win.key] ??= {});

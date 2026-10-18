@@ -15,6 +15,7 @@ export function normalize(data) {
   data.results ??= {}; // final scores: { weekKey: { gameId: { homeScore, awayScore } } }
   data.scoresCheckedAt ??= {}; // { weekKey: ms }
   data.creditsUsed ??= {}; // paid Odds API credits: { 'YYYY-MM-DD' (Eastern): n }
+  data.alt ??= {}; // alternate lines: { weekKey: { byGame, loadedAt, loadedBy, credits } }
 
   delete data.players; // players are configured now (PLAYERS)
   delete data.votes; // replaced by stakes
@@ -38,6 +39,7 @@ export function normalize(data) {
 function prune(data, currentWeek) {
   if (!currentWeek) return;
   for (const week of Object.keys(data.lines)) if (week < currentWeek) delete data.lines[week];
+  for (const week of Object.keys(data.alt)) if (week < currentWeek) delete data.alt[week];
 }
 
 export class FileStore {

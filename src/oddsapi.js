@@ -14,7 +14,12 @@ async function get(path, params) {
     const body = await res.json().catch(() => ({}));
     throw new Error(`The Odds API returned ${res.status}${body.message ? `: ${body.message}` : ''}`);
   }
-  return { data: await res.json(), remaining: res.headers.get('x-requests-remaining') };
+  return {
+    data: await res.json(),
+    remaining: res.headers.get('x-requests-remaining'),
+    // Credits this call cost, as reported by The Odds API.
+    last: res.headers.get('x-requests-last'),
+  };
 }
 
 const timeRange = ({ start, end }) => ({ commenceTimeFrom: isoNoMs(start), commenceTimeTo: isoNoMs(end) });
@@ -52,4 +57,50 @@ export function parseLines(events, book) {
     out[matchKey(ev.away_team, ev.home_team)] = lines;
   }
   return out;
+}
+
+// Alternate spreads and totals for every listed game, one request per game
+// (2 credits each: one per market). Games are matched to The Odds API's
+// events by team names, using its free events list.
+// Returns { byGame: { gameId: { spread: { home: [...], away: [...] }, total: { over, under } } },
+//           credits, remaining, failed }.
+export async function fetchAltLines(apiKey, book, win, games) {
+  const { data: events } = await get('events', { apiKey, ...timeRange(win) });
+  const eventFor = new Map(events.map((ev) => [matchKey(ev.away_team, ev.home_team), ev]));
+  const byGame = {};
+  let credits = 0;
+  let remaining = null;
+  let failed = 0;
+  await Promise.all(games.map(async (g) => {
+    const ev = eventFor.get(matchKey(g.away, g.home));
+    if (!ev) return;
+    try {
+      const res = await get(`events/${ev.id}/odds`, {
+        apiKey, bookmakers: book, markets: 'alternate_spreads,alternate_totals', oddsFormat: 'american',
+      });
+      credits += Number(res.last ?? 2) || 0;
+      if (res.remaining != null) remaining = Math.min(remaining ?? Infinity, Number(res.remaining));
+      const alt = parseAltLines(res.data, book);
+      if (alt) byGame[g.id] = alt;
+    } catch {
+      failed++;
+    }
+  }));
+  return { byGame, credits, remaining: remaining === Infinity ? null : remaining, failed };
+}
+
+export function parseAltLines(event, book) {
+  const bm = event.bookmakers?.find((b) => b.key === book);
+  if (!bm) return null;
+  const outcomes = (key) => bm.markets?.find((m) => m.key === key)?.outcomes ?? [];
+  const byPoint = (a, b) => a.point - b.point;
+  const pick = (list, test) => list.filter(test).map((o) => ({ point: o.point, price: o.price })).sort(byPoint);
+  const spreads = outcomes('alternate_spreads');
+  const totals = outcomes('alternate_totals');
+  const alt = {
+    spread: { home: pick(spreads, (o) => o.name === event.home_team), away: pick(spreads, (o) => o.name === event.away_team) },
+    total: { over: pick(totals, (o) => o.name === 'Over'), under: pick(totals, (o) => o.name === 'Under') },
+  };
+  const count = alt.spread.home.length + alt.spread.away.length + alt.total.over.length + alt.total.under.length;
+  return count ? alt : null;
 }

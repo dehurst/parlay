@@ -34,6 +34,12 @@ the plays most of you agree on and builds a few parlays out of them.
   how the group's consensus picks have done, and a week-by-week history.
   Games are graded automatically from ESPN's final scores (free), about 3
   hours after kickoff.
+- **Alt lines** (in the payout calculator): **Load alt lines** pulls FanDuel's
+  alternate spreads and totals for every game that hasn't started (2 credits
+  per game, ~28 for a full slate). Each game then has an **Alt lines** section;
+  tap any alternate to add it to a calculator parlay or a custom parlay. Alt
+  legs are graded automatically. They're not used for regular picks or the
+  group parlays.
 - **Custom parlays** (Parlays tab, **+ Build your own**): pick any bets in the
   payout calculator, set your stake, and **Post**. It shows up as "Daniel's
   Parlay 1" (then 2, ...) for the others to join with their own stakes, and
@@ -85,6 +91,8 @@ Settings (in `.env` or as environment variables):
 | `ODDS_CACHE_HOURS` | `6` | Hours between automatic line refreshes. Each costs 3 credits; the schedule is free |
 | `DAILY_CREDIT_LIMIT` | `16` | Most Odds API credits to spend per day (Eastern). 16 = 5 line refreshes |
 | `SUNDAY_CREDIT_LIMIT` | `30` | The same, on Sundays. 30 = 10 line refreshes |
+| `ALT_WEEKLY_CREDIT_LIMIT` | `56` | Credits per week for alt lines (separate from the daily limits). 56 = two full-slate loads |
+| `ALT_MONTHLY_RESERVE` | `100` | Alt lines won't load if they'd leave fewer credits than this for the month |
 | `GROUP_CODE` | _(empty)_ | Optional shared code friends enter before they can use the site |
 | `SEASON_START` | Tuesday after Labor Day | Sets the "Week N" label (YYYY-MM-DD, a Tuesday) |
 | `PORT` | `3000` | |
@@ -101,6 +109,10 @@ line refreshes) and `SUNDAY_CREDIT_LIMIT` on Sundays (default 30, so 10). The
 day resets at midnight Eastern. Maxing out every day would top 500 in a month,
 but real use is far lower, and the free plan can't be overcharged: if the 500
 ran out, lines would just stop updating until the monthly reset.
+
+Alt lines have their own weekly allowance (`ALT_WEEKLY_CREDIT_LIMIT`), load
+at most every 6 hours, and are skipped if they'd take the month's remaining
+credits below `ALT_MONTHLY_RESERVE`, so regular lines always come first.
 Lines refresh automatically when someone opens the site and they're older than
 `ODDS_CACHE_HOURS`, and the **Refresh lines** button at the top refreshes on
 demand while there's budget left. Once every game of the week has kicked off,
