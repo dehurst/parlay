@@ -227,8 +227,26 @@ h3.section.first { margin-top: 4px; }
 .payout-form input { width: 110px; flex: none; }
 .payout-form p { margin: 0; flex-basis: 100%; }
 
-/* Games that have kicked off: grayed out at the bottom of the Picks tab. */
-.card.done { opacity: .55; }
-.card.done .pick.on { opacity: 1; }
+/* Finished games: grayed out at the bottom of the Picks tab, except the
+   graded picks, which stay at full strength so wins and losses stand out. */
+.card.done { background: #151b22; }
+.card.done .game-head, .card.done .team, .card.done .colhead, .card.done .kick,
+.card.done .pick:not(.graded) { opacity: .5; }
+.pick.graded:disabled { opacity: 1; cursor: default; }
+.pick.graded.win { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.pick.graded.loss { background: var(--bad); border-color: var(--bad); color: #fff; }
+.pick.graded.loss .price { color: #fff; }
+.pick.graded.push { background: var(--line); border-color: var(--muted); color: var(--text); }
+/* The side that actually won, where your pick lost: outline only, no fill. */
+.pick.graded.right { background: transparent; border: 2px dashed var(--accent); color: var(--text); }
+.pick .mark-badge {
+  position: absolute; top: -7px; right: -5px; min-width: 18px; height: 18px; padding: 0 4px;
+  border-radius: 9px; font-size: 11px; font-weight: 800; line-height: 18px; text-align: center;
+  background: var(--bg); border: 1px solid currentColor;
+}
+.pick.graded.win .mark-badge { color: var(--accent); }
+.pick.graded.loss .mark-badge { color: var(--bad); }
+.pick.graded.right .mark-badge { color: var(--accent); }
 .card .score { margin: -4px 0 8px; color: var(--muted); font-weight: 600; }
 .score .live { color: var(--bad); }
+.pick.graded.push .price, .pick.graded.right .price { color: var(--muted); }

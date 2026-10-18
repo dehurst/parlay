@@ -132,6 +132,17 @@ function render() {
   if (tab === 'stats') renderStats();
 }
 
+// Grade a bet against a final score: 'win' | 'loss' | 'push' (same rules as
+// the server's grading).
+function gradeBet(key, point, { homeScore: h, awayScore: a }) {
+  const [, market, side] = key.split('|');
+  const diff = market === 'spread' ? (side === 'home' ? h - a : a - h) + point
+    : market === 'total' ? (side === 'over' ? h + a - point : point - (h + a))
+    : side === 'home' ? h - a : a - h;
+  return diff > 0 ? 'win' : diff < 0 ? 'loss' : 'push';
+}
+const OTHER_SIDE = { home: 'away', away: 'home', over: 'under', under: 'over' };
+
 // A game is over once its final score is in, or ~3½ hours after kickoff.
 const isFinal = (g) => g.started && (!!g.result || Date.now() - new Date(g.commence) > 3.5 * 3600e3);
 
@@ -162,18 +173,38 @@ function renderGames() {
 
   // Games that have kicked off go to a grayed-out section at the bottom.
   const gameCard = (g) => {
+    // On finished games with a score, show how your picks did: won (green ✓),
+    // lost (red ✗), push (gray P), and outline the side that won where you lost.
+    const outcome = new Map();
+    if (!calc && g.result) {
+      for (const key of mine) {
+        if (!key.startsWith(`${g.id}|`)) continue;
+        const line = savedLine.get(key) ?? bookLine(key);
+        if (!line) continue;
+        const grade = gradeBet(key, line.point, g.result);
+        outcome.set(key, grade);
+        if (grade === 'loss') {
+          const [, market, side] = key.split('|');
+          outcome.set(`${g.id}|${market}|${OTHER_SIDE[side]}`, 'right');
+        }
+      }
+    }
     const cell = (market, side) => {
       const key = `${g.id}|${market}|${side}`;
       const line = savedLine.get(key) ?? bookLine(key);
+      const result = outcome.get(key);
+      const mark = { win: '✓', loss: '✗', push: 'P', right: '✓' }[result];
       let label = market === 'ml' ? 'ML' : '–';
       if (line && market === 'spread') label = fmtPoint(line.point);
       if (line && market === 'total') label = `${side === 'over' ? 'O' : 'U'} ${line.point}`;
       const disabled = locked || g.started || !line;
       // Friends' picks aren't shown here, so everyone picks on their own.
-      return `<button class="pick ${mine.has(key) ? (calc ? 'on calc' : 'on') : ''}" data-key="${esc(key)}" ${disabled ? 'disabled' : ''}
-        ${line ? '' : 'title="No line yet"'}>
+      const titles = { win: 'Your pick won', loss: 'Your pick lost', push: 'Push', right: 'This side won' };
+      return `<button class="pick ${mine.has(key) ? (calc ? 'on calc' : 'on') : ''} ${result ? `graded ${result}` : ''}" data-key="${esc(key)}" ${disabled ? 'disabled' : ''}
+        ${result ? `title="${titles[result]}"` : line ? '' : 'title="No line yet"'}>
         <span class="line">${esc(label)}</span>
         <span class="price">${line ? fmtOdds(line.price) : 'N/A'}</span>
+        ${mark ? `<span class="mark-badge">${mark}</span>` : ''}
       </button>`;
     };
     const kick = new Date(g.commence).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' });

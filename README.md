@@ -19,8 +19,10 @@ the plays most of you agree on and builds a few parlays out of them.
   your name) wipes your picks for the week, except games already under way.
 - **Completed games**: live games stay at the top of the Picks tab (marked
   Live); once a game is over it moves to a grayed-out **Completed games**
-  section at the bottom, with the final score for games anyone bet on. The Bet
-  Slip does the same for settled parlays.
+  section at the bottom, with the final score for games anyone bet on. Once the
+  score is in, your picks there turn green ✓ (won), red ✗ (lost), or gray P
+  (push), and where you lost, the side that won gets a dashed green outline.
+  The Bet Slip does the same for settled parlays.
 - **Payout calculator** (switch at the top of the Picks tab): tap any bets to
   see what a one-off parlay would pay at FanDuel's current lines for any
   stake. Nothing in it is saved or shared, and it warns when two legs come
