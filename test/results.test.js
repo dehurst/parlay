@@ -81,7 +81,8 @@ test('season stats add up picks, consensus, and parlay money', () => {
   assert.deepEqual(who('Daniel').picks, { win: 1, loss: 1, push: 0, pending: 0 });
   assert.deepEqual(who('Asher').picks, { win: 1, loss: 0, push: 0, pending: 1 });
   assert.equal(who('Daniel').flatNet.toFixed(2), '-0.91'); // +9.09 - 10
-  assert.deepEqual(stats.consensus, { win: 1, loss: 1, push: 0, pending: 0 }); // KC 3/3 won, PHI 2/3 lost
+  assert.deepEqual({ ...stats.consensus, flatNet: undefined }, { win: 1, loss: 1, push: 0, pending: 0, flatNet: undefined }); // KC 3/3 won, PHI 2/3 lost
+  assert.equal(stats.consensus.flatNet.toFixed(2), '-0.91');
   // p1 lost (Eagles didn't cover); p2 still pending on the Rams game.
   assert.equal(who('Daniel').net, -20);
   assert.equal(who('Asher').net, -10);

@@ -703,13 +703,13 @@ async function renderStats() {
   const winPct = (r) => (r.win + r.loss ? r.win / (r.win + r.loss) : 0);
   const wlp = (r) => `<td class="num">${r.win}</td><td class="num">${r.loss}</td><td class="num">${r.push}</td>`;
   const picksCard = `<div class="card"><h3>Pick records</h3>
-    <p class="small muted">Every submitted pick, graded win, loss, or push.</p>
+    <p class="small muted">Every submitted pick, graded win, loss, or push. "$10 a pick" is what you'd be up or down betting $10 on each one by itself.</p>
     <table class="slip">
-      <thead><tr><th>Who</th><th class="num">W</th><th class="num">L</th><th class="num">P</th></tr></thead>
+      <thead><tr><th>Who</th><th class="num">W</th><th class="num">L</th><th class="num">P</th><th class="num">$10 a pick</th></tr></thead>
       <tbody>${[...data.players].sort((a, b) => winPct(b.picks) - winPct(a.picks) || b.picks.win - a.picks.win).map((p) => `<tr>
         <td>${esc(p.name)}<div class="small muted">ATS ${recordText(p.byMarket.spread)} · Totals ${recordText(p.byMarket.total)} · ML ${recordText(p.byMarket.ml)}</div></td>
-        ${wlp(p.picks)}</tr>`).join('')}</tbody>
-      <tfoot><tr><th>Group consensus<div class="small muted">Bets most of you agreed on</div></th>${wlp(c)}</tr></tfoot>
+        ${wlp(p.picks)}<td class="num ${netClass(p.flatNet)}">${signed(p.flatNet)}</td></tr>`).join('')}</tbody>
+      <tfoot><tr><th>Group consensus<div class="small muted">Bets most of you agreed on</div></th>${wlp(c)}<th class="num ${netClass(c.flatNet)}">${signed(c.flatNet)}</th></tr></tfoot>
     </table></div>`;
 
   const weeks = data.weeks.map((w, i) => {

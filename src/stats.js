@@ -20,7 +20,7 @@ export function computeStats(data, players) {
     returned: 0,
     inPlay: 0, // money on parlays not decided yet
   }]));
-  const consensus = record();
+  const consensus = { ...record(), flatNet: 0 };
   const parlayRecord = { won: 0, lost: 0, push: 0, pending: 0, staked: 0, returned: 0, inPlay: 0 };
   const weekly = [];
 
@@ -55,6 +55,7 @@ export function computeStats(data, players) {
     const consensusRows = agreed.map((s) => {
       const g = grade(s);
       consensus[g]++;
+      consensus.flatNet += singleProfit(s.price, g);
       return { label: s.label, price: s.price, pickers: s.pickers, grade: g };
     });
 
