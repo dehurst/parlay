@@ -264,6 +264,30 @@ app.post('/api/placed', async (req, res, next) => {
   }
 });
 
+// Mark a won (or pushed) parlay as paid out to everyone who was in, or undo.
+app.post('/api/paidout', async (req, res, next) => {
+  try {
+    const name = checkPlayer(req, res);
+    if (!name) return;
+    await refreshResults();
+    const { win, gamesById, result } = await currentParlays();
+    const id = String(req.body.id ?? '');
+    const saved = store.data.stakes[win.key]?.[id];
+    if (!saved) return res.status(404).json({ error: 'That parlay isn’t on the slip anymore. Refresh and try again.' });
+    if (req.body.paid) {
+      const graded = gradedParlays(win, gamesById, new Set(result.options.map((o) => o.id))).find((p) => p.id === id);
+      if (!['won', 'push'].includes(graded?.status)) {
+        return res.status(409).json({ error: 'Only parlays that won or pushed have anything to pay out.' });
+      }
+      saved.paidOut = { by: name, at: Date.now() };
+    } else delete saved.paidOut;
+    await save();
+    res.json({ paidOut: saved.paidOut ?? null });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // Throw away edits and keep what you submitted.
 app.delete('/api/draft', async (req, res, next) => {
   try {

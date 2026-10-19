@@ -748,6 +748,14 @@ async function renderSlip() {
   const finished = data.parlays.filter((p) => p.status !== 'pending');
   const toPlace = active.filter((p) => !p.placed);
   const left = toPlace.reduce((sum, p) => sum + p.total, 0);
+  // Winnings (or push refunds) not yet paid out, by person. Each person's
+  // share is proportional to their stake.
+  const owed = {};
+  for (const p of finished) {
+    if (!['won', 'push'].includes(p.status) || p.paidOut) continue;
+    for (const [who, amt] of Object.entries(p.stakes)) owed[who] = (owed[who] ?? 0) + (p.returned * amt) / p.total;
+  }
+  const owedTotal = Object.values(owed).reduce((a, b) => a + b, 0);
   const at = (t) => new Date(t).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' });
   const card = (p, i) => {
     const legs = p.legs.map((l) => `<li>${gradeMark(l.grade)}<b>${esc(l.label)}</b> <span class="muted">${fmtOdds(l.price)} · ${esc(l.matchup)}</span>${l.grade === 'pending' ? lineMoved(l, data.book) : ''}</li>`).join('');
@@ -756,7 +764,7 @@ async function renderSlip() {
         <td class="num">${money(amt)}</td><td class="num">${money(amt * p.decimal)}</td></tr>`).join('');
     return `<div class="card parlay ${p.placed ? 'placed' : ''} ${p.status !== 'pending' ? `done ${p.status}` : ''}">
       <div class="head">
-        <div><span class="muted small">Bet ${i + 1}</span> ${p.placed ? '<span class="chip placed">✓ Placed</span>' : ''} ${statusChip(p.status, p.returned, p.total)}<h3>${esc(p.name)} · ${p.legs.length}-leg parlay</h3></div>
+        <div><span class="muted small">Bet ${i + 1}</span> ${p.placed ? '<span class="chip placed">✓ Placed</span>' : ''} ${statusChip(p.status, p.returned, p.total)} ${p.paidOut ? '<span class="chip paid">💵 Paid out</span>' : ''}<h3>${esc(p.name)} · ${p.legs.length}-leg parlay</h3></div>
         <div class="odds-col"><div class="odds">${fmtOdds(shownOdds(p))}</div>${copyButton(p)}</div>
       </div>
       ${p.stillOption || p.placed ? '' : '<div class="lines">Picks changed since people bought in, so this parlay is no longer one of the current options. Double-check before placing it.</div>'}
@@ -784,6 +792,13 @@ async function renderSlip() {
           : `<button type="button" class="primary" data-edit-payout="${esc(p.id)}">Mark placed</button>
              <span class="small muted">Tap after you've placed it at ${esc(data.book ?? 'the sportsbook')}.</span>`}
       </div>
+      ${['won', 'push'].includes(p.status) ? `<div class="place-row">
+        ${p.paidOut
+          ? `<span class="small muted">Paid out by ${esc(p.paidOut.by)} ${esc(at(p.paidOut.at))}.</span>
+             <button type="button" class="link" data-paid="${esc(p.id)}" data-val="0">Not paid yet</button>`
+          : `<button type="button" class="primary" data-paid="${esc(p.id)}" data-val="1">Mark paid out</button>
+             <span class="small muted">Tap after everyone's been paid their ${p.status === 'push' ? 'refund' : 'winnings'}.</span>`}
+      </div>` : ''}
     </div>`;
   };
   const cards = active.map((p, i) => card(p, i)).join('')
@@ -794,6 +809,7 @@ async function renderSlip() {
         ? `${toPlace.length} parlay${toPlace.length === 1 ? '' : 's'} left to place, ${money(left)}.`
         : active.length ? `All placed ✓ · ${active.length} still in play` : 'All parlays are settled.'}</b>
       <span class="small muted">${data.parlays.length} this week, ${money(grand)} total${finished.length ? `, ${finished.length} settled` : ''}.</span>
+      ${owedTotal > 0.004 ? `<div class="owed"><b>To pay out: ${money(owedTotal)}</b> <span class="small">(${Object.entries(owed).map(([who, amt]) => `${esc(who)} ${money(amt)}`).join(', ')})</span></div>` : ''}
       <div class="small muted">"Wins" is the total payout (stake included) if the parlay hits, at the odds shown.
       Check each leg in ${esc(data.book ?? 'your sportsbook')} before placing; anything marked "Line moved" will pay differently.</div>
     </div>
@@ -907,6 +923,17 @@ $('#slip').addEventListener('submit', async (e) => {
   renderSlip();
 });
 $('#slip').addEventListener('click', async (e) => {
+  const paid = e.target.closest('[data-paid]');
+  if (paid) {
+    paid.disabled = true;
+    try {
+      await api('/api/paidout', { method: 'POST', body: { name: me, id: paid.dataset.paid, paid: paid.dataset.val === '1' } });
+    } catch (err) {
+      notice(err.message);
+    }
+    renderSlip();
+    return;
+  }
   const open = e.target.closest('[data-edit-payout]');
   if (open) {
     placingId = open.dataset.editPayout;

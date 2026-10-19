@@ -63,6 +63,9 @@ the plays most of you agree on and builds a few parlays out of them.
   (Undo unlocks). From then on the real payout is used everywhere: each
   person's winnings, the odds shown, copied text, and season Stats. **Edit
   payout** fixes a typo.
+  Once a parlay wins (or pushes), **Mark paid out** records that everyone's
+  been paid; until then the slip's summary shows **To pay out** with what each
+  person is owed.
 
 ## Run it
 
