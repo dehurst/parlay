@@ -70,8 +70,14 @@ async function load(refresh = false) {
   render();
 }
 
+// Games that haven't kicked off: the only ones a pick can still be changed on.
+const openGames = () => week.games.filter((g) => !g.started);
+const isOpenPick = (key) => !gameOf(key)?.started;
+
 function renderWho() {
-  const hasAny = hasSubmitted() || (week.draft ?? []).length > 0;
+  // Clearing only removes picks on games that haven't started, so only offer
+  // it when there's one of those (or an unsubmitted selection).
+  const hasAny = (submittedPicks() ?? []).some((p) => isOpenPick(p.key)) || (week.draft ?? []).length > 0;
   $('#who').innerHTML = `<span class="muted">Picking as</span> <b>${esc(me)}</b>
     <button class="link" id="switch" type="button">switch</button>
     ${hasAny ? '<button id="clear-picks" class="clear" type="button">Clear my picks</button>' : ''}`;
@@ -152,12 +158,15 @@ function renderGames() {
   renderWho();
   document.querySelectorAll('.mode-switch button').forEach((b) => b.classList.toggle('active', (b.dataset.mode === 'calc') === calc));
   const locked = isLocked() && !calc;
-  $('#picks-hint').textContent = calc
+  const allStarted = !openGames().length;
+  $('#picks-hint').textContent = !calc && allStarted && hasSubmitted()
+    ? `Every game this week has kicked off, so picks are locked. Next week's games show up Tuesday at 8 AM Eastern.`
+    : calc
     ? `Tap any bets to see what a parlay would pay at ${week.book ?? 'the sportsbook'}'s current lines. Nothing is shared unless you hit Post, which adds it to the Parlays tab for others to join.`
     : locked
     ? `Your picks are in for ${week.label}. Tap Edit picks to change them before kickoff.`
     : isEditing()
-      ? 'Editing your picks. Your submitted picks still count until you resubmit. Picks you keep stay at the line you got.'
+      ? 'Editing your picks. Picks on games that already started are locked 🔒. Your submitted picks still count until you resubmit, and picks you keep stay at the line you got.'
       : `Tap a bet to select it at ${week.book ?? 'the sportsbook'}'s line, tap again to remove it. Hit Submit when you're done.`;
 
   if (!week.games.length) {
@@ -193,7 +202,9 @@ function renderGames() {
       const key = `${g.id}|${market}|${side}`;
       const line = savedLine.get(key) ?? bookLine(key);
       const result = outcome.get(key);
-      const mark = { win: '✓', loss: '✗', push: 'P', right: '✓' }[result];
+      // While editing, picks on games that have started can't change: show a lock.
+      const lockedPick = !calc && isEditing() && g.started && mine.has(key) && !result;
+      const mark = lockedPick ? '🔒' : { win: '✓', loss: '✗', push: 'P', right: '✓' }[result];
       let label = market === 'ml' ? 'ML' : '–';
       if (line && market === 'spread') label = fmtPoint(line.point);
       if (line && market === 'total') label = `${side === 'over' ? 'O' : 'U'} ${line.point}`;
@@ -201,7 +212,7 @@ function renderGames() {
       // Friends' picks aren't shown here, so everyone picks on their own.
       const titles = { win: 'Your pick won', loss: 'Your pick lost', push: 'Push', right: 'This side won' };
       return `<button class="pick ${mine.has(key) ? (calc ? 'on calc' : 'on') : ''} ${result ? `graded ${result}` : ''}" data-key="${esc(key)}" ${disabled ? 'disabled' : ''}
-        ${result ? `title="${titles[result]}"` : line ? '' : 'title="No line yet"'}>
+        ${result ? `title="${titles[result]}"` : lockedPick ? 'title="Game started, so this pick is locked"' : line ? '' : 'title="No line yet"'}>
         <span class="line">${esc(label)}</span>
         <span class="price">${line ? fmtOdds(line.price) : 'N/A'}</span>
         ${mark ? `<span class="mark-badge">${mark}</span>` : ''}
@@ -251,7 +262,7 @@ function renderSubmitBar() {
     bar.innerHTML = `<span><b>${plural(submittedPicks().length)}</b> in</span>
       <span class="actions">
         ${day ? `<button type="button" id="copy-picks">Copy picks</button>` : ''}
-        <button type="button" id="edit-picks">Edit picks</button>
+        ${openGames().length ? '<button type="button" id="edit-picks">Edit picks</button>' : '<span class="small muted">🔒 Locked</span>'}
       </span>`;
     return;
   }
