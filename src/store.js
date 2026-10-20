@@ -33,11 +33,13 @@ export function normalize(data) {
   return data;
 }
 
-// Only the current week's lines are needed (for "line moved" notes and new
-// picks), so older ones are dropped to keep the document small.
+// Past weeks' lines are kept only when someone bet that week: Analysis uses
+// them to price what would have hit. Others are dropped to keep the document small.
 function prune(data, currentWeek) {
   if (!currentWeek) return;
-  for (const week of Object.keys(data.lines)) if (week < currentWeek) delete data.lines[week];
+  for (const week of Object.keys(data.lines)) {
+    if (week < currentWeek && !data.picks[week] && !data.stakes[week]) delete data.lines[week];
+  }
 }
 
 export class FileStore {

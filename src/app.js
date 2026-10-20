@@ -10,6 +10,7 @@ import { tally, buildParlays, priceParlay, selectionLabel, MARKETS } from './par
 import { gradeLeg, gradeParlay, actualDecimal } from './grading.js';
 import { fetchEspnScores, fetchOddsApiScores } from './results.js';
 import { computeStats } from './stats.js';
+import { analyzeWeek } from './analysis.js';
 import { canSpend, spend, refreshesLeftToday, limitFor, LINES_COST, SCORES_COST } from './credits.js';
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -394,7 +395,7 @@ async function currentParlays(key = null) {
   }));
   const result = buildParlays(tallied, voters, { startedIds });
   for (const opt of result.options) opt.id = parlayId(opt.legs.map((l) => l.key));
-  return { win, gamesById, tallied, result };
+  return { win, games, gamesById, tallied, result };
 }
 
 // Stakes for the parlays people are in on: { player: dollars }.
@@ -619,6 +620,41 @@ app.get('/api/stats', async (req, res, next) => {
     // ?week=YYYY-MM-DD (any week, this one included) narrows stats to that week.
     const key = String(req.query.week ?? '');
     res.json(computeStats(store.data, players, /^\d{4}-\d{2}-\d{2}$/.test(key) ? { week: key } : {}));
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Analysis tab: win chances, alternatives, and a look back for one week.
+app.get('/api/analysis', async (req, res, next) => {
+  try {
+    await refreshResults();
+    const past = requestedWeek(req);
+    const { win, games, gamesById, result } = await currentParlays(past);
+    const now = new Date();
+    const withStarted = games.map((g) => ({ ...g, started: hasStarted(g, now) }));
+    const me = players.includes(req.query.me) ? req.query.me : null;
+    // Your picks to rate: what you're editing (or selecting) if anything,
+    // else what you submitted. Bets you'd submitted keep the line you got.
+    const submittedPicks = (me && submitted(win)[me]) ?? [];
+    const draft = !past && me ? store.data.drafts[win.key]?.[me] : null;
+    const myPicks = draft
+      ? draft.map((key) => submittedPicks.find((p) => p.key === key) ?? { key, ...pickable(key, gamesById, now) })
+      : submittedPicks;
+    res.json({
+      label: weekLabel(win),
+      book: ODDS_API_KEY ? bookName : null,
+      ...analyzeWeek({
+        games: withStarted,
+        picks: submitted(win),
+        myPicks,
+        parlays: gradedParlays(win, gamesById, new Set(result.options.map((o) => o.id))),
+        stats: {
+          week: computeStats(store.data, players, { week: win.key }),
+          season: computeStats(store.data, players),
+        },
+      }),
+    });
   } catch (err) {
     next(err);
   }

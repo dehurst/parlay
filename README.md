@@ -44,6 +44,13 @@ the plays most of you agree on and builds a few parlays out of them.
   how the group's consensus picks have done, and a week-by-week history.
   Games are graded automatically from ESPN's final scores (free), about 3
   hours after kickoff.
+- **Analysis**: each of your open picks with its win chance (FanDuel's odds on
+  both sides with the house's cut removed) and the other way to bet the same
+  team (spread vs. moneyline); live parlays' hit chances and weakest leg;
+  close calls (how far lost picks missed and whether the other bet would have
+  won); parlays that lost by one leg; and parlays vs. the same money as
+  straight bets. Lines are kept for past weeks people bet on so look-backs can
+  show prices.
 - **Custom parlays** (Parlays tab, **+ Build your own**): pick any bets in the
   payout calculator, set your stake, and **Post**. It shows up as "Daniel's
   Parlay 1" (then 2, ...) for the others to join with their own stakes, and

@@ -66,6 +66,20 @@ header { padding: 16px 0 8px; }
 .week-nav select option { background: var(--card); color: var(--text); }
 
 /* Shown while looking at a past week. */
+/* Analysis tab */
+.card > p.small:first-child { margin-top: 0; }
+.an-row { padding: 10px 0; border-bottom: 1px solid var(--line); }
+.an-row:first-child { padding-top: 0; }
+.an-row:last-child { border-bottom: none; padding-bottom: 0; }
+.an-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.an-chance { text-align: right; white-space: nowrap; }
+.an-chance b { display: block; font-size: 20px; line-height: 1.1; }
+.an-chance span { font-size: 12px; color: var(--muted); }
+.bar.chance { margin: 6px 0 4px; }
+.alt { margin-top: 6px; padding: 6px 10px; border-radius: 8px; background: var(--bg); }
+.chip.tag { font-size: 11px; padding: 1px 7px; background: var(--line); color: var(--text); }
+.an-legs { list-style: none; padding: 0; margin: 8px 0 0; }
+.an-legs li { display: flex; justify-content: space-between; gap: 8px; padding: 3px 0; font-size: 14px; }
 .past-banner {
   display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap;
   background: #18233a; border: 1px solid #3d5a99; border-radius: var(--radius);
@@ -212,6 +226,9 @@ details.week summary .num { margin-left: auto; font-weight: 700; }
 @media (max-width: 420px) {
   h1 { font-size: 19px; }
   .week-nav select { font-size: 16px; padding: 4px 2px; }
+  /* Six tabs fit across a phone. */
+  .tabs { gap: 0; justify-content: space-between; }
+  .tabs button { padding: 10px 6px; font-size: 14px; }
   .week-arrow { width: 28px; height: 28px; }
 }
 

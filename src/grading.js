@@ -5,13 +5,16 @@ import { americanToDecimal } from './odds-math.js';
 // tie, as they do at FanDuel for NFL two-way moneylines.
 export function gradeLeg(leg, result) {
   if (!result) return 'pending';
-  const { homeScore: h, awayScore: a } = result;
-  const [, market, side] = leg.key.split('|');
-  let diff;
-  if (market === 'spread') diff = (side === 'home' ? h - a : a - h) + leg.point;
-  else if (market === 'total') diff = side === 'over' ? h + a - leg.point : leg.point - (h + a);
-  else diff = side === 'home' ? h - a : a - h;
+  const diff = legMargin(leg, result);
   return diff > 0 ? 'win' : diff < 0 ? 'loss' : 'push';
+}
+
+// How many points a bet won (+) or lost (-) by against a final score.
+export function legMargin(leg, { homeScore: h, awayScore: a }) {
+  const [, market, side] = leg.key.split('|');
+  if (market === 'spread') return (side === 'home' ? h - a : a - h) + leg.point;
+  if (market === 'total') return side === 'over' ? h + a - leg.point : leg.point - (h + a);
+  return side === 'home' ? h - a : a - h;
 }
 
 // Grade a parlay whose legs already carry a `grade`. Any loss loses it; a

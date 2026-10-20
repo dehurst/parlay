@@ -113,12 +113,14 @@ test('uses Upstash Redis when its env vars are set', async () => {
     await store.load();
     assert.deepEqual(store.data.picks, {});
     store.data.picks.w = { Daniel: [{ key: 'a|ml|home', point: null, price: -110 }] };
-    store.data.lines = { '2026-01-01': {}, '2026-10-13': {} };
+    store.data.lines = { '2026-01-01': {}, '2026-09-01': {}, '2026-10-13': {} };
+    store.data.stakes['2026-09-01'] = { x: { legs: [], stakes: {} } };
     await store.save('2026-10-13');
     const other = createStore({ UPSTASH_REDIS_REST_URL: 'https://example.upstash.io', UPSTASH_REDIS_REST_TOKEN: 't0k' }, '');
     await other.load();
     assert.equal(other.data.picks.w.Daniel.length, 1);
-    assert.deepEqual(Object.keys(other.data.lines), ['2026-10-13']); // old weeks' lines pruned
+    // Old weeks' lines are pruned unless someone bet that week.
+    assert.deepEqual(Object.keys(other.data.lines).sort(), ['2026-09-01', '2026-10-13']);
     assert.equal(calls[0].url, 'https://example.upstash.io');
     assert.equal(calls[0].auth, 'Bearer t0k');
   } finally {

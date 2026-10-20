@@ -171,6 +171,7 @@ function render() {
   if (tab === 'parlays') renderParlays();
   if (tab === 'slip') renderSlip();
   if (tab === 'stats') renderStats();
+  if (tab === 'analysis') renderAnalysis();
 }
 
 // Grade a bet against a final score: 'win' | 'loss' | 'push' (same rules as
@@ -812,6 +813,97 @@ async function renderStats() {
 
   $('#stats').innerHTML = scope + parlayCard + money_ + picksCard
     + `<h3 class="section">${byWeek ? 'Picks and parlays' : 'Week by week'}</h3>` + weeks;
+}
+
+// ---- Analysis ----------------------------------------------------------------
+
+const chanceText = (p) => (p == null ? '?' : `${Math.round(p * 100)}%`);
+const chanceVerb = (market) => ({ spread: 'to cover', total: 'to hit', ml: 'to win' })[market] ?? 'to hit';
+// 0.5 -> "½ pt", 3.5 -> "3½ pts", 7 -> "7 pts"
+function pointsText(m) {
+  const abs = Math.abs(m);
+  const n = `${Math.floor(abs) || ''}${abs % 1 ? '½' : ''}`;
+  return `${n} pt${abs > 1 ? 's' : ''}`;
+}
+const chanceBar = (p) => `<div class="bar chance"><span style="width:${Math.round((p ?? 0) * 100)}%"></span></div>`;
+
+async function renderAnalysis() {
+  $('#analysis').innerHTML = '<p class="muted">Crunching…</p>';
+  const data = await api(withWeek(`/api/analysis?me=${encodeURIComponent(me)}`)).catch((err) => (notice(err.message), null));
+  if (!data) return;
+  const book = data.book ?? 'the sportsbook';
+  const kick = (t) => new Date(t).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' });
+  let html = `<p class="muted small">Win chances come from ${esc(book)}'s odds with the house's cut taken out. That's the betting
+    market's own estimate, not a prediction model. Nobody beats it by much, but it shows what each bet really is.</p>`;
+
+  // Your picks on games that haven't started, with the other way to bet it.
+  if (!isPast()) {
+    const rows = data.mine.map((m) => {
+      const alt = m.alt;
+      const tag = alt && (alt.chance > m.chance ? '<span class="chip tag">safer</span>' : '<span class="chip tag">bigger payout</span>');
+      return `<div class="an-row">
+        <div class="an-head">
+          <div><b>${esc(m.label)}</b> <span class="muted">${fmtOdds(m.price)}</span>
+            <div class="small muted">${esc(m.matchup)} · ${esc(kick(m.commence))}</div></div>
+          <div class="an-chance"><b>${chanceText(m.chance)}</b><span>${chanceVerb(m.market)}</span></div>
+        </div>
+        ${chanceBar(m.chance)}
+        <div class="small muted">$10 pays ${money(m.pays)}</div>
+        ${alt ? `<div class="alt small">Or <b>${esc(alt.label)}</b> ${fmtOdds(alt.price)}: ${chanceText(alt.chance)} ${chanceVerb(alt.market)}, $10 pays ${money(alt.pays)} ${tag}</div>` : ''}
+      </div>`;
+    }).join('');
+    html += `<h3 class="section">Your picks</h3><div class="card">${rows
+      || '<p class="muted small">No picks on games that haven’t started. Make some on the Picks tab and they’ll show up here.</p>'}</div>`;
+  }
+
+  // Parlays with money on them that are still alive.
+  if (data.live.length) {
+    html += `<h3 class="section">Parlays in play</h3>
+      <p class="small muted">Every leg has to hit, so the chances multiply. The weakest leg is listed first.</p>`;
+    html += data.live.map((p) => `<div class="card">
+      <div class="an-head">
+        <div><b>${esc(p.name)}</b><div class="small muted">${p.won ? `${p.won} of ${p.legs} legs in · ` : `${p.legs} legs · `}${money(p.total)} pays ${money(p.payout)}</div></div>
+        <div class="an-chance"><b>${chanceText(p.hitChance)}</b><span>to hit</span></div>
+      </div>
+      ${chanceBar(p.hitChance)}
+      <ul class="an-legs">${p.left.map((l, i) => `<li><span>${esc(l.label)} <span class="muted">${fmtOdds(l.price)}</span>${i === 0 && p.left.length > 1 ? ' <span class="chip tag">weakest</span>' : ''}</span><b>${chanceText(l.chance)}</b></li>`).join('')}</ul>
+    </div>`).join('');
+  }
+
+  // Looking back: lost picks, how close they were, and what would have hit.
+  if (data.misses.length) {
+    html += `<h3 class="section">Close calls</h3>
+      <p class="small muted">Picks that lost, closest first, and whether betting the same team the other way would have won.</p>
+      <div class="card">${data.misses.map((m) => `<div class="an-row">
+        <div><b>${esc(m.label)}</b> <span class="muted">${fmtOdds(m.price)} · ${m.pickers.map(esc).join(', ')}</span></div>
+        <div class="small">${m.market === 'ml' ? `Lost by ${pointsText(m.margin)}` : `Missed by ${pointsText(m.margin)}`}${m.alt
+          ? `. <span class="pos">${esc(m.alt.label)}${m.alt.price != null ? ` (${fmtOdds(m.alt.price)})` : ''} would have won.</span>` : '.'}</div>
+      </div>`).join('')}</div>`;
+  }
+
+  if (data.oneLegAway.length) {
+    html += `<h3 class="section">One leg away</h3><div class="card">${data.oneLegAway.map((p) => `<div class="an-row">
+      <div><b>${esc(p.name)}</b> <span class="muted">${money(p.total)} bet</span></div>
+      <div class="small">Lost only on ${esc(p.leg.label)}${p.leg.margin != null ? ` (missed by ${pointsText(p.leg.margin)})` : ''}.
+        ${p.alt ? `<span class="pos">With ${esc(p.alt.label)} instead, it would have hit${p.alt.payout != null ? ` and paid about ${money(p.alt.payout)}` : ''}.</span>` : ''}</div>
+    </div>`).join('')}</div>`;
+  }
+
+  // Same money, as straight bets on the same legs.
+  const vs = (label, r) => (r.count ? `<tr><td>${label}<div class="small muted">${r.count} parlay${r.count === 1 ? '' : 's'}, ${money(r.staked)}</div></td>
+    <td class="num ${netClass(r.parlayNet)}">${signed(r.parlayNet)}</td><td class="num ${netClass(r.singlesNet)}">${signed(r.singlesNet)}</td></tr>` : '');
+  const vsRows = vs(esc(data.label), data.vsSingles.week) + vs('All season', data.vsSingles.season);
+  if (vsRows) {
+    html += `<h3 class="section">Parlays vs. straight bets</h3><div class="card">
+      <p class="small muted">What your settled parlays made, next to the same money split evenly across the same legs as single bets.</p>
+      <table class="slip"><thead><tr><th></th><th class="num">As parlays</th><th class="num">As straight bets</th></tr></thead>
+      <tbody>${vsRows}</tbody></table></div>`;
+  }
+
+  if (isPast() && !data.misses.length && !data.oneLegAway.length && !vsRows) {
+    html += `<div class="card muted">Nothing to look back on for ${esc(data.label)}.</div>`;
+  }
+  $('#analysis').innerHTML = html;
 }
 
 let placingId = null; // Bet Slip parlay whose payout box is open
