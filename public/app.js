@@ -160,7 +160,7 @@ function renderGames() {
   const locked = isLocked() && !calc;
   const allStarted = !openGames().length;
   $('#picks-hint').textContent = !calc && allStarted && hasSubmitted()
-    ? `Every game this week has kicked off, so picks are locked. Next week's games show up Tuesday at 8 AM Eastern.`
+    ? `Every game this week has kicked off, so picks are locked. Next week's games show up Tuesday at 6 AM Eastern.`
     : calc
     ? `Tap any bets to see what a parlay would pay at ${week.book ?? 'the sportsbook'}'s current lines. Nothing is shared unless you hit Post, which adds it to the Parlays tab for others to join.`
     : locked

@@ -31,7 +31,19 @@ test('week window runs Tuesday to Tuesday and labels the week', () => {
   const win = weekWindow(new Date('2026-09-27T18:00:00Z')); // a Sunday
   assert.equal(win.key, '2026-09-22');
   assert.equal(weekLabel(win), 'Week 3');
-  assert.equal(weekWindow(new Date('2026-09-22T11:00:00Z')).key, '2026-09-15');
+  // Flips Tuesday at 6 AM Eastern: 10:00 UTC in daylight time...
+  assert.equal(weekWindow(new Date('2026-09-22T09:59:00Z')).key, '2026-09-15');
+  assert.equal(weekWindow(new Date('2026-09-22T10:00:00Z')).key, '2026-09-22');
+  assert.equal(weekWindow(new Date('2026-09-22T10:00:00Z')).start.toISOString(), '2026-09-22T10:00:00.000Z');
+  assert.equal(weekWindow(new Date('2026-09-22T10:00:00Z')).end.toISOString(), '2026-09-29T10:00:00.000Z');
+  // ...and 11:00 UTC in standard time (after Nov 1).
+  assert.equal(weekWindow(new Date('2026-11-10T10:59:00Z')).key, '2026-11-03');
+  assert.equal(weekWindow(new Date('2026-11-10T11:00:00Z')).key, '2026-11-10');
+  // The week that spans the clock change ends at 6 AM standard time.
+  assert.equal(weekWindow(new Date('2026-10-29T12:00:00Z')).end.toISOString(), '2026-11-03T11:00:00.000Z');
+  // Monday night (Eastern) still belongs to the week that started the Tuesday before.
+  assert.equal(weekWindow(new Date('2026-10-20T03:30:00Z')).key, '2026-10-13');
+  assert.equal(weekLabel(weekWindow(new Date('2026-10-20T10:00:00Z'))), 'Week 7');
 });
 
 test('parses the ESPN scoreboard shape', () => {

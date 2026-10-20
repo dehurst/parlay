@@ -146,7 +146,7 @@ compounds on every leg.
 
 ## Week to week
 
-The week flips every Tuesday at 8am Eastern: new games, fresh lines, and empty
+The week flips every Tuesday at 6 AM Eastern: new games, fresh lines, and empty
 picks. Nothing is deleted. Past weeks stay in the data and show up on the
 Stats tab with their results.
 

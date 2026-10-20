@@ -1,21 +1,51 @@
-// An NFL "week" here runs Tuesday 12:00 UTC -> next Tuesday 12:00 UTC,
-// so Thursday, Sunday, and Monday games all land in the same week.
+// An NFL "week" here runs Tuesday 6:00 AM Eastern -> the next Tuesday 6:00 AM
+// Eastern, so Thursday, Sunday, and Monday games all land in the same week.
+// The week's key is the Tuesday's date (YYYY-MM-DD).
 const DAY = 24 * 60 * 60 * 1000;
+const FLIP_HOUR = 6; // 6 AM Eastern
+
+const easternParts = (d) => {
+  const parts = Object.fromEntries(new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: 'numeric', hourCycle: 'h23', weekday: 'short',
+  }).formatToParts(d).map((p) => [p.type, p.value]));
+  return { y: +parts.year, m: +parts.month - 1, d: +parts.day, hour: +parts.hour, weekday: parts.weekday };
+};
+
+// The UTC instant for a wall-clock hour in Eastern time (handles EDT and EST).
+function easternHourOn(y, m, d, hour) {
+  for (const offset of [4, 5]) {
+    const t = new Date(Date.UTC(y, m, d, hour + offset));
+    const e = easternParts(t);
+    if (e.hour === hour && e.d === new Date(Date.UTC(y, m, d)).getUTCDate()) return t;
+  }
+  return new Date(Date.UTC(y, m, d, hour + 5));
+}
+
+const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 export function weekWindow(now = new Date()) {
-  const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 12));
-  // Walk back to the most recent Tuesday noon UTC.
-  while (d.getUTCDay() !== 2 || d > now) d.setTime(d.getTime() - DAY);
-  const start = d;
-  const end = new Date(start.getTime() + 7 * DAY);
-  return { key: start.toISOString().slice(0, 10), start, end };
+  // Most recent Tuesday (Eastern calendar) at 6 AM Eastern that's not in the future.
+  const e = easternParts(now);
+  const back = (WEEKDAYS.indexOf(e.weekday) - 2 + 7) % 7;
+  let tue = new Date(Date.UTC(e.y, e.m, e.d - back));
+  let start = easternHourOn(tue.getUTCFullYear(), tue.getUTCMonth(), tue.getUTCDate(), FLIP_HOUR);
+  if (start > now) {
+    tue = new Date(tue.getTime() - 7 * DAY);
+    start = easternHourOn(tue.getUTCFullYear(), tue.getUTCMonth(), tue.getUTCDate(), FLIP_HOUR);
+  }
+  const next = new Date(tue.getTime() + 7 * DAY);
+  const end = easternHourOn(next.getUTCFullYear(), next.getUTCMonth(), next.getUTCDate(), FLIP_HOUR);
+  return { key: tue.toISOString().slice(0, 10), start, end };
 }
 
 // Week 1 of the regular season starts the Tuesday before the opening Thursday.
-// SEASON_START can override it (YYYY-MM-DD, a Tuesday).
+// SEASON_START can override it (YYYY-MM-DD, a Tuesday). Weeks are counted by
+// their Tuesday dates, so the exact flip hour doesn't matter here.
 export function weekLabel(window, seasonStart = process.env.SEASON_START) {
-  const start = seasonStart ? new Date(`${seasonStart}T12:00:00Z`) : defaultSeasonStart(window.start);
-  const n = Math.floor((window.start - start) / (7 * DAY)) + 1;
+  const tuesday = new Date(`${window.key}T12:00:00Z`);
+  const start = seasonStart ? new Date(`${seasonStart}T12:00:00Z`) : defaultSeasonStart(tuesday);
+  const n = Math.round((tuesday - start) / (7 * DAY)) + 1;
   return n >= 1 && n <= 22 ? `Week ${n}` : `Week of ${window.key}`;
 }
 

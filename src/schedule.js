@@ -96,7 +96,7 @@ export function parseScoreboard(data, weekKey) {
 }
 
 // Made-up slate for when no source can be reached, spread across the given week.
-export function demoSchedule({ key, start }) {
+export function demoSchedule({ key }) {
   const matchups = [
     ['Buffalo Bills', 'Miami Dolphins', 'thu'],
     ['Kansas City Chiefs', 'Denver Broncos', 'sun1'],
@@ -112,11 +112,12 @@ export function demoSchedule({ key, start }) {
     ['Minnesota Vikings', 'Chicago Bears', 'snf'],
     ['New York Jets', 'New England Patriots', 'mnf'],
   ];
-  // Offsets from Tuesday 12:00 UTC to typical ET kickoffs (EDT, UTC-4).
+  // Offsets from the week's Tuesday at 12:00 UTC to typical ET kickoffs (EDT, UTC-4).
+  const base = new Date(`${key}T12:00:00Z`).getTime();
   const at = (day, h, m) => ((day * 24 + h) * 60 + m) * 60 * 1000;
   const slot = { thu: at(2, 12, 15), sun1: at(5, 5, 0), sun4: at(5, 8, 25), snf: at(5, 12, 20), mnf: at(6, 12, 15) };
   return matchups.map(([home, away, s]) =>
-    makeGame({ weekKey: `demo-${key}`, home, away, commence: start.getTime() + slot[s] }));
+    makeGame({ weekKey: `demo-${key}`, home, away, commence: base + slot[s] }));
 }
 
 export const hasStarted = (game, now = new Date()) =>
