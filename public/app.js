@@ -771,6 +771,14 @@ async function renderStats() {
 
   const c = data.consensus;
   const winPct = (r) => (r.win + r.loss ? r.win / (r.win + r.loss) : 0);
+  // Everyone's picks added together.
+  const addUp = (get) => data.players.reduce((t, p) => {
+    const r = get(p);
+    return { win: t.win + r.win, loss: t.loss + r.loss, push: t.push + r.push };
+  }, { win: 0, loss: 0, push: 0 });
+  const all = addUp((p) => p.picks);
+  const sumRec = (m) => addUp((p) => p.byMarket[m]);
+  const allNet = data.players.reduce((t, p) => t + p.flatNet, 0);
   const wlp = (r) => `<td class="num">${r.win}</td><td class="num">${r.loss}</td><td class="num">${r.push}</td>`;
   const picksCard = `<div class="card"><h3>Pick records</h3>
     <p class="small muted">Every submitted pick, graded win, loss, or push. "$10 a pick" is what you'd be up or down betting $10 on each one by itself.</p>
@@ -779,7 +787,11 @@ async function renderStats() {
       <tbody>${[...data.players].sort((a, b) => winPct(b.picks) - winPct(a.picks) || b.picks.win - a.picks.win).map((p) => `<tr>
         <td>${esc(p.name)}<div class="small muted">ATS ${recordText(p.byMarket.spread)} · Totals ${recordText(p.byMarket.total)} · ML ${recordText(p.byMarket.ml)}</div></td>
         ${wlp(p.picks)}<td class="num ${netClass(p.flatNet)}">${signed(p.flatNet)}</td></tr>`).join('')}</tbody>
-      <tfoot><tr><th>Group consensus<div class="small muted">Bets most of you agreed on</div></th>${wlp(c)}<th class="num ${netClass(c.flatNet)}">${signed(c.flatNet)}</th></tr></tfoot>
+      <tfoot>
+        <tr><th>All of us<div class="small muted">ATS ${recordText(sumRec('spread'))} · Totals ${recordText(sumRec('total'))} · ML ${recordText(sumRec('ml'))}</div></th>
+          ${wlp(all)}<th class="num ${netClass(allNet)}">${signed(allNet)}</th></tr>
+        <tr><th>Group consensus<div class="small muted">Bets most of you agreed on</div></th>${wlp(c)}<th class="num ${netClass(c.flatNet)}">${signed(c.flatNet)}</th></tr>
+      </tfoot>
     </table></div>`;
 
   const weeks = data.weeks.map((w, i) => {
