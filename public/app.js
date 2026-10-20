@@ -13,6 +13,12 @@ const storage = {
 
 let me = storage.get('parlay.name');
 let week = null;
+// The week on screen: null for this week, else a past week's key (YYYY-MM-DD).
+let viewKey = null;
+const isPast = () => !!week?.past;
+// Adds the viewed week to an API path (nothing for this week).
+const withWeek = (path) => (viewKey ? `${path}${path.includes('?') ? '&' : '?'}week=${viewKey}` : path);
+let statsScope = 'season'; // Stats tab: 'season' or 'week'
 let tab = 'picks';
 // Payout calculator: a scratch parlay that's never saved or shared.
 let calc = false;
@@ -46,6 +52,7 @@ async function load(refresh = false) {
   const params = new URLSearchParams();
   if (me) params.set('me', me);
   if (refresh) params.set('refresh', '1');
+  if (viewKey) params.set('week', viewKey);
   try {
     week = await api(`/api/week?${params}`);
   } catch (err) {
@@ -53,7 +60,7 @@ async function load(refresh = false) {
     return;
   }
   notice(week.warning);
-  $('#week-label').textContent = week.label;
+  renderWeekNav();
   const time = (t) => new Date(t).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' });
   $('#schedule-meta').textContent = [
     `Schedule: ${week.demo ? 'demo games' : week.source}`,
@@ -61,13 +68,40 @@ async function load(refresh = false) {
     week.refreshesLeft != null && `${week.refreshesLeft} of ${week.refreshesPerDay} refreshes left today`,
     week.creditsLeft && `${week.creditsLeft} API credits left this month`,
   ].filter(Boolean).join(' · ');
-  $('#refresh').hidden = !week.book;
+  $('#refresh').hidden = !week.book || isPast();
+  $('#schedule-meta').hidden = isPast();
 
   if (me && !week.players.includes(me)) me = null;
   if (!me) return showJoin();
   $('#join').hidden = true;
   $('#tabs').hidden = false;
   render();
+}
+
+// Header week switcher: ‹ older · pick any week · newer ›. Past weeks are
+// read-only, with a banner to get back.
+function renderWeekNav() {
+  const list = week.weeks; // newest first
+  const i = list.findIndex((w) => w.key === week.key);
+  $('#week-select').innerHTML = list.map((w) =>
+    `<option value="${esc(w.key)}" ${w.key === week.key ? 'selected' : ''}>${esc(w.label)}</option>`).join('');
+  $('#week-select').disabled = list.length < 2;
+  $('#week-prev').disabled = i < 0 || i >= list.length - 1;
+  $('#week-next').disabled = i <= 0;
+  $('#past-banner').hidden = !isPast();
+  $('#past-banner').innerHTML = isPast()
+    ? `<span>Looking back at <b>${esc(week.label)}</b>. Past weeks are view-only.</span>
+       <button type="button" class="link" id="back-to-now">Back to ${esc(list[0].label)} →</button>`
+    : '';
+}
+
+function goWeek(key) {
+  const current = week.weeks.find((w) => w.current)?.key;
+  viewKey = !key || key === current ? null : key;
+  calc = false;
+  placingId = null;
+  notice(null);
+  load();
 }
 
 // Games that haven't kicked off: the only ones a pick can still be changed on.
@@ -77,8 +111,8 @@ const isOpenPick = (key) => !gameOf(key)?.started;
 function renderWho() {
   // Clearing only removes picks on games that haven't started, so only offer
   // it when there's one of those (or an unsubmitted selection).
-  const hasAny = (submittedPicks() ?? []).some((p) => isOpenPick(p.key)) || (week.draft ?? []).length > 0;
-  $('#who').innerHTML = `<span class="muted">Picking as</span> <b>${esc(me)}</b>
+  const hasAny = !isPast() && ((submittedPicks() ?? []).some((p) => isOpenPick(p.key)) || (week.draft ?? []).length > 0);
+  $('#who').innerHTML = `<span class="muted">${isPast() ? 'Viewing as' : 'Picking as'}</span> <b>${esc(me)}</b>
     <button class="link" id="switch" type="button">switch</button>
     ${hasAny ? '<button id="clear-picks" class="clear" type="button">Clear my picks</button>' : ''}`;
 }
@@ -156,10 +190,14 @@ const rec = (r) => (r ? ` <span class="rec">(${esc(r)})</span>` : '');
 
 function renderGames() {
   renderWho();
-  document.querySelectorAll('.mode-switch button').forEach((b) => b.classList.toggle('active', (b.dataset.mode === 'calc') === calc));
+  $('#picks-mode').hidden = isPast();
+  document.querySelectorAll('#picks-mode button').forEach((b) => b.classList.toggle('active', (b.dataset.mode === 'calc') === calc));
   const locked = isLocked() && !calc;
   const allStarted = !openGames().length;
-  $('#picks-hint').textContent = !calc && allStarted && hasSubmitted()
+  const n = submittedPicks()?.length ?? 0;
+  $('#picks-hint').textContent = isPast()
+    ? (n ? `Your ${n} pick${n === 1 ? '' : 's'} for ${week.label}, graded once each game finished.` : `You didn't submit picks for ${week.label}.`)
+    : !calc && allStarted && hasSubmitted()
     ? `Every game this week has kicked off, so picks are locked. Next week's games show up Tuesday at 6 AM Eastern.`
     : calc
     ? `Tap any bets to see what a parlay would pay at ${week.book ?? 'the sportsbook'}'s current lines. Nothing is shared unless you hit Post, which adds it to the Parlays tab for others to join.`
@@ -254,7 +292,8 @@ function renderGames() {
 
 function renderSubmitBar() {
   const bar = $('#submit-bar');
-  bar.hidden = tab !== 'picks';
+  bar.hidden = tab !== 'picks' || isPast();
+  if (bar.hidden) return;
   if (calc) return renderCalcBar(bar);
   const plural = (n) => `${n} pick${n === 1 ? '' : 's'}`;
   if (isLocked()) {
@@ -505,17 +544,17 @@ function lineMoved(s, book) {
 
 async function renderBoard() {
   $('#board').innerHTML = '<p class="muted">Loading…</p>';
-  const data = await api('/api/parlays').catch((err) => (notice(err.message), null));
+  const data = await api(withWeek('/api/parlays')).catch((err) => (notice(err.message), null));
   if (!data) return;
   const done = Object.keys(week.picks);
   const waiting = week.players.filter((p) => !done.includes(p));
   const header = `<div class="card">
     <b>${done.length}</b> of ${week.players.length} have submitted.
-    ${waiting.length ? `<span class="muted">Waiting on: ${waiting.map(esc).join(', ')}</span>` : ''}
+    ${waiting.length ? `<span class="muted">${isPast() ? 'No picks from' : 'Waiting on'}: ${waiting.map(esc).join(', ')}</span>` : ''}
     ${done.length ? `<div class="small muted">A bet needs ${data.need}+ votes to count as consensus.</div>` : ''}
   </div>`;
   if (!data.tallied.length) {
-    $('#board').innerHTML = header + '<div class="card muted">No submitted picks yet this week.</div>';
+    $('#board').innerHTML = header + `<div class="card muted">${isPast() ? `No picks were submitted for ${esc(week.label)}.` : 'No submitted picks yet this week.'}</div>`;
     return;
   }
   const rows = data.tallied.map((s) => `
@@ -613,8 +652,15 @@ function customHtml(data) {
 
 async function renderParlays() {
   $('#parlays').innerHTML = '<p class="muted">Building…</p>';
-  const data = await api('/api/parlays').catch((err) => (notice(err.message), null));
+  const data = await api(withWeek('/api/parlays')).catch((err) => (notice(err.message), null));
   if (!data) return;
+  $('#parlays-hint').hidden = isPast();
+  if (isPast()) {
+    // A past week: just the parlays that had money on them, and how they did.
+    const html = inPlayHtml(data) + settledHtml(data);
+    $('#parlays').innerHTML = html || `<div class="card muted">Nobody put money on a parlay in ${esc(week.label)}.</div>`;
+    return;
+  }
 
   let html = customHtml(data) + inPlayHtml(data) + '<h3 class="section">Suggested parlays</h3>';
   if (!data.voters) {
@@ -683,15 +729,23 @@ function recordText(r) {
 
 async function renderStats() {
   $('#stats').innerHTML = '<p class="muted">Loading…</p>';
-  const data = await api('/api/stats').catch((err) => (notice(err.message), null));
+  const byWeek = statsScope === 'week';
+  const data = await api(byWeek ? `/api/stats?week=${week.key}` : '/api/stats').catch((err) => (notice(err.message), null));
   if (!data) return;
+  // All season, or just the week picked in the header.
+  const scope = `<div class="mode-switch" id="stats-scope">
+      <button type="button" data-scope="season" class="${byWeek ? '' : 'active'}">All season</button>
+      <button type="button" data-scope="week" class="${byWeek ? 'active' : ''}">${esc(week.label)}</button>
+    </div>`;
   if (!data.weeks.length) {
-    $('#stats').innerHTML = '<div class="card muted">No history yet. Stats show up once games people picked have finished.</div>';
+    $('#stats').innerHTML = scope + `<div class="card muted">${byWeek
+      ? `Nothing to show for ${esc(week.label)} yet: no picks or parlays.`
+      : 'No history yet. Stats show up once games people picked have finished.'}</div>`;
     return;
   }
   const pr = data.parlays;
   const people = [...data.players].sort((a, b) => b.net - a.net);
-  const money_ = `<div class="card"><h3>Season money</h3>
+  const money_ = `<div class="card"><h3>${byWeek ? `${esc(week.label)} money` : 'Season money'}</h3>
     <p class="small muted">Parlays you put money on that have been decided. Net = paid back minus staked.</p>
     <table class="slip">
       <thead><tr><th>Who</th><th class="num">Staked</th><th class="num">Paid back</th><th class="num">Net</th></tr></thead>
@@ -739,17 +793,21 @@ async function renderStats() {
     </details>`;
   }).join('');
 
-  $('#stats').innerHTML = parlayCard + money_ + picksCard + `<h3 class="section">Week by week</h3>` + weeks;
+  $('#stats').innerHTML = scope + parlayCard + money_ + picksCard
+    + `<h3 class="section">${byWeek ? 'Picks and parlays' : 'Week by week'}</h3>` + weeks;
 }
 
 let placingId = null; // Bet Slip parlay whose payout box is open
 
 async function renderSlip() {
   $('#slip').innerHTML = '<p class="muted">Loading…</p>';
-  const data = await api('/api/slip').catch((err) => (notice(err.message), null));
+  const data = await api(withWeek('/api/slip')).catch((err) => (notice(err.message), null));
   if (!data) return;
+  const past = isPast();
   if (!data.parlays.length) {
-    $('#slip').innerHTML = '<div class="card muted">Nobody has put money on a parlay yet. Do that on the Parlays tab.</div>';
+    $('#slip').innerHTML = `<div class="card muted">${past
+      ? `Nobody put money on a parlay in ${esc(week.label)}.`
+      : 'Nobody has put money on a parlay yet. Do that on the Parlays tab.'}</div>`;
     return;
   }
   const grand = data.parlays.reduce((sum, p) => sum + p.total, 0);
@@ -771,14 +829,14 @@ async function renderSlip() {
   const card = (p, i) => {
     const legs = p.legs.map((l) => `<li>${gradeMark(l.grade)}<b>${esc(l.label)}</b> <span class="muted">${fmtOdds(l.price)} · ${esc(l.matchup)}</span>${l.grade === 'pending' ? lineMoved(l, data.book) : ''}</li>`).join('');
     const rows = Object.entries(p.stakes).map(([who, amt]) => `<tr>
-        <td>${esc(who)}${who === me && !p.placed ? ` <button type="button" class="link danger" data-slip-out="${esc(p.id)}">remove</button>` : ''}</td>
+        <td>${esc(who)}${who === me && !p.placed && !past ? ` <button type="button" class="link danger" data-slip-out="${esc(p.id)}">remove</button>` : ''}</td>
         <td class="num">${money(amt)}</td><td class="num">${money(amt * p.decimal)}</td></tr>`).join('');
     return `<div class="card parlay ${p.placed ? 'placed' : ''} ${p.status !== 'pending' ? `done ${p.status}` : ''}">
       <div class="head">
         <div><span class="muted small">Bet ${i + 1}</span> ${p.placed ? '<span class="chip placed">✓ Placed</span>' : ''} ${statusChip(p.status, p.returned, p.total)} ${p.paidOut ? '<span class="chip paid">💵 Paid out</span>' : ''}<h3>${esc(p.name)} · ${p.legs.length}-leg parlay</h3></div>
         <div class="odds-col"><div class="odds">${fmtOdds(shownOdds(p))}</div>${copyButton(p)}</div>
       </div>
-      ${p.stillOption || p.placed ? '' : '<div class="lines">Picks changed since people bought in, so this parlay is no longer one of the current options. Double-check before placing it.</div>'}
+      ${p.stillOption || p.placed || past ? '' : '<div class="lines">Picks changed since people bought in, so this parlay is no longer one of the current options. Double-check before placing it.</div>'}
       <ul>${legs}</ul>
       <table class="slip">
         <thead><tr><th>Who</th><th class="num">Stake</th><th class="num">Wins</th></tr></thead>
@@ -786,7 +844,11 @@ async function renderSlip() {
         <tfoot><tr><th>Total</th><th class="num">${money(p.total)}</th><th class="num">${money(p.payout)}</th></tr></tfoot>
       </table>
       <div class="place-row">
-        ${placingId === p.id
+        ${past
+          ? `<span class="small muted">${p.placed
+              ? `Placed by ${esc(p.placed.by)} ${esc(at(p.placed.at))}.${p.placed.payout ? ` ${esc(data.book ?? 'Sportsbook')} payout: ${money(p.placed.payout)}.` : ''}`
+              : 'Never marked placed.'}</span>`
+          : placingId === p.id
           ? `<form class="payout-form" data-id="${esc(p.id)}">
                <label>${esc(data.book ?? 'Sportsbook')} total payout $
                  <input name="payout" type="number" inputmode="decimal" step="0.01" min="0" value="${(p.placed?.payout ?? p.estimate).toFixed(2)}"></label>
@@ -816,13 +878,13 @@ async function renderSlip() {
     + (finished.length ? `<h3 class="section">Completed</h3>${finished.map((p, i) => card(p, active.length + i)).join('')}` : '');
   const totals = Object.entries(data.totals).map(([who, amt]) => `<tr><td>${esc(who)}</td><td class="num">${money(amt)}</td></tr>`).join('');
   $('#slip').innerHTML = `
-    <div class="card"><b>${toPlace.length
+    <div class="card"><b>${past ? `${esc(week.label)} bet slip` : toPlace.length
         ? `${toPlace.length} parlay${toPlace.length === 1 ? '' : 's'} left to place, ${money(left)}.`
         : active.length ? `All placed ✓ · ${active.length} still in play` : 'All parlays are settled.'}</b>
-      <span class="small muted">${data.parlays.length} this week, ${money(grand)} total${finished.length ? `, ${finished.length} settled` : ''}.</span>
+      <span class="small muted">${data.parlays.length} ${past ? 'that week' : 'this week'}, ${money(grand)} total${finished.length ? `, ${finished.length} settled` : ''}.</span>
       ${owedTotal > 0.004 ? `<div class="owed"><b>To pay out: ${money(owedTotal)}</b> <span class="small">(${Object.entries(owed).map(([who, amt]) => `${esc(who)} ${money(amt)}`).join(', ')})</span></div>` : ''}
-      <div class="small muted">"Wins" is the total payout (stake included) if the parlay hits, at the odds shown.
-      Check each leg in ${esc(data.book ?? 'your sportsbook')} before placing; anything marked "Line moved" will pay differently.</div>
+      ${past ? '' : `<div class="small muted">"Wins" is the total payout (stake included) if the parlay hits, at the odds shown.
+      Check each leg in ${esc(data.book ?? 'your sportsbook')} before placing; anything marked "Line moved" will pay differently.</div>`}
     </div>
     ${cards}
     <div class="card"><b>Who owes what</b>
@@ -869,6 +931,24 @@ $('#submit-bar').addEventListener('click', (e) => {
     tab = go;
     render();
   }
+});
+$('#week-prev').addEventListener('click', () => {
+  const i = week.weeks.findIndex((w) => w.key === week.key);
+  if (week.weeks[i + 1]) goWeek(week.weeks[i + 1].key);
+});
+$('#week-next').addEventListener('click', () => {
+  const i = week.weeks.findIndex((w) => w.key === week.key);
+  if (i > 0) goWeek(week.weeks[i - 1].key);
+});
+$('#week-select').addEventListener('change', (e) => goWeek(e.target.value));
+$('#past-banner').addEventListener('click', (e) => {
+  if (e.target.closest('#back-to-now')) goWeek(null);
+});
+$('#stats').addEventListener('click', (e) => {
+  const scope = e.target.closest('[data-scope]')?.dataset.scope;
+  if (!scope || scope === statsScope) return;
+  statsScope = scope;
+  renderStats();
 });
 $('#tabs').addEventListener('click', (e) => {
   const btn = e.target.closest('button[data-tab]');
@@ -938,7 +1018,7 @@ $('#slip').addEventListener('click', async (e) => {
   if (paid) {
     paid.disabled = true;
     try {
-      await api('/api/paidout', { method: 'POST', body: { name: me, id: paid.dataset.paid, paid: paid.dataset.val === '1' } });
+      await api('/api/paidout', { method: 'POST', body: { name: me, id: paid.dataset.paid, paid: paid.dataset.val === '1', week: viewKey } });
     } catch (err) {
       notice(err.message);
     }

@@ -11,13 +11,18 @@
   <header>
     <div class="brand">
       <h1>Parlay Builder</h1>
-      <span id="week-label" class="muted"></span>
+      <span class="week-nav" id="week-nav">
+        <button id="week-prev" class="week-arrow" type="button" aria-label="Previous week">‹</button>
+        <select id="week-select" aria-label="Week"></select>
+        <button id="week-next" class="week-arrow" type="button" aria-label="Next week">›</button>
+      </span>
       <button id="refresh" class="refresh" type="button" hidden>↻ Refresh lines</button>
     </div>
     <div id="who" class="who"></div>
   </header>
 
   <div id="notice" class="notice" hidden></div>
+  <div id="past-banner" class="past-banner" hidden></div>
 
   <section id="join" class="card join" hidden>
     <h2>Who are you?</h2>
@@ -38,7 +43,7 @@
 
   <main>
     <section id="tab-picks" class="tab">
-      <div class="mode-switch" role="tablist">
+      <div id="picks-mode" class="mode-switch" role="tablist">
         <button type="button" data-mode="picks" class="active">My picks</button>
         <button type="button" data-mode="calc">Payout calculator</button>
       </div>
@@ -52,7 +57,7 @@
     </section>
 
     <section id="tab-parlays" class="tab" hidden>
-      <p class="muted small">Put in how much you want on the parlays you like. The person placing the bets sees it all on the Bet Slip tab.</p>
+      <p id="parlays-hint" class="muted small">Put in how much you want on the parlays you like. The person placing the bets sees it all on the Bet Slip tab.</p>
       <div id="parlays"></div>
     </section>
 

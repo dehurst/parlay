@@ -6,9 +6,10 @@ const record = () => ({ win: 0, loss: 0, push: 0, pending: 0 });
 
 // Season stats from everything saved: each person's picks and money, the
 // group's consensus picks, and every parlay you put money on.
-export function computeStats(data, players) {
+// With { week }, only that week counts.
+export function computeStats(data, players, { week = null } = {}) {
   const weeks = [...new Set([...Object.keys(data.picks), ...Object.keys(data.stakes)])]
-    .filter((w) => !w.startsWith('demo'))
+    .filter((w) => !w.startsWith('demo') && (!week || w === week))
     .sort();
 
   const people = Object.fromEntries(players.map((p) => [p, {
@@ -86,7 +87,7 @@ export function computeStats(data, players) {
 
     weekly.push({
       key,
-      label: weekLabel({ key, start: new Date(`${key}T12:00:00Z`) }),
+      label: weekLabel({ key }),
       picks: pickRows,
       consensus: consensusRows,
       parlays,

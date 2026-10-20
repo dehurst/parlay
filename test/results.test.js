@@ -174,3 +174,21 @@ test('season stats use the entered payout', () => {
   assert.equal(daniel.returned.toFixed(2), '28.00');
   assert.equal(daniel.net.toFixed(2), '18.00');
 });
+
+test('stats can be narrowed to one week', () => {
+  const game = (wk) => ({ id: `${wk}-g`, home: 'Eagles', away: 'Giants', homeShort: 'Eagles', awayShort: 'Giants', commence: `${wk}T17:00:00Z` });
+  const pick = (wk) => ({ key: `${wk}-g|ml|home`, point: null, price: 100 });
+  const data = {
+    schedule: { '2026-10-06': { games: [game('2026-10-06')] }, '2026-10-13': { games: [game('2026-10-13')] } },
+    results: { '2026-10-06': { '2026-10-06-g': final(24, 10) }, '2026-10-13': { '2026-10-13-g': final(10, 24) } },
+    picks: { '2026-10-06': { Daniel: [pick('2026-10-06')] }, '2026-10-13': { Daniel: [pick('2026-10-13')] } },
+    stakes: {},
+  };
+  const season = computeStats(data, ['Daniel']);
+  assert.deepEqual([season.players[0].picks.win, season.players[0].picks.loss], [1, 1]);
+  assert.equal(season.weeks.length, 2);
+  const one = computeStats(data, ['Daniel'], { week: '2026-10-06' });
+  assert.deepEqual([one.players[0].picks.win, one.players[0].picks.loss], [1, 0]);
+  assert.deepEqual(one.weeks.map((w) => w.key), ['2026-10-06']);
+  assert.equal(computeStats(data, ['Daniel'], { week: '2026-09-29' }).weeks.length, 0);
+});

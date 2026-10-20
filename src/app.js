@@ -87,8 +87,9 @@ async function fetchSchedule(win, problems) {
 
 // This week's games plus the book's current lines. Falls back to the last
 // good schedule, then to a demo slate.
-async function loadWeek({ refreshLines = false } = {}) {
+async function loadWeek({ refreshLines = false, key = null } = {}) {
   const win = weekWindow();
+  if (key && key < win.key) return loadPastWeek(key);
   const problems = [];
 
   const cached = store.data.schedule[win.key];
@@ -142,8 +143,17 @@ async function loadWeek({ refreshLines = false } = {}) {
     }
   }
 
-  // Attach the book's line to each game. Games that kicked off drop out of the
-  // odds feed, so keep whatever lines we last saw for them.
+  const { games, gamesById } = withLines(win, schedule, lines);
+  let warning = problems.join(' ') || null;
+  if (schedule.demo) {
+    warning = `Couldn't load the NFL schedule, so these are demo games. It retries every few minutes. ${warning ?? ''}`.trim();
+  }
+  return { win, games, gamesById, schedule, lines, warning, limitHit };
+}
+
+// Attach the book's line to each game. Games that kicked off drop out of the
+// odds feed, so keep whatever lines we last saw for them.
+function withLines(win, schedule, lines) {
   const records = schedule.records ?? {};
   const games = schedule.games.map((g) => ({
     ...g,
@@ -153,13 +163,33 @@ async function loadWeek({ refreshLines = false } = {}) {
     // Final score, once known (looked up for games someone bet on).
     result: store.data.results[win.key]?.[g.id] ?? null,
   }));
-  const gamesById = new Map(games.map((g) => [g.id, g]));
+  return { games, gamesById: new Map(games.map((g) => [g.id, g])) };
+}
 
-  let warning = problems.join(' ') || null;
-  if (schedule.demo) {
-    warning = `Couldn't load the NFL schedule, so these are demo games. It retries every few minutes. ${warning ?? ''}`.trim();
-  }
-  return { win, games, gamesById, schedule, lines, warning, limitHit };
+// A past week, read-only: only what's saved, nothing fetched. Old weeks'
+// lines are pruned, so games only show odds through the picks people made.
+function loadPastWeek(key) {
+  const win = weekWindow(new Date(`${key}T16:00:00Z`));
+  const schedule = store.data.schedule[key] ?? { games: [], source: null };
+  const lines = store.data.lines[key] ?? null;
+  return { win, ...withLines(win, schedule, lines), schedule, lines, warning: null, limitHit: false, past: true };
+}
+
+// The week a request asks for (?week=YYYY-MM-DD, or body.week); null means
+// the current week. Only past weeks are allowed.
+function requestedWeek(req) {
+  const key = String(req.query.week ?? req.body?.week ?? '');
+  return /^\d{4}-\d{2}-\d{2}$/.test(key) && key < weekWindow().key ? key : null;
+}
+
+// Weeks you can look back at: ones with picks or bets, newest first.
+function pastWeeks(currentKey) {
+  const keys = new Set([...Object.keys(store.data.picks), ...Object.keys(store.data.stakes)]);
+  return [...keys]
+    .filter((k) => k < currentKey && !k.startsWith('demo') && store.data.schedule[k] && !store.data.schedule[k].demo)
+    .sort()
+    .reverse()
+    .map((key) => ({ key, label: weekLabel({ key }) }));
 }
 
 // Submitted picks only count for the configured players (older data may have others).
@@ -171,25 +201,31 @@ function submitted(win) {
 app.get('/api/week', async (req, res, next) => {
   try {
     await refreshResults(); // free (ESPN), at most every 10 min, so finished games show scores
-    const { win, games, schedule, lines, warning, limitHit } = await loadWeek({ refreshLines: req.query.refresh === '1' });
+    const past = requestedWeek(req);
+    const { win, games, schedule, lines, warning, limitHit } = await loadWeek({ refreshLines: !past && req.query.refresh === '1', key: past });
     const now = new Date();
     const me = players.includes(req.query.me) ? req.query.me : null;
+    const currentKey = weekWindow().key;
+    const live = !past && ODDS_API_KEY;
     res.json({
       key: win.key,
       label: weekLabel(win),
+      past: !!past,
+      // Every week you can switch to, this one first.
+      weeks: [{ key: currentKey, label: weekLabel(weekWindow()), current: true }, ...pastWeeks(currentKey)],
       demo: !!schedule.demo,
       source: schedule.source,
       book: ODDS_API_KEY ? bookName : null,
-      linesUpdated: lines?.fetchedAt ?? null,
-      creditsLeft: lines?.remaining ?? null,
+      linesUpdated: live ? lines?.fetchedAt ?? null : null,
+      creditsLeft: live ? lines?.remaining ?? null : null,
       warning,
       games: games.map((g) => ({ ...g, started: hasStarted(g, now) })),
       players,
       picks: submitted(win),
       // Your own unsubmitted selections (null if you have none); nobody else sees these.
-      draft: (me && store.data.drafts[win.key]?.[me]) ?? null,
-      nextRefreshAt: lines ? lines.fetchedAt + MANUAL_REFRESH_GAP : null,
-      refreshesLeft: ODDS_API_KEY ? refreshesLeftToday(store.data, creditLimit()) : null,
+      draft: (!past && me && store.data.drafts[win.key]?.[me]) || null,
+      nextRefreshAt: live && lines ? lines.fetchedAt + MANUAL_REFRESH_GAP : null,
+      refreshesLeft: live ? refreshesLeftToday(store.data, creditLimit()) : null,
       refreshesPerDay: Math.floor(creditLimit() / LINES_COST),
       limitHit,
     });
@@ -270,7 +306,8 @@ app.post('/api/paidout', async (req, res, next) => {
     const name = checkPlayer(req, res);
     if (!name) return;
     await refreshResults();
-    const { win, gamesById, result } = await currentParlays();
+    // Past weeks too: a win from weeks ago can still get marked paid.
+    const { win, gamesById, result } = await currentParlays(requestedWeek(req));
     const id = String(req.body.id ?? '');
     const saved = store.data.stakes[win.key]?.[id];
     if (!saved) return res.status(404).json({ error: 'That parlay isn’t on the slip anymore. Refresh and try again.' });
@@ -345,8 +382,8 @@ app.post('/api/submit', async (req, res, next) => {
 const parlayId = (keys) => [...keys].sort().join(',');
 
 // The current parlay options built from everyone's submitted picks.
-async function currentParlays() {
-  const { win, games, gamesById } = await loadWeek();
+async function currentParlays(key = null) {
+  const { win, games, gamesById } = await loadWeek({ key });
   const picks = submitted(win);
   const voters = Object.keys(picks).length;
   const now = new Date();
@@ -369,7 +406,7 @@ function stakesFor(win, id) {
 app.get('/api/parlays', async (req, res, next) => {
   try {
     await refreshResults();
-    const { win, gamesById, tallied, result } = await currentParlays();
+    const { win, gamesById, tallied, result } = await currentParlays(requestedWeek(req));
     // Parlays with money on them, split by where they stand: decided (won,
     // lost, or push), or in play (a game has started, not decided yet).
     const graded = gradedParlays(win, gamesById, new Set(result.options.map((o) => o.id)));
@@ -527,7 +564,7 @@ function gradedParlays(win, gamesById, optionIds) {
 app.get('/api/slip', async (req, res, next) => {
   try {
     await refreshResults();
-    const { win, gamesById, result } = await currentParlays();
+    const { win, gamesById, result } = await currentParlays(requestedWeek(req));
     const totals = {};
     const parlays = gradedParlays(win, gamesById, new Set(result.options.map((o) => o.id)));
     for (const p of parlays) for (const [who, amt] of Object.entries(p.stakes)) totals[who] = (totals[who] ?? 0) + amt;
@@ -579,7 +616,9 @@ async function refreshResults() {
 app.get('/api/stats', async (req, res, next) => {
   try {
     await refreshResults();
-    res.json(computeStats(store.data, players));
+    // ?week=YYYY-MM-DD (any week, this one included) narrows stats to that week.
+    const key = String(req.query.week ?? '');
+    res.json(computeStats(store.data, players, /^\d{4}-\d{2}-\d{2}$/.test(key) ? { week: key } : {}));
   } catch (err) {
     next(err);
   }
