@@ -127,7 +127,7 @@ body { padding-bottom: 90px; }
   background: var(--bar); border-top: 1px solid var(--bar-line);
   box-shadow: 0 -6px 20px rgba(0, 0, 0, .35);
 }
-.submit-bar .actions { display: flex; gap: 8px; }
+.submit-bar .actions { display: flex; align-items: center; gap: 8px; }
 .submit-bar button { white-space: nowrap; }
 .submit-bar button:not(.primary) { background: var(--bg); }
 .submit-bar > span:first-child { min-width: 0; }
