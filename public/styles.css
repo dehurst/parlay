@@ -33,12 +33,17 @@ h3 { font-size: 16px; margin: 0; }
 .muted { color: var(--muted); }
 .small { font-size: 13px; }
 
-header {
-  display: flex; justify-content: space-between; align-items: center;
-  gap: 12px; padding: 18px 0 12px; flex-wrap: wrap;
-}
-.brand { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.refresh { padding: 5px 10px; font-size: 13px; }
+/* Header: title and your name chip on one row, the week switcher below. */
+header { padding: 16px 0 8px; }
+.brand { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.me-chip { padding: 5px 12px; border-radius: 999px; font-size: 14px; font-weight: 600; }
+.week-nav { margin: 6px 0 0 -6px; }
+
+/* "FanDuel lines from Tue 7:09 AM  ↻ Refresh" under the picks hint. */
+.meta { display: flex; flex-direction: column; gap: 4px; }
+.lines-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.refresh { padding: 3px 10px; font-size: 12px; border-radius: 999px; }
+.meta-details { opacity: .8; }
 
 /* Week switcher in the header: ‹ Week 7 › */
 .week-nav { display: inline-flex; align-items: center; gap: 2px; }
@@ -63,7 +68,7 @@ header {
   padding: 10px 12px; margin-bottom: 12px; font-size: 14px;
 }
 .past-banner .link { color: var(--text); white-space: nowrap; }
-.who { display: flex; align-items: center; gap: 8px; }
+.who { display: flex; align-items: center; }
 
 button, input {
   font: inherit; color: inherit; border-radius: 8px;
@@ -155,8 +160,7 @@ body { padding-bottom: 90px; }
 .submit-bar button { white-space: nowrap; }
 .submit-bar button:not(.primary) { background: var(--bg); }
 .submit-bar > span:first-child { min-width: 0; }
-.clear { padding: 4px 10px; font-size: 13px; color: var(--bad); }
-.who { flex-wrap: wrap; }
+.submit-bar #clear-picks { display: block; margin-top: 2px; color: var(--bad); background: none; }
 .stake-form { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
 .stake-form label { display: flex; align-items: center; gap: 6px; font-size: 14px; }
 .stake-form input { width: 90px; flex: none; }
@@ -203,10 +207,8 @@ details.week summary .num { margin-left: auto; font-weight: 700; }
 .kick.locked { color: var(--warn); }
 @media (max-width: 420px) {
   h1 { font-size: 19px; }
-  .brand { gap: 8px; }
   .week-nav select { font-size: 16px; padding: 4px 2px; }
   .week-arrow { width: 28px; height: 28px; }
-  .refresh { padding: 4px 8px; font-size: 12px; }
 }
 
 /* On wider screens the bottom bar floats as a card lined up with the ones

@@ -61,14 +61,19 @@ async function load(refresh = false) {
   }
   notice(week.warning);
   renderWeekNav();
+  // Lines status under the picks hint, with the refresh button right next to
+  // the time it would update.
   const time = (t) => new Date(t).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' });
-  $('#schedule-meta').textContent = [
-    `Schedule: ${week.demo ? 'demo games' : week.source}`,
-    week.book && week.linesUpdated && `${week.book} lines updated ${time(week.linesUpdated)}`,
+  const canRefresh = week.book && !isPast();
+  const details = [
+    week.demo && 'Demo games',
     week.refreshesLeft != null && `${week.refreshesLeft} of ${week.refreshesPerDay} refreshes left today`,
     week.creditsLeft && `${week.creditsLeft} API credits left this month`,
-  ].filter(Boolean).join(' · ');
-  $('#refresh').hidden = !week.book || isPast();
+  ].filter(Boolean).map(esc).join(' · ');
+  $('#schedule-meta').innerHTML = `${canRefresh ? `<span class="lines-row">${week.linesUpdated
+      ? `${esc(week.book)} lines from ${esc(time(week.linesUpdated))}` : `No ${esc(week.book)} lines yet`}
+      <button id="refresh" class="refresh" type="button">↻ Refresh</button></span>` : ''}
+    ${details ? `<span class="meta-details">${details}</span>` : ''}`;
   $('#schedule-meta').hidden = isPast();
 
   if (me && !week.players.includes(me)) me = null;
@@ -109,12 +114,8 @@ const openGames = () => week.games.filter((g) => !g.started);
 const isOpenPick = (key) => !gameOf(key)?.started;
 
 function renderWho() {
-  // Clearing only removes picks on games that haven't started, so only offer
-  // it when there's one of those (or an unsubmitted selection).
-  const hasAny = !isPast() && ((submittedPicks() ?? []).some((p) => isOpenPick(p.key)) || (week.draft ?? []).length > 0);
-  $('#who').innerHTML = `<span class="muted">${isPast() ? 'Viewing as' : 'Picking as'}</span> <b>${esc(me)}</b>
-    <button class="link" id="switch" type="button">switch</button>
-    ${hasAny ? '<button id="clear-picks" class="clear" type="button">Clear my picks</button>' : ''}`;
+  // Who you are, as a small chip; tap it to switch.
+  $('#who').innerHTML = `<button class="me-chip" id="switch" type="button" title="Switch player">${esc(me)} <span class="muted">⇄</span></button>`;
 }
 
 async function clearPicks() {
@@ -306,7 +307,11 @@ function renderSubmitBar() {
     return;
   }
   const n = (week.draft ?? []).length;
-  bar.innerHTML = `<span>${n ? `<b>${n}</b> pick${n === 1 ? '' : 's'} selected` : 'No picks selected yet'}</span>
+  // Clearing only removes picks on games that haven't started, so only offer
+  // it while picking and there's one of those (or a selection).
+  const clearable = n > 0 || (submittedPicks() ?? []).some((p) => isOpenPick(p.key));
+  bar.innerHTML = `<span>${n ? `<b>${n}</b> pick${n === 1 ? '' : 's'} selected` : 'No picks selected yet'}
+      ${clearable ? '<button type="button" class="link small danger" id="clear-picks">Clear all</button>' : ''}</span>
     <span class="actions">
       ${isEditing() ? '<button type="button" id="cancel-edit">Cancel</button>' : ''}
       <button type="button" class="primary" id="submit-picks" ${n ? '' : 'disabled'}>${isEditing() ? 'Resubmit' : 'Submit picks'}</button>
@@ -926,6 +931,7 @@ $('#submit-bar').addEventListener('click', (e) => {
   }
   if (e.target.closest('#calc-post')) postCustom();
   if (e.target.closest('#cancel-edit')) cancelEditing();
+  if (e.target.closest('#clear-picks')) clearPicks();
   const go = e.target.closest('[data-tab-go]')?.dataset.tabGo;
   if (go) {
     tab = go;
@@ -1057,13 +1063,13 @@ $('#who').addEventListener('click', (e) => {
     storage.del('parlay.name');
     showJoin();
   }
-  if (e.target.closest('#clear-picks')) clearPicks();
 });
 const limitText = () =>
   `You've used today's ${week.refreshesPerDay} line refreshes (that keeps you under the free 500 API credits a month). Showing lines from ${new Date(week.linesUpdated).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}. Refreshes reset at midnight Eastern.`;
 
-$('#refresh').addEventListener('click', async () => {
-  const btn = $('#refresh');
+$('#schedule-meta').addEventListener('click', async (e) => {
+  const btn = e.target.closest('#refresh');
+  if (!btn) return;
   if (week?.refreshesLeft === 0) return notice(limitText());
   const wait = (week?.nextRefreshAt ?? 0) - Date.now();
   if (wait > 0) {
@@ -1073,9 +1079,7 @@ $('#refresh').addEventListener('click', async () => {
   }
   btn.disabled = true;
   btn.textContent = 'Refreshing…';
-  await load(true);
-  btn.disabled = false;
-  btn.textContent = '↻ Refresh lines';
+  await load(true); // re-draws the button
   if (week?.limitHit) notice(limitText());
 });
 
