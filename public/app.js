@@ -94,10 +94,10 @@ function renderWeekNav() {
   $('#week-prev').disabled = i < 0 || i >= list.length - 1;
   $('#week-next').disabled = i <= 0;
   $('#past-banner').hidden = !isPast();
-  $('#past-banner').innerHTML = isPast()
-    ? `<span>Looking back at <b>${esc(week.label)}</b>. Past weeks are view-only.</span>
-       <button type="button" class="link" id="back-to-now">Back to ${esc(list[0].label)} →</button>`
-    : '';
+  $('#past-banner').innerHTML = isPast() ? `<span>Looking back at <b>${esc(week.label)}</b>. Past weeks are view-only.</span>` : '';
+  // Shortcut back to this week, next to the switcher.
+  $('#back-to-now').hidden = !isPast();
+  $('#back-to-now').textContent = `Back to ${list[0].label} →`;
 }
 
 function goWeek(key) {
@@ -947,9 +947,7 @@ $('#week-next').addEventListener('click', () => {
   if (i > 0) goWeek(week.weeks[i - 1].key);
 });
 $('#week-select').addEventListener('change', (e) => goWeek(e.target.value));
-$('#past-banner').addEventListener('click', (e) => {
-  if (e.target.closest('#back-to-now')) goWeek(null);
-});
+$('#back-to-now').addEventListener('click', () => goWeek(null));
 $('#stats').addEventListener('click', (e) => {
   const scope = e.target.closest('[data-scope]')?.dataset.scope;
   if (!scope || scope === statsScope) return;
