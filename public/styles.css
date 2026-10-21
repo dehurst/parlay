@@ -80,6 +80,39 @@ header { padding: 16px 0 8px; }
 .chip.tag { font-size: 11px; padding: 1px 7px; background: var(--line); color: var(--text); }
 .an-legs { list-style: none; padding: 0; margin: 8px 0 0; }
 .an-legs li { display: flex; justify-content: space-between; gap: 8px; padding: 3px 0; font-size: 14px; }
+/* Likes on parlays, dislikes on legs: 👍 2 (D)(M) */
+.react-row { display: flex; align-items: center; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+.react { padding: 3px 10px; border-radius: 999px; font-size: 13px; line-height: 1.4; background: var(--bg); }
+.react.on { border-color: var(--accent); background: rgba(47, 191, 113, .15); }
+.react.dislike { padding: 1px 6px; font-size: 12px; opacity: .55; }
+.react.dislike.on { opacity: 1; border-color: var(--bad); background: rgba(229, 72, 77, .15); }
+.react:disabled { cursor: default; }
+.edit-copy { margin-left: auto; color: var(--text); }
+.faces { display: inline-flex; }
+.face {
+  width: 20px; height: 20px; border-radius: 50%; margin-left: -4px; border: 2px solid var(--card);
+  background: var(--line); color: var(--text); font-size: 10px; font-weight: 700;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.faces .face:first-child { margin-left: 2px; }
+ul.legs { list-style: none; padding: 0; }
+ul.legs li { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; padding: 3px 0; }
+.leg-react { display: inline-flex; align-items: center; flex: none; }
+
+/* Build a parlay: swap or drop legs */
+.builder { border-color: var(--bar-line); }
+.b-head { margin-bottom: 2px; }
+.b-leg { padding: 10px 0; border-bottom: 1px solid var(--line); }
+.b-leg:last-of-type { border-bottom: none; }
+.b-leg.disliked .b-leg-head > span > b { color: var(--bad); }
+.b-leg-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.b-leg-head .danger { white-space: nowrap; }
+.dislike-note { display: inline-flex; align-items: center; margin-left: 4px; }
+.swaps { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
+.swap { text-align: left; font-size: 13px; padding: 6px 10px; background: var(--bg); }
+.swap-result { float: right; color: var(--accent); font-weight: 600; }
+.b-foot { margin: 6px 0 0; }
+
 .past-banner {
   display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap;
   background: #18233a; border: 1px solid #3d5a99; border-radius: var(--radius);

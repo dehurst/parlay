@@ -23,6 +23,10 @@ let tab = 'picks';
 // Payout calculator: a scratch parlay that's never saved or shared.
 let calc = false;
 const calcKeys = new Set();
+// Copy & edit: the parlay the builder started from ({ id, name }), if any.
+let calcFrom = null;
+// Likes on parlays and dislikes on legs this week (from /api/parlays).
+let reactions = { parlays: {}, legs: {} };
 let calcStake = 10;
 
 
@@ -201,6 +205,8 @@ function renderGames() {
     ? (n ? `Your ${n} pick${n === 1 ? '' : 's'} for ${week.label}, graded once each game finished.` : `You didn't submit picks for ${week.label}.`)
     : !calc && allStarted && hasSubmitted()
     ? `Every game this week has kicked off, so picks are locked. Next week's games show up Tuesday at 6 AM Eastern.`
+    : calc && calcFrom
+    ? `Editing a copy of ${calcFrom.name}. Swap or drop legs in the box below, or tap any bets. Post adds it as your own parlay; the original stays as is.`
     : calc
     ? `Tap any bets to see what a parlay would pay at ${week.book ?? 'the sportsbook'}'s current lines. Nothing is shared unless you hit Post, which adds it to the Parlays tab for others to join.`
     : locked
@@ -286,7 +292,7 @@ function renderGames() {
   // move to a grayed-out section below, most recent first.
   const current = week.games.filter((g) => !isFinal(g));
   const finished = week.games.filter(isFinal).sort((a, b) => b.commence.localeCompare(a.commence));
-  $('#games').innerHTML = current.map(gameCard).join('')
+  $('#games').innerHTML = (calc ? builderHtml() : '') + current.map(gameCard).join('')
     + (current.length ? '' : '<div class="card muted">Every game this week is over.</div>')
     + (finished.length ? `<h3 class="section">Completed games</h3>${finished.map(gameCard).join('')}` : '');
   renderSubmitBar();
@@ -353,8 +359,9 @@ function renderCalcBar(bar) {
 // Post the calculator's parlay to the Parlays tab with your stake.
 async function postCustom() {
   try {
-    const res = await api('/api/custom', { method: 'POST', body: { name: me, keys: [...calcKeys], amount: calcStake } });
+    const res = await api('/api/custom', { method: 'POST', body: { name: me, keys: [...calcKeys], amount: calcStake, from: calcFrom?.name } });
     calcKeys.clear();
+    calcFrom = null;
     calc = false;
     tab = 'parlays';
     render();
@@ -372,6 +379,162 @@ function toggleCalc(key) {
     calcKeys.add(key);
   }
   renderGames();
+}
+
+// ---- Build a parlay: swap or drop legs -------------------------------------
+
+// Chance a bet wins from the book's prices on both sides, with its cut
+// removed (same as the Analysis tab).
+function chanceOf(key) {
+  const [, market, side] = key.split('|');
+  const lines = gameOf(key)?.lines?.[market];
+  const mine = lines?.[side];
+  const other = lines?.[OTHER_SIDE[side]];
+  const implied = (a) => 1 / toDecimal(a);
+  if (mine && other) return implied(mine.price) / (implied(mine.price) + implied(other.price));
+  return mine ? Math.min(0.99, implied(mine.price) / 1.045) : null;
+}
+
+// "Colts -3", "Over 47.5", "Colts ML" at the book's current line.
+function keyLabel(key) {
+  const g = gameOf(key);
+  const [, market, side] = key.split('|');
+  const line = bookLine(key);
+  if (market === 'total') return `${side === 'over' ? 'Over' : 'Under'} ${line?.point}`;
+  const team = side === 'home' ? g.homeShort : g.awayShort;
+  return market === 'ml' ? `${team} ML` : `${team} ${fmtPoint(line?.point)}`;
+}
+
+// Hit chance and payout (at your stake) for a set of bets.
+function priceKeys(keys) {
+  let chance = 1;
+  let decimal = 1;
+  for (const k of keys) {
+    chance *= chanceOf(k) ?? 0.5;
+    decimal *= toDecimal(bookLine(k).price);
+  }
+  return { chance, payout: calcStake * decimal };
+}
+
+// Bets to swap a leg for: the same team the other way (spread <-> moneyline),
+// then the bets the group picked most that aren't already in the parlay.
+function swapOptions(key) {
+  const [gameId, market, side] = key.split('|');
+  const others = new Set([...calcKeys].filter((k) => k !== key).map((k) => k.split('|')[0]));
+  const usable = (k) => k !== key && !calcKeys.has(k) && bookLine(k) && !gameOf(k)?.started && !others.has(k.split('|')[0]);
+  const out = [];
+  if (market !== 'total') {
+    const alt = `${gameId}|${market === 'ml' ? 'spread' : 'ml'}|${side}`;
+    if (usable(alt)) out.push({ key: alt, why: 'same team' });
+  }
+  const counts = new Map();
+  for (const picks of Object.values(week.picks)) for (const p of picks) counts.set(p.key, (counts.get(p.key) ?? 0) + 1);
+  // One per game (the more-picked side), so it isn't both Over and Under.
+  const games = new Set(out.map((o) => o.key.split('|')[0]));
+  [...counts.entries()]
+    .filter(([k]) => usable(k) && !out.some((o) => o.key === k))
+    .sort((a, b) => b[1] - a[1] || (chanceOf(b[0]) ?? 0) - (chanceOf(a[0]) ?? 0))
+    .filter(([k]) => !games.has(k.split('|')[0]) && games.add(k.split('|')[0]))
+    .slice(0, 2)
+    .forEach(([k, n]) => out.push({ key: k, why: `${n} picked` }));
+  return out;
+}
+
+// The box at the top of Build a parlay: each leg with its chance, a Drop
+// button, and swaps, each showing what the parlay would become.
+function builderHtml() {
+  for (const key of calcKeys) if (!bookLine(key) || gameOf(key)?.started) calcKeys.delete(key);
+  if (!calcKeys.size) return '';
+  const keys = [...calcKeys].sort((a, b) => gameOf(a).commence.localeCompare(gameOf(b).commence));
+  const now = priceKeys(keys);
+  const result = (set) => {
+    const r = priceKeys(set);
+    return `${chanceText(r.chance)} · ${money(r.payout)}`;
+  };
+  const legs = keys.map((key) => {
+    const line = bookLine(key);
+    const disliked = reactions.legs[key] ?? [];
+    const rest = keys.filter((k) => k !== key);
+    const swaps = swapOptions(key).map((o) => `<button type="button" class="swap" data-swap-from="${esc(key)}" data-swap-to="${esc(o.key)}">
+        <b>${esc(keyLabel(o.key))}</b> ${fmtOdds(bookLine(o.key).price)} <span class="muted">${esc(o.why)}</span>
+        <span class="swap-result">→ ${result([...rest, o.key])}</span></button>`).join('');
+    return `<div class="b-leg ${disliked.length ? 'disliked' : ''}">
+      <div class="b-leg-head">
+        <span><b>${esc(keyLabel(key))}</b> <span class="muted">${fmtOdds(line.price)} · ${chanceText(chanceOf(key))}</span>
+          ${disliked.length ? `<span class="small dislike-note">👎${faces(disliked)}</span>` : ''}</span>
+        <button type="button" class="link small danger" data-drop="${esc(key)}">Drop${rest.length ? ` <span class="muted">→ ${result(rest)}</span>` : ''}</button>
+      </div>
+      ${swaps ? `<div class="swaps">${swaps}</div>` : ''}
+    </div>`;
+  }).join('');
+  return `<div class="card builder">
+    <div class="b-head"><b>Your parlay</b>${calcFrom ? ` <span class="small muted">copied from ${esc(calcFrom.name)}</span>` : ''}</div>
+    <div class="small muted">${keys.length} leg${keys.length === 1 ? '' : 's'} · <b>${chanceText(now.chance)}</b> to hit · $${esc(calcStake)} pays <b>${money(now.payout)}</b></div>
+    ${legs}
+    <p class="small muted b-foot">Chances come from ${esc(week.book ?? 'the sportsbook')}'s odds with the house's cut removed. Swaps show the parlay's new chance and payout.</p>
+  </div>`;
+}
+
+// Start Build a parlay from an existing parlay's legs.
+function copyAndEdit(p) {
+  calcKeys.clear();
+  let skipped = 0;
+  for (const l of p.legs) {
+    if (bookLine(l.key) && !gameOf(l.key)?.started) calcKeys.add(l.key);
+    else skipped++;
+  }
+  calcFrom = { id: p.id, name: p.name };
+  tab = 'picks';
+  calc = true;
+  render();
+  notice(skipped ? `${skipped} leg${skipped === 1 ? ' was' : 's were'} left out because the game started or lost its line.` : null);
+  window.scrollTo(0, 0);
+}
+
+// Small initial circles for who liked or disliked something. Two letters
+// when two players share a first initial.
+function initial(name) {
+  const same = week.players.filter((p) => p[0].toUpperCase() === name[0].toUpperCase());
+  return same.length > 1 ? name.slice(0, 2) : name[0].toUpperCase();
+}
+const faces = (names) => (names.length
+  ? `<span class="faces">${names.map((n) => `<span class="face" title="${esc(n)}">${esc(initial(n))}</span>`).join('')}</span>` : '');
+
+// Putting money on a parlay counts as liking it.
+const likersOf = (p) => [...new Set([...(reactions.parlays[p.id] ?? []), ...Object.keys(p.stakes ?? {})])];
+
+// Parlays that Copy & edit can start from, by id.
+const editable = new Map();
+
+// 👍 with who liked it, and Copy & edit, on open parlays.
+function reactHtml(p) {
+  editable.set(p.id, p);
+  const likers = likersOf(p);
+  const liked = likers.includes(me);
+  const staked = me in (p.stakes ?? {});
+  return `<div class="react-row">
+    <button type="button" class="react like ${liked ? 'on' : ''}" data-like="${esc(p.id)}" data-val="${liked ? 0 : 1}"
+      ${staked ? 'disabled title="You have money on it, so it counts as a like"' : `title="${liked ? 'Unlike' : 'Like'}"`}>👍${likers.length ? ` ${likers.length}` : ''}</button>
+    ${faces(likers)}
+    <button type="button" class="link small edit-copy" data-edit-copy="${esc(p.id)}">✎ Copy &amp; edit</button>
+  </div>`;
+}
+
+// 👎 on one leg, with who disliked it.
+function dislikeHtml(l) {
+  const who = reactions.legs[l.key] ?? [];
+  const mine = who.includes(me);
+  return `<span class="leg-react"><button type="button" class="react dislike ${mine ? 'on' : ''}" data-dislike="${esc(l.key)}" data-val="${mine ? 0 : 1}"
+    title="${mine ? 'Take back your dislike' : 'Dislike this leg'}">👎</button>${faces(who)}</span>`;
+}
+
+async function react(kind, id, on) {
+  try {
+    reactions = (await api('/api/react', { method: 'POST', body: { name: me, kind, id, on } })).reactions;
+  } catch (err) {
+    notice(err.message);
+  }
+  renderParlays();
 }
 
 // ---- Copy picks as text ----------------------------------------------------
@@ -642,15 +805,20 @@ function settledHtml(data) {
   return `<h3 class="section">Completed</h3>${cards}`;
 }
 
+// More than half the group.
+const majority = () => Math.floor(week.players.length / 2) + 1;
+
 function customHtml(data) {
   const cards = data.custom.map((p) => `
     <div class="card parlay custom">
       <div class="head">
-        <div><h3>${esc(p.name)}</h3><div class="small muted">${p.legs.length}-leg custom parlay</div></div>
+        <div>${likersOf(p).length >= majority() ? '<span class="badge">Group\'s pick</span>' : ''}
+          <h3>${esc(p.name)}</h3><div class="small muted">${p.legs.length}-leg custom parlay${p.basedOn ? ` · based on ${esc(p.basedOn)}` : ''}</div></div>
         <div class="odds-col"><div class="odds">${fmtOdds(shownOdds(p))}</div>${copyButton(p)}</div>
       </div>
-      <ul>${p.legs.map((l) => `<li><b>${esc(l.label)}</b> <span class="muted">${fmtOdds(l.price)} · ${esc(l.matchup)}</span>${lineMoved(l, data.book)}</li>`).join('')}</ul>
+      <ul class="legs">${p.legs.map((l) => `<li><span><b>${esc(l.label)}</b> <span class="muted">${fmtOdds(l.price)} · ${esc(l.matchup)}</span>${lineMoved(l, data.book)}</span>${p.started ? '' : dislikeHtml(l)}</li>`).join('')}</ul>
       <div class="stats"><span>$10.00 pays <b>${money(10 * p.decimal)}</b></span></div>
+      ${p.started ? '' : reactHtml(p)}
       ${stakeHtml(p, p.started)}
     </div>`).join('');
   return `<div class="section-head">
@@ -664,6 +832,7 @@ async function renderParlays() {
   $('#parlays').innerHTML = '<p class="muted">Building…</p>';
   const data = await api(withWeek('/api/parlays')).catch((err) => (notice(err.message), null));
   if (!data) return;
+  reactions = data.reactions ?? { parlays: {}, legs: {} };
   $('#parlays-hint').hidden = isPast();
   if (isPast()) {
     // A past week: just the parlays that had money on them, and how they did.
@@ -683,9 +852,9 @@ async function renderParlays() {
     </div>`;
   }
 
-  const majority = Math.floor(data.players.length / 2) + 1;
   html += data.options.map((p) => {
-    const groupPick = Object.keys(p.stakes).length >= majority;
+    // A majority liking it (money counts as a like) makes it the group's pick.
+    const groupPick = likersOf(p).length >= majority();
     return `
     <div class="card parlay ${groupPick ? 'group-pick' : ''}">
       <div class="head">
@@ -695,12 +864,13 @@ async function renderParlays() {
         </div>
         <div class="odds-col"><div class="odds">${fmtOdds(shownOdds(p))}</div>${copyButton(p)}</div>
       </div>
-      <ul>${p.legs.map((l) => `<li><b>${esc(l.label)}</b> <span class="muted">${fmtOdds(l.price)} · ${esc(l.matchup)} · ${l.pickers.length}/${data.voters} picked</span>${lineMoved(l, data.book)}</li>`).join('')}</ul>
+      <ul class="legs">${p.legs.map((l) => `<li><span><b>${esc(l.label)}</b> <span class="muted">${fmtOdds(l.price)} · ${esc(l.matchup)} · ${l.pickers.length}/${data.voters} picked</span>${lineMoved(l, data.book)}</span>${dislikeHtml(l)}</li>`).join('')}</ul>
       <div class="stats">
         <span>${money(p.stake)} pays <b>${money(p.payout)}</b></span>
         <span>Hit chance ~<b>${pct(p.hitProb)}</b></span>
         <span class="${p.ev < 0 ? 'ev-bad' : ''}">Est. return ${p.ev >= 0 ? '+' : ''}${(p.ev * 100).toFixed(1)}%</span>
       </div>
+      ${reactHtml(p)}
       ${stakeHtml(p, false)}
     </div>`;
   }).join('');
@@ -1009,6 +1179,18 @@ async function renderSlip() {
 // ---- Events --------------------------------------------------------------
 
 $('#games').addEventListener('click', (e) => {
+  const drop = e.target.closest('[data-drop]');
+  if (drop) {
+    calcKeys.delete(drop.dataset.drop);
+    if (!calcKeys.size) calcFrom = null;
+    return renderGames();
+  }
+  const swap = e.target.closest('[data-swap-to]');
+  if (swap) {
+    calcKeys.delete(swap.dataset.swapFrom);
+    calcKeys.add(swap.dataset.swapTo);
+    return renderGames();
+  }
   const btn = e.target.closest('.pick');
   if (btn && !btn.disabled) (calc ? toggleCalc : toggle)(btn.dataset.key);
 });
@@ -1027,6 +1209,8 @@ $('#submit-bar').addEventListener('input', (e) => {
   const legs = [...calcKeys].map(bookLine);
   const decimal = legs.reduce((d, l) => d * toDecimal(l.price), 1);
   const line = document.querySelector('.calc-sum .small');
+  const box = document.querySelector('.builder');
+  if (box) box.outerHTML = builderHtml();
   if (line) line.innerHTML = `$${esc(calcStake)} pays <b>${money(calcStake * decimal)}</b> (profit ${money(calcStake * decimal - calcStake)})`;
 });
 $('#submit-bar').addEventListener('click', (e) => {
@@ -1035,6 +1219,7 @@ $('#submit-bar').addEventListener('click', (e) => {
   if (e.target.closest('#copy-picks')) copyPicks(e.target.closest('#copy-picks'));
   if (e.target.closest('#calc-clear')) {
     calcKeys.clear();
+    calcFrom = null;
     renderGames();
   }
   if (e.target.closest('#calc-post')) postCustom();
@@ -1111,6 +1296,18 @@ $('#parlays').addEventListener('click', (e) => {
     return;
   }
   if (e.target.closest('[data-act="out"]')) setStake(e.target.closest('form').dataset.parlay, 0, renderParlays);
+  const like = e.target.closest('[data-like]');
+  if (like) {
+    like.disabled = true;
+    react('parlay', like.dataset.like, like.dataset.val === '1');
+  }
+  const dislike = e.target.closest('[data-dislike]');
+  if (dislike) {
+    dislike.disabled = true;
+    react('leg', dislike.dataset.dislike, dislike.dataset.val === '1');
+  }
+  const copy = e.target.closest('[data-edit-copy]');
+  if (copy && editable.has(copy.dataset.editCopy)) copyAndEdit(editable.get(copy.dataset.editCopy));
 });
 $('#slip').addEventListener('submit', async (e) => {
   const form = e.target.closest('.payout-form');
