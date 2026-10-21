@@ -943,7 +943,7 @@ async function renderSlip() {
     const legs = p.legs.map((l) => `<li>${gradeMark(l.grade)}<b>${esc(l.label)}</b> <span class="muted">${fmtOdds(l.price)} · ${esc(l.matchup)}</span>${l.grade === 'pending' ? lineMoved(l, data.book) : ''}</li>`).join('');
     const rows = Object.entries(p.stakes).map(([who, amt]) => `<tr>
         <td>${esc(who)}${who === me && !p.placed && !past ? ` <button type="button" class="link danger" data-slip-out="${esc(p.id)}">remove</button>` : ''}</td>
-        <td class="num">${money(amt)}</td><td class="num">${money(amt * p.decimal)}</td></tr>`).join('');
+        <td class="num">${money(amt)}</td><td class="num">${money(amt * (p.decimal - 1))}</td><td class="num">${money(amt * p.decimal)}</td></tr>`).join('');
     return `<div class="card parlay ${p.placed ? 'placed' : ''} ${p.status !== 'pending' ? `done ${p.status}` : ''}">
       <div class="head">
         <div><span class="muted small">Bet ${i + 1}</span> ${p.placed ? '<span class="chip placed">✓ Placed</span>' : ''} ${statusChip(p.status, p.returned, p.total)} ${p.paidOut ? '<span class="chip paid">💵 Paid out</span>' : ''}<h3>${esc(p.name)} · ${p.legs.length}-leg parlay</h3></div>
@@ -952,9 +952,9 @@ async function renderSlip() {
       ${p.stillOption || p.placed || past ? '' : '<div class="lines">Picks changed since people bought in, so this parlay is no longer one of the current options. Double-check before placing it.</div>'}
       <ul>${legs}</ul>
       <table class="slip">
-        <thead><tr><th>Who</th><th class="num">Stake</th><th class="num">Wins</th></tr></thead>
+        <thead><tr><th>Who</th><th class="num">Stake</th><th class="num">Profit</th><th class="num">Payout</th></tr></thead>
         <tbody>${rows}</tbody>
-        <tfoot><tr><th>Total</th><th class="num">${money(p.total)}</th><th class="num">${money(p.payout)}</th></tr></tfoot>
+        <tfoot><tr><th>Total</th><th class="num">${money(p.total)}</th><th class="num">${money(p.payout - p.total)}</th><th class="num">${money(p.payout)}</th></tr></tfoot>
       </table>
       <div class="place-row">
         ${past
@@ -996,7 +996,7 @@ async function renderSlip() {
         : active.length ? `All placed ✓ · ${active.length} still in play` : 'All parlays are settled.'}</b>
       <span class="small muted">${data.parlays.length} ${past ? 'that week' : 'this week'}, ${money(grand)} total${finished.length ? `, ${finished.length} settled` : ''}.</span>
       ${owedTotal > 0.004 ? `<div class="owed"><b>To pay out: ${money(owedTotal)}</b> <span class="small">(${Object.entries(owed).map(([who, amt]) => `${esc(who)} ${money(amt)}`).join(', ')})</span></div>` : ''}
-      ${past ? '' : `<div class="small muted">"Wins" is the total payout (stake included) if the parlay hits, at the odds shown.
+      ${past ? '' : `<div class="small muted">Profit and Payout are if the parlay hits, at the odds shown. Payout includes the stake.
       Check each leg in ${esc(data.book ?? 'your sportsbook')} before placing; anything marked "Line moved" will pay differently.</div>`}
     </div>
     ${cards}
