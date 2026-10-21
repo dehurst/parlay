@@ -540,7 +540,7 @@ async function react(kind, id, on) {
   } catch (err) {
     notice(err.message);
   }
-  renderParlays();
+  renderParlays(true);
 }
 
 // ---- Copy picks as text ----------------------------------------------------
@@ -834,8 +834,11 @@ function customHtml(data) {
     ${cards || '<div class="card muted small">No open custom parlays right now. Build one with any bets you like, and the others can join in.</div>'}`;
 }
 
-async function renderParlays() {
-  $('#parlays').innerHTML = '<p class="muted">Building…</p>';
+// After a tap (stake, 👍/👎), pass quiet: keep what's on screen until the
+// update arrives and stay where you were, instead of jumping to the top.
+async function renderParlays(quiet = false) {
+  const y = window.scrollY;
+  if (!quiet) $('#parlays').innerHTML = '<p class="muted">Building…</p>';
   const data = await api(withWeek('/api/parlays')).catch((err) => (notice(err.message), null));
   if (!data) return;
   reactions = { parlays: {}, parlayDowns: {}, legs: {}, ...data.reactions };
@@ -844,6 +847,7 @@ async function renderParlays() {
     // A past week: just the parlays that had money on them, and how they did.
     const html = inPlayHtml(data) + settledHtml(data);
     $('#parlays').innerHTML = html || `<div class="card muted">Nobody put money on a parlay in ${esc(week.label)}.</div>`;
+    if (quiet) window.scrollTo(0, y);
     return;
   }
 
@@ -895,6 +899,7 @@ async function renderParlays() {
     Hit chance is a rough estimate that removes a typical book margin. A negative expected return is the house edge,
     and parlays stack it on every leg.</p>`;
   $('#parlays').innerHTML = html;
+  if (quiet) window.scrollTo(0, y);
 }
 
 const gradeMark = (g) => ({ win: '<span class="mark win">✓</span>', loss: '<span class="mark loss">✗</span>', push: '<span class="mark push">P</span>' })[g] ?? '';
@@ -1088,8 +1093,10 @@ async function renderAnalysis() {
 
 let placingId = null; // Bet Slip parlay whose payout box is open
 
-async function renderSlip() {
-  $('#slip').innerHTML = '<p class="muted">Loading…</p>';
+// quiet: same as renderParlays (no placeholder, keep your scroll spot).
+async function renderSlip(quiet = false) {
+  const y = window.scrollY;
+  if (!quiet) $('#slip').innerHTML = '<p class="muted">Loading…</p>';
   const data = await api(withWeek('/api/slip')).catch((err) => (notice(err.message), null));
   if (!data) return;
   const past = isPast();
@@ -1180,6 +1187,7 @@ async function renderSlip() {
       <table class="slip"><tbody>${totals}</tbody>
         <tfoot><tr><th>Total</th><th class="num">${money(grand)}</th></tr></tfoot></table>
     </div>`;
+  if (quiet) window.scrollTo(0, y);
 }
 
 // ---- Events --------------------------------------------------------------
@@ -1284,7 +1292,7 @@ $('#parlays').addEventListener('submit', (e) => {
   e.preventDefault();
   const amount = Number(e.target.amount.value);
   if (!(amount > 0)) return notice('Enter how many dollars you want on it.');
-  setStake(e.target.dataset.parlay, amount, renderParlays);
+  setStake(e.target.dataset.parlay, amount, () => renderParlays(true));
 });
 for (const el of ['#parlays', '#slip']) {
   $(el).addEventListener('click', (e) => {
@@ -1301,7 +1309,7 @@ $('#parlays').addEventListener('click', (e) => {
     window.scrollTo(0, 0);
     return;
   }
-  if (e.target.closest('[data-act="out"]')) setStake(e.target.closest('form').dataset.parlay, 0, renderParlays);
+  if (e.target.closest('[data-act="out"]')) setStake(e.target.closest('form').dataset.parlay, 0, () => renderParlays(true));
   // Money on a parlay counts as a 👍, so it can't change until the stake is removed.
   const vote = e.target.closest('[data-like], [data-down]');
   if (vote?.dataset.staked) {
@@ -1331,7 +1339,7 @@ $('#slip').addEventListener('submit', async (e) => {
   } catch (err) {
     notice(err.message);
   }
-  renderSlip();
+  renderSlip(true);
 });
 $('#slip').addEventListener('click', async (e) => {
   const paid = e.target.closest('[data-paid]');
@@ -1342,19 +1350,19 @@ $('#slip').addEventListener('click', async (e) => {
     } catch (err) {
       notice(err.message);
     }
-    renderSlip();
+    renderSlip(true);
     return;
   }
   const open = e.target.closest('[data-edit-payout]');
   if (open) {
     placingId = open.dataset.editPayout;
-    await renderSlip();
+    await renderSlip(true);
     $('.payout-form input')?.select();
     return;
   }
   if (e.target.closest('[data-act="cancel-place"]')) {
     placingId = null;
-    renderSlip();
+    renderSlip(true);
     return;
   }
   const place = e.target.closest('[data-place]');
@@ -1365,11 +1373,11 @@ $('#slip').addEventListener('click', async (e) => {
     } catch (err) {
       notice(err.message);
     }
-    renderSlip();
+    renderSlip(true);
     return;
   }
   const btn = e.target.closest('[data-slip-out]');
-  if (btn) setStake(btn.dataset.slipOut, 0, renderSlip);
+  if (btn) setStake(btn.dataset.slipOut, 0, () => renderSlip(true));
 });
 $('#who').addEventListener('click', (e) => {
   if (e.target.closest('#switch')) {
