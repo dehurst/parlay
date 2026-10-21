@@ -23,7 +23,7 @@ the plays most of you agree on and builds a few parlays out of them.
   score is in, your picks there turn green ✓ (won), red ✗ (lost), or gray P
   (push), and where you lost, the side that won gets a dashed green outline.
   The Bet Slip does the same for settled parlays.
-- **Parlay builder** (switch at the top of the Picks tab): tap any bets to
+- **Build a parlay** (switch at the top of the Picks tab): tap any bets to
   see what a one-off parlay would pay at FanDuel's current lines for any
   stake. Nothing in it is saved or shared, and it warns when two legs come
   from the same game (FanDuel prices those as a Same Game Parlay).
@@ -52,7 +52,7 @@ the plays most of you agree on and builds a few parlays out of them.
   straight bets. Lines are kept for past weeks people bet on so look-backs can
   show prices.
 - **Custom parlays** (Parlays tab, **+ Build your own**): pick any bets in the
-  parlay builder, set your stake, and **Post**. It shows up as "Daniel's
+  Build a parlay view, set your stake, and **Post**. It shows up as "Daniel's
   Parlay 1" (then 2, ...) for the others to join with their own stakes, and
   flows into the Bet Slip and Stats like the group parlays. Needs 2+ legs from
   different games, and closes to new money once any of its games starts. If
