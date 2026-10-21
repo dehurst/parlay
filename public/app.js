@@ -26,7 +26,7 @@ const calcKeys = new Set();
 // Copy & edit: the parlay the builder started from ({ id, name }), if any.
 let calcFrom = null;
 // Likes on parlays and dislikes on legs this week (from /api/parlays).
-let reactions = { parlays: {}, legs: {} };
+let reactions = { parlays: {}, parlayDowns: {}, legs: {} };
 let calcStake = 10;
 
 
@@ -506,16 +506,22 @@ const likersOf = (p) => [...new Set([...(reactions.parlays[p.id] ?? []), ...Obje
 // Parlays that Copy & edit can start from, by id.
 const editable = new Map();
 
-// 👍 with who liked it, and Copy & edit, on open parlays.
+// 👍 / 👎 with who picked each, and Copy & edit, on open parlays. Tap one to
+// choose it (switching from the other); tap your choice again to clear it.
 function reactHtml(p) {
   editable.set(p.id, p);
   const likers = likersOf(p);
+  const downers = (reactions.parlayDowns[p.id] ?? []).filter((n) => !likers.includes(n));
   const liked = likers.includes(me);
+  const disliked = downers.includes(me);
   const staked = me in (p.stakes ?? {});
   return `<div class="react-row">
-    <button type="button" class="react like ${liked ? 'on' : ''}" data-like="${esc(p.id)}" data-val="${liked ? 0 : 1}"
-      ${staked ? 'disabled title="You have money on it, so it counts as a like"' : `title="${liked ? 'Unlike' : 'Like'}"`}>👍${likers.length ? ` ${likers.length}` : ''}</button>
-    ${faces(likers)}
+    <span class="react-pair">
+      <button type="button" class="react like ${liked ? 'on' : ''}" data-like="${esc(p.id)}" data-val="${liked ? 0 : 1}" ${staked ? 'data-staked="1"' : ''}
+        aria-pressed="${liked}">👍${likers.length ? ` ${likers.length}` : ''}</button>${faces(likers)}
+      <button type="button" class="react down ${disliked ? 'on' : ''}" data-down="${esc(p.id)}" data-val="${disliked ? 0 : 1}" ${staked ? 'data-staked="1"' : ''}
+        aria-pressed="${disliked}">👎${downers.length ? ` ${downers.length}` : ''}</button>${faces(downers)}
+    </span>
     <button type="button" class="link small edit-copy" data-edit-copy="${esc(p.id)}">✎ Copy &amp; edit</button>
   </div>`;
 }
@@ -530,7 +536,7 @@ function dislikeHtml(l) {
 
 async function react(kind, id, on) {
   try {
-    reactions = (await api('/api/react', { method: 'POST', body: { name: me, kind, id, on } })).reactions;
+    reactions = { parlays: {}, parlayDowns: {}, legs: {}, ...(await api('/api/react', { method: 'POST', body: { name: me, kind, id, on } })).reactions };
   } catch (err) {
     notice(err.message);
   }
@@ -832,7 +838,7 @@ async function renderParlays() {
   $('#parlays').innerHTML = '<p class="muted">Building…</p>';
   const data = await api(withWeek('/api/parlays')).catch((err) => (notice(err.message), null));
   if (!data) return;
-  reactions = data.reactions ?? { parlays: {}, legs: {} };
+  reactions = { parlays: {}, parlayDowns: {}, legs: {}, ...data.reactions };
   $('#parlays-hint').hidden = isPast();
   if (isPast()) {
     // A past week: just the parlays that had money on them, and how they did.
@@ -1296,10 +1302,15 @@ $('#parlays').addEventListener('click', (e) => {
     return;
   }
   if (e.target.closest('[data-act="out"]')) setStake(e.target.closest('form').dataset.parlay, 0, renderParlays);
-  const like = e.target.closest('[data-like]');
-  if (like) {
-    like.disabled = true;
-    react('parlay', like.dataset.like, like.dataset.val === '1');
+  // Money on a parlay counts as a 👍, so it can't change until the stake is removed.
+  const vote = e.target.closest('[data-like], [data-down]');
+  if (vote?.dataset.staked) {
+    notice('You have money on this parlay, so it counts as a 👍. Remove your stake first if you want to change that.');
+    return;
+  }
+  if (vote) {
+    vote.disabled = true;
+    react(vote.dataset.like ? 'parlay' : 'parlay-down', vote.dataset.like ?? vote.dataset.down, vote.dataset.val === '1');
   }
   const dislike = e.target.closest('[data-dislike]');
   if (dislike) {

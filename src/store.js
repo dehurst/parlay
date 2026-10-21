@@ -14,8 +14,8 @@ export function normalize(data) {
   data.stakes ??= {};
   data.results ??= {}; // final scores: { weekKey: { gameId: { homeScore, awayScore } } }
   data.scoresCheckedAt ??= {}; // { weekKey: ms }
-  // Likes on parlays and dislikes on legs:
-  // { weekKey: { parlays: { parlayId: [player] }, legs: { betKey: [player] } } }
+  // Likes and dislikes on parlays, and dislikes on legs:
+  // { weekKey: { parlays: { parlayId: [player] }, parlayDowns: { parlayId: [player] }, legs: { betKey: [player] } } }
   data.reactions ??= {};
   data.creditsUsed ??= {}; // paid Odds API credits: { 'YYYY-MM-DD' (Eastern): n }
 

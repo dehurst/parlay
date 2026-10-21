@@ -44,7 +44,8 @@ the plays most of you agree on and builds a few parlays out of them.
   how the group's consensus picks have done, and a week-by-week history.
   Games are graded automatically from ESPN's final scores (free), about 3
   hours after kickoff.
-- **Likes and dislikes** (Parlays tab): 👍 a parlay you like and 👎 any leg
+- **Likes and dislikes** (Parlays tab): 👍 or 👎 a parlay (tap again to clear,
+  or tap the other to switch) and 👎 any leg
   you don't trust; small initial circles show who. Money on a parlay counts as
   a like, and a parlay a majority likes is the **Group's pick**.
 - **Copy & edit**: opens any open parlay in Build a parlay with its legs filled

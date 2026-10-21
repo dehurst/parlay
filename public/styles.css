@@ -84,6 +84,9 @@ header { padding: 16px 0 8px; }
 .react-row { display: flex; align-items: center; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
 .react { padding: 3px 10px; border-radius: 999px; font-size: 13px; line-height: 1.4; background: var(--bg); }
 .react.on { border-color: var(--accent); background: rgba(47, 191, 113, .15); }
+.react.down.on { border-color: var(--bad); background: rgba(229, 72, 77, .15); }
+.react-pair { display: inline-flex; align-items: center; gap: 6px; }
+.react-pair .faces + .react { margin-left: 4px; }
 .react.dislike { padding: 1px 6px; font-size: 12px; opacity: .55; }
 .react.dislike.on { opacity: 1; border-color: var(--bad); background: rgba(229, 72, 77, .15); }
 .react:disabled { cursor: default; }

@@ -431,7 +431,7 @@ app.get('/api/parlays', async (req, res, next) => {
         started: customStarted(p, gamesById),
         legs: p.legs.map((l) => ({ ...l, current: gamesById.get(l.gameId)?.lines?.[l.market]?.[l.side] ?? null })),
       }));
-    const reactions = store.data.reactions[win.key] ?? { parlays: {}, legs: {} };
+    const reactions = { parlays: {}, parlayDowns: {}, legs: {}, ...store.data.reactions[win.key] };
     res.json({ tallied, book: ODDS_API_KEY ? bookName : null, players, ...result, custom, inPlay, settled, reactions });
   } catch (err) {
     next(err);
@@ -502,16 +502,26 @@ app.post('/api/react', async (req, res, next) => {
     if (!name) return;
     const { kind, on } = req.body;
     const id = String(req.body.id ?? '');
-    const valid = kind === 'parlay' ? id.length > 0 && id.length <= 2000 : kind === 'leg' && /^[^|]+\|(spread|total|ml)\|(home|away|over|under)$/.test(id);
+    const isParlay = kind === 'parlay' || kind === 'parlay-down';
+    const valid = isParlay ? id.length > 0 && id.length <= 2000 : kind === 'leg' && /^[^|]+\|(spread|total|ml)\|(home|away|over|under)$/.test(id);
     if (!valid) return res.status(400).json({ error: 'Nothing to react to.' });
     const win = weekWindow();
     const week = (store.data.reactions[win.key] ??= { parlays: {}, legs: {} });
-    const bucket = kind === 'parlay' ? week.parlays : week.legs;
-    const who = new Set(bucket[id] ?? []);
-    if (on) who.add(name);
-    else who.delete(name);
-    if (who.size) bucket[id] = [...who];
-    else delete bucket[id];
+    week.parlayDowns ??= {};
+    const set = (bucket, add) => {
+      const who = new Set(bucket[id] ?? []);
+      if (add) who.add(name);
+      else who.delete(name);
+      if (who.size) bucket[id] = [...who];
+      else delete bucket[id];
+    };
+    if (kind === 'leg') set(week.legs, on);
+    else {
+      // A parlay is a 👍 or a 👎, not both: setting one clears the other.
+      const [mine, other] = kind === 'parlay' ? [week.parlays, week.parlayDowns] : [week.parlayDowns, week.parlays];
+      set(mine, on);
+      if (on) set(other, false);
+    }
     await save();
     res.json({ reactions: week });
   } catch (err) {
