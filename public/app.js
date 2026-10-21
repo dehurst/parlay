@@ -596,16 +596,21 @@ function stakeHtml(p, closed) {
       </form>`;
   return `${form}
     <div class="small muted backers">${backers.length
-      ? `${backers.map(([who, amt]) => `${esc(who)} ${money(amt)}`).join(' · ')} · <b>${money(total)} total</b>, pays ${money(total * payMultiplier(p))}`
+      ? betLine(total, total * payMultiplier(p)) + whoLine(p.stakes)
       : 'Nobody is in yet'}</div>`;
 }
+
+// "$10.00 bet, pays $25.04 ($15.04 profit)", then who's in on the next line.
+const betLine = (total, payout, when = '') =>
+  `<b>${money(total)} bet</b>, pays ${money(payout)}${when} (${money(payout - total)} profit)`;
+const whoLine = (stakes) =>
+  `<div>${Object.entries(stakes).map(([who, amt]) => `${esc(who)} ${money(amt)}`).join(' · ')}</div>`;
 
 // Parlays with money on them whose games have started but aren't decided:
 // legs that finished get a check or X; no more stakes can go in.
 function inPlayHtml(data) {
   if (!data.inPlay?.length) return '';
   const cards = data.inPlay.map((p) => {
-    const backers = Object.entries(p.stakes).map(([who, amt]) => `${esc(who)} ${money(amt)}`).join(' · ');
     return `<div class="card parlay ${p.custom ? 'custom' : ''}">
       <div class="head">
         <div>${p.placed ? '<span class="chip placed">✓ Placed</span>' : '<span class="chip pending">Not placed</span>'}
@@ -613,7 +618,7 @@ function inPlayHtml(data) {
         <div class="odds-col"><div class="odds">${fmtOdds(shownOdds(p))}</div>${copyButton(p)}</div>
       </div>
       <ul class="graded-legs">${p.legs.map((l) => `<li>${gradeMark(l.grade) || '<span class="mark">·</span>'}<b>${esc(l.label)}</b> <span class="muted">${fmtOdds(l.price)} · ${esc(l.matchup)}</span></li>`).join('')}</ul>
-      <div class="small muted backers">${backers} · <b>${money(p.total)} bet</b>, pays ${money(p.payout)} if it hits</div>
+      <div class="small muted backers">${betLine(p.total, p.payout, ' if it hits')}${whoLine(p.stakes)}</div>
     </div>`;
   }).join('');
   return `<h3 class="section">In play</h3>${cards}`;
@@ -624,15 +629,14 @@ function inPlayHtml(data) {
 function settledHtml(data) {
   if (!data.settled?.length) return '';
   const cards = data.settled.map((p) => {
-    const backers = Object.entries(p.stakes).map(([who, amt]) => `${esc(who)} ${money(amt)}`).join(' · ');
-    const back = p.status === 'won' ? `paid ${money(p.returned)}` : p.status === 'push' ? 'refunded' : 'paid $0.00';
+    const back = p.status === 'won' ? `paid ${money(p.returned)} (${money(p.returned - p.total)} profit)` : p.status === 'push' ? 'refunded' : 'paid $0.00';
     return `<div class="card parlay done ${p.status}">
       <div class="head">
         <div>${statusChip(p.status, p.returned, p.total)}<h3>${esc(p.name)}</h3><div class="small muted">${p.legs.length}-leg parlay</div></div>
         <div class="odds-col"><div class="odds">${fmtOdds(shownOdds(p))}</div>${copyButton(p)}</div>
       </div>
       <ul class="graded-legs">${p.legs.map((l) => `<li>${gradeMark(l.grade)}<b>${esc(l.label)}</b> <span class="muted">${fmtOdds(l.price)} · ${esc(l.matchup)}</span></li>`).join('')}</ul>
-      <div class="small muted backers">${backers} · <b>${money(p.total)} bet</b>, ${back}</div>
+      <div class="small muted backers"><b>${money(p.total)} bet</b>, ${back}${whoLine(p.stakes)}</div>
     </div>`;
   }).join('');
   return `<h3 class="section">Completed</h3>${cards}`;
