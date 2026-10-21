@@ -245,7 +245,7 @@ details.week summary .num { margin-left: auto; font-weight: 700; }
   }
 }
 
-/* My picks / Payout calculator switch */
+/* My picks / Parlay builder switch */
 .mode-switch { display: inline-flex; padding: 3px; gap: 3px; margin-bottom: 8px; background: var(--card); border: 1px solid var(--line); border-radius: 999px; }
 .mode-switch button { border: none; background: none; border-radius: 999px; padding: 6px 14px; font-size: 14px; color: var(--muted); }
 .mode-switch button.active { background: var(--line); color: var(--text); font-weight: 600; }
