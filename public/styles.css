@@ -102,19 +102,19 @@ ul.legs { list-style: none; padding: 0; }
 ul.legs li { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; padding: 3px 0; }
 .leg-react { display: inline-flex; align-items: center; flex: none; }
 
-/* Build a parlay: swap or drop legs */
+/* Build a parlay: each leg, then small swap / drop actions under it */
 .builder { border-color: var(--bar-line); }
-.b-head { margin-bottom: 2px; }
-.b-leg { padding: 10px 0; border-bottom: 1px solid var(--line); }
-.b-leg:last-of-type { border-bottom: none; }
+.b-leg { padding: 10px 0 8px; border-top: 1px solid var(--line); margin-top: 10px; }
 .b-leg.disliked .b-leg-head > span > b { color: var(--bad); }
 .b-leg-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
-.b-leg-head .danger { white-space: nowrap; }
-.dislike-note { display: inline-flex; align-items: center; margin-left: 4px; }
-.swaps { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
-.swap { text-align: left; font-size: 13px; padding: 6px 10px; background: var(--bg); }
-.swap-result { float: right; color: var(--accent); font-weight: 600; }
-.b-foot { margin: 6px 0 0; }
+.dislike-note { display: inline-flex; align-items: center; margin-left: 6px; }
+.b-act {
+  display: block; width: 100%; text-align: left; margin-top: 4px; padding: 4px 0 4px 12px;
+  background: none; border: none; border-radius: 0; font-size: 14px; color: var(--text);
+}
+.b-act.drop { color: var(--bad); }
+.b-act:hover .b-result, .b-act:active .b-result { text-decoration: underline; }
+.b-result { float: right; color: var(--text); font-weight: 600; }
 
 .past-banner {
   display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap;
