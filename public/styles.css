@@ -99,7 +99,8 @@ header { padding: 16px 0 8px; }
 }
 .faces .face:first-child { margin-left: 2px; }
 ul.legs { list-style: none; padding: 0; }
-ul.legs li { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; padding: 3px 0; }
+ul.legs li { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; padding: 4px 0; }
+.leg-sub { margin-top: 1px; }
 .leg-react { display: inline-flex; align-items: center; flex: none; }
 
 /* Build a parlay: each leg, then small swap / drop actions under it */
@@ -341,6 +342,8 @@ h3.section.first { margin-top: 4px; }
 .parlay.done.won { border-color: rgba(47, 191, 113, .5); }
 .parlay.done.lost { border-color: rgba(229, 72, 77, .4); }
 .graded-legs { list-style: none; padding-left: 0; }
+.graded-legs li { display: flex; align-items: baseline; margin: 6px 0; }
+.graded-legs .mark { flex: none; }
 
 .chip.paid { background: rgba(224, 165, 38, .18); color: var(--warn); border: 1px solid rgba(224, 165, 38, .45); }
 .owed { margin-top: 8px; color: var(--warn); }

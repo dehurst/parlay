@@ -690,6 +690,11 @@ async function submit() {
   renderGames();
 }
 
+// "San Francisco 49ers @ Atlanta Falcons" -> "49ers @ Falcons"
+const shortMatchup = (m) => String(m).split(' @ ').map((t) => t.split(' ').pop()).join(' @ ');
+// A leg's matchup on its own small line under the bet.
+const legSub = (l, extra = '') => `<div class="small muted leg-sub">${esc(shortMatchup(l.matchup))}${extra}</div>`;
+
 // Note when the book's line has moved off the one the group took.
 function lineMoved(s, book) {
   if (!s.current || sameLine(s.current, s)) return '';
@@ -716,7 +721,7 @@ async function renderBoard() {
     <div class="board-row">
       <div style="flex:1">
         <div><b>${esc(s.label)}</b> <span class="muted">${fmtOdds(s.price)}</span></div>
-        <div class="small muted">${esc(s.matchup)} · ${s.pickers.map(esc).join(', ')}</div>
+        <div class="small muted">${esc(shortMatchup(s.matchup))} · ${s.pickers.map(esc).join(', ')}</div>
         ${lineMoved(s, data.book)}
         ${s.lines.length > 1 ? `<div class="lines">Submitted at different lines: ${s.lines.map((l) =>
           `${l.point === null ? '' : `${s.market === 'spread' ? fmtPoint(l.point) : l.point} `}${fmtOdds(l.price)} (${l.users.map(esc).join(', ')})`).join(' · ')}</div>` : ''}
@@ -766,7 +771,7 @@ function inPlayHtml(data) {
           <h3>${esc(p.name)}</h3><div class="small muted">${p.legs.length}-leg ${p.custom ? 'custom ' : ''}parlay</div></div>
         <div class="odds-col"><div class="odds">${fmtOdds(shownOdds(p))}</div>${copyButton(p)}</div>
       </div>
-      <ul class="graded-legs">${p.legs.map((l) => `<li>${gradeMark(l.grade) || '<span class="mark">·</span>'}<b>${esc(l.label)}</b> <span class="muted">${fmtOdds(l.price)} · ${esc(l.matchup)}</span></li>`).join('')}</ul>
+      <ul class="graded-legs">${p.legs.map((l) => `<li>${gradeMark(l.grade) || '<span class="mark">·</span>'}<span><b>${esc(l.label)}</b> <span class="muted">${fmtOdds(l.price)}</span>${legSub(l)}</span></li>`).join('')}</ul>
       <div class="small muted backers">${betLine(p.total, p.payout, ' if it hits')}${whoLine(p.stakes)}</div>
     </div>`;
   }).join('');
@@ -784,7 +789,7 @@ function settledHtml(data) {
         <div>${statusChip(p.status, p.returned, p.total)}<h3>${esc(p.name)}</h3><div class="small muted">${p.legs.length}-leg parlay</div></div>
         <div class="odds-col"><div class="odds">${fmtOdds(shownOdds(p))}</div>${copyButton(p)}</div>
       </div>
-      <ul class="graded-legs">${p.legs.map((l) => `<li>${gradeMark(l.grade)}<b>${esc(l.label)}</b> <span class="muted">${fmtOdds(l.price)} · ${esc(l.matchup)}</span></li>`).join('')}</ul>
+      <ul class="graded-legs">${p.legs.map((l) => `<li>${gradeMark(l.grade)}<span><b>${esc(l.label)}</b> <span class="muted">${fmtOdds(l.price)}</span>${legSub(l)}</span></li>`).join('')}</ul>
       <div class="small muted backers"><b>${money(p.total)} bet</b>, ${back}${whoLine(p.stakes)}</div>
     </div>`;
   }).join('');
@@ -802,7 +807,7 @@ function customHtml(data) {
           <h3>${esc(p.name)}</h3><div class="small muted">${p.legs.length}-leg custom parlay${p.basedOn ? ` · based on ${esc(p.basedOn)}` : ''}</div></div>
         <div class="odds-col"><div class="odds">${fmtOdds(shownOdds(p))}</div>${copyButton(p)}</div>
       </div>
-      <ul class="legs">${p.legs.map((l) => `<li><span><b>${esc(l.label)}</b> <span class="muted">${fmtOdds(l.price)} · ${esc(l.matchup)}</span>${lineMoved(l, data.book)}</span>${p.started ? '' : dislikeHtml(l)}</li>`).join('')}</ul>
+      <ul class="legs">${p.legs.map((l) => `<li><span><b>${esc(l.label)}</b> <span class="muted">${fmtOdds(l.price)}</span>${legSub(l)}${lineMoved(l, data.book)}</span>${p.started ? '' : dislikeHtml(l)}</li>`).join('')}</ul>
       <div class="stats"><span>$10.00 pays <b>${money(10 * p.decimal)}</b></span></div>
       ${p.started ? '' : reactHtml(p)}
       ${stakeHtml(p, p.started)}
@@ -854,7 +859,7 @@ async function renderParlays(quiet = false) {
         </div>
         <div class="odds-col"><div class="odds">${fmtOdds(shownOdds(p))}</div>${copyButton(p)}</div>
       </div>
-      <ul class="legs">${p.legs.map((l) => `<li><span><b>${esc(l.label)}</b> <span class="muted">${fmtOdds(l.price)} · ${esc(l.matchup)} · ${l.pickers.length}/${data.voters} picked</span>${lineMoved(l, data.book)}</span>${dislikeHtml(l)}</li>`).join('')}</ul>
+      <ul class="legs">${p.legs.map((l) => `<li><span><b>${esc(l.label)}</b> <span class="muted">${fmtOdds(l.price)}</span>${legSub(l, ` · ${l.pickers.length}/${data.voters} picked`)}${lineMoved(l, data.book)}</span>${dislikeHtml(l)}</li>`).join('')}</ul>
       <div class="stats">
         <span>${money(p.stake)} pays <b>${money(p.payout)}</b></span>
         <span>Hit chance ~<b>${pct(p.hitProb)}</b></span>
@@ -1009,7 +1014,7 @@ async function renderAnalysis() {
       return `<div class="an-row">
         <div class="an-head">
           <div><b>${esc(m.label)}</b> <span class="muted">${fmtOdds(m.price)}</span>
-            <div class="small muted">${esc(m.matchup)} · ${esc(kick(m.commence))}</div></div>
+            <div class="small muted">${esc(shortMatchup(m.matchup))} · ${esc(kick(m.commence))}</div></div>
           <div class="an-chance"><b>${chanceText(m.chance)}</b><span>${chanceVerb(m.market)}</span></div>
         </div>
         ${chanceBar(m.chance)}
@@ -1103,7 +1108,7 @@ async function renderSlip(quiet = false) {
   const owedTotal = Object.values(owed).reduce((a, b) => a + b, 0);
   const at = (t) => new Date(t).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' });
   const card = (p, i) => {
-    const legs = p.legs.map((l) => `<li>${gradeMark(l.grade)}<b>${esc(l.label)}</b> <span class="muted">${fmtOdds(l.price)} · ${esc(l.matchup)}</span>${l.grade === 'pending' ? lineMoved(l, data.book) : ''}</li>`).join('');
+    const legs = p.legs.map((l) => `<li>${gradeMark(l.grade) || '<span class="mark">·</span>'}<span><b>${esc(l.label)}</b> <span class="muted">${fmtOdds(l.price)}</span>${legSub(l)}${l.grade === 'pending' ? lineMoved(l, data.book) : ''}</span></li>`).join('');
     const rows = Object.entries(p.stakes).map(([who, amt]) => `<tr>
         <td>${esc(who)}${who === me && !p.placed && !past ? ` <button type="button" class="link danger" data-slip-out="${esc(p.id)}">remove</button>` : ''}</td>
         <td class="num">${money(amt)}</td><td class="num">${money(amt * (p.decimal - 1))}</td><td class="num">${money(amt * p.decimal)}</td></tr>`).join('');
@@ -1113,7 +1118,7 @@ async function renderSlip(quiet = false) {
         <div class="odds-col"><div class="odds">${fmtOdds(shownOdds(p))}</div>${copyButton(p)}</div>
       </div>
       ${p.stillOption || p.placed || past ? '' : '<div class="lines">Picks changed since people bought in, so this parlay is no longer one of the current options. Double-check before placing it.</div>'}
-      <ul>${legs}</ul>
+      <ul class="graded-legs">${legs}</ul>
       <table class="slip">
         <thead><tr><th>Who</th><th class="num">Stake</th><th class="num">Profit</th><th class="num">Payout</th></tr></thead>
         <tbody>${rows}</tbody>
