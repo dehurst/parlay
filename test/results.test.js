@@ -37,7 +37,7 @@ test('grades parlays, dropping pushed legs', () => {
 
 test('reads final scores from ESPN and ignores unfinished games', () => {
   const board = { events: [
-    { date: '2026-10-18T17:00Z', competitions: [{ status: { type: { completed: true } }, competitors: [
+    { id: '401772', date: '2026-10-18T17:00Z', competitions: [{ status: { type: { completed: true } }, competitors: [
       { homeAway: 'home', score: '27', team: { displayName: 'Kansas City Chiefs' } },
       { homeAway: 'away', score: '17', team: { displayName: 'Denver Broncos' } },
     ] }] },
@@ -46,7 +46,7 @@ test('reads final scores from ESPN and ignores unfinished games', () => {
       { homeAway: 'away', score: '3', team: { displayName: 'Los Angeles Rams' } },
     ] }] },
   ] };
-  assert.deepEqual(parseEspnScores(board, '2026-10-13'), { '2026-10-13-broncos-at-chiefs': { homeScore: 27, awayScore: 17 } });
+  assert.deepEqual(parseEspnScores(board, '2026-10-13'), { '2026-10-13-broncos-at-chiefs': { homeScore: 27, awayScore: 17, espnId: '401772' } });
   // Thursday 8:15pm ET is Friday in UTC but Thursday on ESPN's scoreboard.
   assert.equal(easternDay('2026-10-16T00:15:00Z'), '20261015');
 });

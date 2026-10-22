@@ -68,15 +68,21 @@ async function load(refresh = false) {
   // Lines status under the picks hint, with the refresh button right next to
   // the time it would update.
   const time = (t) => new Date(t).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' });
-  const canRefresh = week.book && !isPast();
+  const hour = (t) => new Date(t).toLocaleString([], { hour: 'numeric', minute: '2-digit' });
+  // "next at 6:00 PM" today, else "next Sun 11:00 AM"
+  const next = (t) => (new Date(t).toDateString() === new Date().toDateString() ? `next at ${hour(t)}` : `next ${time(t)}`);
+  const live = week.book && !isPast();
   const details = [
     week.demo && 'Demo games',
-    week.refreshesLeft != null && `${week.refreshesLeft} of ${week.refreshesPerDay} refreshes left today`,
-    week.creditsLeft && `${week.creditsLeft} API credits left this month`,
+    live && (week.propsUpdated ? `Props from ${time(week.propsUpdated)}` : 'No props yet')
+      + (week.propsPaused ? ' (paused to save API credits)' : week.nextPropsAt ? `, ${next(week.nextPropsAt)}` : ''),
+    week.creditsLeft != null && `${week.creditsLeft} API credits left this month`,
   ].filter(Boolean).map(esc).join(' · ');
-  $('#schedule-meta').innerHTML = `${canRefresh ? `<span class="lines-row">${week.linesUpdated
-      ? `${esc(week.book)} lines from ${esc(time(week.linesUpdated))}` : `No ${esc(week.book)} lines yet`}
-      <button id="refresh" class="refresh" type="button">↻ Refresh</button></span>` : ''}
+  // Lines update on their own at 11 AM and 6 PM; Sundays add a couple of
+  // manual refreshes for late news.
+  $('#schedule-meta').innerHTML = `${live ? `<span class="lines-row">${week.linesUpdated
+      ? `${esc(week.book)} lines from ${esc(time(week.linesUpdated))}` : `No ${esc(week.book)} lines yet`}${week.nextLinesAt ? `, ${esc(next(week.nextLinesAt))}` : ''}
+      ${week.manualLeft > 0 ? `<button id="refresh" class="refresh" type="button">↻ Refresh (${week.manualLeft} left)</button>` : ''}</span>` : ''}
     ${details ? `<span class="meta-details">${details}</span>` : ''}`;
   $('#schedule-meta').hidden = isPast();
 
@@ -159,8 +165,55 @@ const marketOf = (key) => key.split('|').slice(0, 2).join('|');
 // The sportsbook's current line for one side of a bet, if we have it.
 function bookLine(key) {
   const [, market, side] = key.split('|');
-  return gameOf(key)?.lines?.[market]?.[side] ?? null;
+  const game = gameOf(key);
+  return isPropMarket(market) ? propLine(game?.props, market, side) : game?.lines?.[market]?.[side] ?? null;
 }
+
+// ---- Player props ------------------------------------------------------------
+// Keys look like "gameId|td:Travis Kelce|yes" (anytime TD) and
+// "gameId|ptd:Patrick Mahomes|over" (passing TDs), same as the server.
+
+const isPropMarket = (m) => String(m).includes(':');
+function propParts(market) {
+  const i = market.indexOf(':');
+  return { type: market.slice(0, i), player: market.slice(i + 1) };
+}
+const SUFFIX = /^(jr|sr|ii|iii|iv|v)\.?$/i;
+// "Kenneth Walker III" -> "K. Walker"
+function shortName(player) {
+  const parts = player.trim().split(/\s+/).filter((p) => !SUFFIX.test(p));
+  return parts.length < 2 ? player : `${parts[0][0]}. ${parts.slice(1).join(' ')}`;
+}
+const normName = (p) => p.toLowerCase().split(/\s+/).filter((x) => !SUFFIX.test(x)).join('').replace(/[^a-z]/g, '');
+// "C. McCaffrey TD", "P. Mahomes o1.5 pass TDs"
+function propText(market, side, point) {
+  const { type, player } = propParts(market);
+  return type === 'td' ? `${shortName(player)} TD` : `${shortName(player)} ${side === 'over' ? 'o' : 'u'}${point} pass TDs`;
+}
+function propLine(props, market, side) {
+  if (!props) return null;
+  const { type, player } = propParts(market);
+  if (type === 'td') {
+    const p = props.td?.find((x) => x.player === player);
+    return p && side === 'yes' ? { point: null, price: p.price } : null;
+  }
+  const p = props.ptd?.find((x) => x.player === player);
+  return p?.[side] != null ? { point: p.point, price: p[side] } : null;
+}
+// Grade a prop from the game's player stats (null until they're in).
+function gradeProp(market, side, point, players) {
+  if (!players) return null;
+  const { type, player } = propParts(market);
+  const row = players[normName(player)];
+  if (!row) return 'push'; // didn't play: void
+  if (type === 'td') return row.td > 0 ? 'win' : 'loss';
+  const diff = side === 'over' ? row.passTd - point : point - row.passTd;
+  return diff > 0 ? 'win' : diff < 0 ? 'loss' : 'push';
+}
+// Which games' props sections are open, and which show every TD scorer.
+const openProps = new Set();
+const allScorers = new Set();
+const TOP_SCORERS = 8;
 const sameLine = (a, b) => a && b && a.point === b.point && a.price === b.price;
 
 // ---- Rendering -----------------------------------------------------------
@@ -180,8 +233,9 @@ function render() {
 
 // Grade a bet against a final score: 'win' | 'loss' | 'push' (same rules as
 // the server's grading).
-function gradeBet(key, point, { homeScore: h, awayScore: a }) {
+function gradeBet(key, point, { homeScore: h, awayScore: a, players }) {
   const [, market, side] = key.split('|');
+  if (isPropMarket(market)) return gradeProp(market, side, point, players);
   const diff = market === 'spread' ? (side === 'home' ? h - a : a - h) + point
     : market === 'total' ? (side === 'over' ? h + a - point : point - (h + a))
     : side === 'home' ? h - a : a - h;
@@ -237,23 +291,21 @@ function renderGames() {
         const line = savedLine.get(key) ?? bookLine(key);
         if (!line) continue;
         const grade = gradeBet(key, line.point, g.result);
+        if (!grade) continue; // a prop whose stats aren't in yet
         outcome.set(key, grade);
-        if (grade === 'loss') {
+        if (grade === 'loss' && OTHER_SIDE[key.split('|')[2]]) {
           const [, market, side] = key.split('|');
           outcome.set(`${g.id}|${market}|${OTHER_SIDE[side]}`, 'right');
         }
       }
     }
-    const cell = (market, side) => {
-      const key = `${g.id}|${market}|${side}`;
+    // One bet button. `label` is the top line.
+    const pickButton = (key, label) => {
       const line = savedLine.get(key) ?? bookLine(key);
       const result = outcome.get(key);
       // While editing, picks on games that have started can't change: show a lock.
       const lockedPick = !calc && isEditing() && g.started && mine.has(key) && !result;
       const mark = lockedPick ? '🔒' : { win: '✓', loss: '✗', push: 'P', right: '✓' }[result];
-      let label = market === 'ml' ? 'ML' : '–';
-      if (line && market === 'spread') label = fmtPoint(line.point);
-      if (line && market === 'total') label = `${side === 'over' ? 'O' : 'U'} ${line.point}`;
       const disabled = locked || g.started || !line;
       // Friends' picks aren't shown here, so everyone picks on their own.
       const titles = { win: 'Your pick won', loss: 'Your pick lost', push: 'Push', right: 'This side won' };
@@ -264,6 +316,44 @@ function renderGames() {
         ${mark ? `<span class="mark-badge">${mark}</span>` : ''}
       </button>`;
     };
+    const cell = (market, side) => {
+      const key = `${g.id}|${market}|${side}`;
+      const line = savedLine.get(key) ?? bookLine(key);
+      let label = market === 'ml' ? 'ML' : '–';
+      if (line && market === 'spread') label = fmtPoint(line.point);
+      if (line && market === 'total') label = `${side === 'over' ? 'O' : 'U'} ${line.point}`;
+      return pickButton(key, label);
+    };
+    // Player props, tucked under the game: passing TDs (over/under) for each
+    // QB, then anytime TD scorers, likeliest first. Shown while the game is
+    // open, or afterwards if you picked one (to see how it did).
+    const myProps = [...mine].filter((k) => k.startsWith(`${g.id}|`) && isPropMarket(k.split('|')[1]));
+    const props = g.props ?? { td: [], ptd: [] };
+    let propsHtml = '';
+    if ((!g.started && (props.td.length || props.ptd.length)) || myProps.length) {
+      // After kickoff, only the props you picked.
+      const keep = (key) => !g.started || myProps.includes(key);
+      const ptdRows = props.ptd.filter((q) => keep(`${g.id}|ptd:${q.player}|over`) || keep(`${g.id}|ptd:${q.player}|under`)).map((q) => `
+        <div class="prop-name">${esc(shortName(q.player))}</div>
+        ${pickButton(`${g.id}|ptd:${q.player}|over`, `O ${q.point}`)}${pickButton(`${g.id}|ptd:${q.player}|under`, `U ${q.point}`)}`).join('');
+      const scorers = props.td.filter((t) => keep(`${g.id}|td:${t.player}|yes`));
+      const showAll = allScorers.has(g.id) || g.started;
+      // Always show the ones you picked, even past the top 8.
+      const shown = showAll ? scorers : scorers.filter((t, i) => i < TOP_SCORERS || mine.has(`${g.id}|td:${t.player}|yes`));
+      const tdHtml = shown.map((t) => pickButton(`${g.id}|td:${t.player}|yes`, shortName(t.player))).join('');
+      // Your picks on props the feed no longer lists.
+      const listed = (k) => props.td.some((t) => k === `${g.id}|td:${t.player}|yes`) || props.ptd.some((q) => k.startsWith(`${g.id}|ptd:${q.player}|`));
+      const orphans = myProps.filter((k) => !listed(k))
+        .map((k) => pickButton(k, propText(k.split('|')[1], k.split('|')[2], savedLine.get(k)?.point))).join('');
+      const open = openProps.has(g.id) || (g.started && myProps.length);
+      propsHtml = `<details class="props" data-props="${esc(g.id)}" ${open ? 'open' : ''}>
+        <summary>Player props${myProps.length ? ` <span class="chip tag">${myProps.length} picked</span>` : ''}</summary>
+        ${ptdRows ? `<div class="colhead props-head">Passing TDs</div><div class="ptd-grid">${ptdRows}</div>` : ''}
+        ${tdHtml ? `<div class="colhead props-head">Anytime TD</div><div class="td-grid">${tdHtml}</div>` : ''}
+        ${!showAll && scorers.length > shown.length ? `<button type="button" class="link small show-all" data-all-td="${esc(g.id)}">Show all ${scorers.length} players</button>` : ''}
+        ${orphans ? `<div class="td-grid">${orphans}</div>` : ''}
+      </details>`;
+    }
     const kick = new Date(g.commence).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' });
     const row = (team, side, totalSide) => `
       <div class="team" title="${esc(team)}">${esc(side === 'home' ? g.homeShort : g.awayShort)}</div>
@@ -286,6 +376,7 @@ function renderGames() {
         ${row(g.away, 'away', 'over')}
         ${row(g.home, 'home', 'under')}
       </div>
+      ${propsHtml}
     </div>`;
   };
   // Upcoming and live games stay on top in kickoff order; finished games
@@ -386,10 +477,10 @@ function toggleCalc(key) {
 // Chance a bet wins from the book's prices on both sides, with its cut
 // removed (same as the Analysis tab).
 function chanceOf(key) {
-  const [, market, side] = key.split('|');
-  const lines = gameOf(key)?.lines?.[market];
-  const mine = lines?.[side];
-  const other = lines?.[OTHER_SIDE[side]];
+  const [gameId, market, side] = key.split('|');
+  // Props too: passing TDs have both sides; anytime TD only has "yes".
+  const mine = bookLine(key);
+  const other = OTHER_SIDE[side] ? bookLine(`${gameId}|${market}|${OTHER_SIDE[side]}`) : null;
   const implied = (a) => 1 / toDecimal(a);
   if (mine && other) return implied(mine.price) / (implied(mine.price) + implied(other.price));
   return mine ? Math.min(0.99, implied(mine.price) / 1.045) : null;
@@ -400,6 +491,7 @@ function keyLabel(key) {
   const g = gameOf(key);
   const [, market, side] = key.split('|');
   const line = bookLine(key);
+  if (isPropMarket(market)) return propText(market, side, line?.point);
   if (market === 'total') return `${side === 'over' ? 'Over' : 'Under'} ${line?.point}`;
   const team = side === 'home' ? g.homeShort : g.awayShort;
   return market === 'ml' ? `${team} ML` : `${team} ${fmtPoint(line?.point)}`;
@@ -419,7 +511,7 @@ function priceKeys(keys) {
 // The other way to back the same team: spread <-> moneyline (totals have none).
 function swapFor(key) {
   const [gameId, market, side] = key.split('|');
-  if (market === 'total') return null;
+  if (market !== 'spread' && market !== 'ml') return null; // totals and props have none
   const alt = `${gameId}|${market === 'ml' ? 'spread' : 'ml'}|${side}`;
   return !calcKeys.has(alt) && bookLine(alt) ? alt : null;
 }
@@ -551,6 +643,7 @@ function copyDay() {
 // One bet as short text, like "KC -3.5", "GB/DET O 49.5", or "JAX ML".
 function betText(key, point, away, home) {
   const [, market, side] = key.split('|');
+  if (isPropMarket(market)) return propText(market, side, point);
   if (market === 'total') return `${abbr(away)}/${abbr(home)} ${side === 'over' ? 'O' : 'U'} ${point}`;
   const team = abbr(side === 'home' ? home : away);
   return market === 'ml' ? `${team} ML` : `${team} ${fmtPoint(point)}`;
@@ -897,6 +990,9 @@ function statusChip(status, returned, total) {
   return `<span class="chip ${status}">${text}</span>`;
 }
 
+// " · Props 2-1" once anyone has a graded prop (older stats have none).
+const propsRec = (r) => (r && r.win + r.loss + r.push ? ` · Props ${recordText(r)}` : '');
+
 function recordText(r) {
   const decided = r.win + r.loss;
   const pctText = decided ? ` (${Math.round((r.win / decided) * 100)}%)` : '';
@@ -956,10 +1052,10 @@ async function renderStats() {
     <table class="slip">
       <thead><tr><th>Who</th><th class="num">W</th><th class="num">L</th><th class="num">P</th><th class="num">$10 a pick</th></tr></thead>
       <tbody>${[...data.players].sort((a, b) => winPct(b.picks) - winPct(a.picks) || b.picks.win - a.picks.win).map((p) => `<tr>
-        <td>${esc(p.name)}<div class="small muted">ATS ${recordText(p.byMarket.spread)} · Totals ${recordText(p.byMarket.total)} · ML ${recordText(p.byMarket.ml)}</div></td>
+        <td>${esc(p.name)}<div class="small muted">ATS ${recordText(p.byMarket.spread)} · Totals ${recordText(p.byMarket.total)} · ML ${recordText(p.byMarket.ml)}${propsRec(p.byMarket.props)}</div></td>
         ${wlp(p.picks)}<td class="num ${netClass(p.flatNet)}">${signed(p.flatNet)}</td></tr>`).join('')}</tbody>
       <tfoot>
-        <tr><th>All of us<div class="small muted">ATS ${recordText(sumRec('spread'))} · Totals ${recordText(sumRec('total'))} · ML ${recordText(sumRec('ml'))}</div></th>
+        <tr><th>All of us<div class="small muted">ATS ${recordText(sumRec('spread'))} · Totals ${recordText(sumRec('total'))} · ML ${recordText(sumRec('ml'))}${propsRec(sumRec('props'))}</div></th>
           ${wlp(all)}<th class="num ${netClass(allNet)}">${signed(allNet)}</th></tr>
         <tr><th>Group consensus<div class="small muted">Bets most of you agreed on</div></th>${wlp(c)}<th class="num ${netClass(c.flatNet)}">${signed(c.flatNet)}</th></tr>
       </tfoot>
@@ -1177,7 +1273,19 @@ async function renderSlip(quiet = false) {
 
 // ---- Events --------------------------------------------------------------
 
+// Remember which props sections are open across re-draws.
+$('#games').addEventListener('toggle', (e) => {
+  const box = e.target.closest?.('details[data-props]');
+  if (!box) return;
+  if (box.open) openProps.add(box.dataset.props);
+  else openProps.delete(box.dataset.props);
+}, true);
 $('#games').addEventListener('click', (e) => {
+  const all = e.target.closest('[data-all-td]');
+  if (all) {
+    allScorers.add(all.dataset.allTd);
+    return renderGames();
+  }
   const drop = e.target.closest('[data-drop]');
   if (drop) {
     calcKeys.delete(drop.dataset.drop);
@@ -1372,12 +1480,12 @@ $('#who').addEventListener('click', (e) => {
   }
 });
 const limitText = () =>
-  `You've used today's ${week.refreshesPerDay} line refreshes (that keeps you under the free 500 API credits a month). Showing lines from ${new Date(week.linesUpdated).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}. Refreshes reset at midnight Eastern.`;
+  `Lines update on their own at 11 AM and 6 PM Eastern, plus ${week.manualPerSunday} extra refreshes on Sundays, to stay under the free 500 API credits a month. Showing lines from ${new Date(week.linesUpdated).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}.`;
 
 $('#schedule-meta').addEventListener('click', async (e) => {
   const btn = e.target.closest('#refresh');
   if (!btn) return;
-  if (week?.refreshesLeft === 0) return notice(limitText());
+  if (!week?.manualLeft) return notice(limitText());
   const wait = (week?.nextRefreshAt ?? 0) - Date.now();
   if (wait > 0) {
     const ago = Math.max(1, Math.round((Date.now() - week.linesUpdated) / 60e3));

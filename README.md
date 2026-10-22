@@ -111,9 +111,8 @@ Settings (in `.env` or as environment variables):
 | `ODDS_API_KEY` | _(empty)_ | The Odds API key. Needed for lines, so picks need it too |
 | `PLAYERS` | `Daniel,Asher,Matt` | Who's in the group, comma-separated |
 | `BOOKMAKER` | `fanduel` | Book to pull lines from (`draftkings`, `betmgm`, `williamhill_us`, ...) |
-| `ODDS_CACHE_HOURS` | `6` | Hours between automatic line refreshes. Each costs 3 credits; the schedule is free |
-| `DAILY_CREDIT_LIMIT` | `16` | Most Odds API credits to spend per day (Eastern). 16 = 5 line refreshes |
-| `SUNDAY_CREDIT_LIMIT` | `30` | The same, on Sundays. 30 = 10 line refreshes |
+| `DAILY_CREDIT_LIMIT` | `16` | Backstop: most credits line refreshes can spend per day (Eastern) |
+| `SUNDAY_CREDIT_LIMIT` | `30` | The same, on Sundays |
 | `GROUP_CODE` | _(empty)_ | Optional shared code friends enter before they can use the site |
 | `SEASON_START` | Tuesday after Labor Day | Sets the "Week N" label (YYYY-MM-DD, a Tuesday) |
 | `PORT` | `3000` | |
@@ -125,16 +124,35 @@ The free tier has 500 credits a month. The schedule, team records, and final
 scores (from ESPN) don't use any. FanDuel lines cost 3 credits per refresh
 (spreads, totals, and moneylines).
 
-The site spends at most `DAILY_CREDIT_LIMIT` credits a day (default 16, so 5
-line refreshes) and `SUNDAY_CREDIT_LIMIT` on Sundays (default 30, so 10). The
-day resets at midnight Eastern. Maxing out every day would top 500 in a month,
-but real use is far lower, and the free plan can't be overcharged: if the 500
-ran out, lines would just stop updating until the monthly reset.
-Lines refresh automatically when someone opens the site and they're older than
-`ODDS_CACHE_HOURS`, and the **Refresh lines** button at the top refreshes on
-demand while there's budget left. Once every game of the week has kicked off,
-nothing refreshes until the next week. The footer shows refreshes left today
-and credits left this month.
+Player props cost 1 credit per market per game: anytime TD + passing TDs is
+2 a game, about 28-32 for a full slate.
+
+**Lines** update at **11 AM and 6 PM Eastern**: the first visit after each time
+pulls fresh lines once (3 credits), and everyone shares them. A new week with
+no lines yet gets them on its first visit. **Sundays** add 2 manual refreshes
+(the ↻ Refresh button only shows then) for late injury news.
+
+**Props** update **Thursday and Sunday at 11 AM Eastern**, for games that
+haven't started. They pause if the month's credits left would drop under 75,
+so lines keep working to the end of the month.
+
+| | Lines | Props | Per week |
+| --- | --- | --- | --- |
+| Tue, Wed, Fri, Sat, Mon | 2 × 3 = 6 | 0 | 30 |
+| Thu | 6 | ~32 | ~38 |
+| Sun | 6-12 | ~30 | ~36-42 |
+| **Week** | **42-48** | **~62** | **~104-110** |
+
+That's roughly 450-470 a month in the worst case (a refresh only happens if
+someone visits), under the free 500. `DAILY_CREDIT_LIMIT` and
+`SUNDAY_CREDIT_LIMIT` are a backstop for line refreshes only. Once every game
+of the week has kicked off, nothing refreshes until the next week. The Picks
+tab shows when lines and props were last updated, when they update next, and
+credits left this month.
+
+Props are graded from ESPN's box scores (free): anytime TD counts every
+touchdown the player scores (not ones he throws), and a player who doesn't
+play is a push, like a void at the sportsbook.
 
 ## How the parlays are built
 

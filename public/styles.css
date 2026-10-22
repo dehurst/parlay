@@ -117,6 +117,19 @@ ul.legs li { display: flex; justify-content: space-between; align-items: flex-st
 .b-act:hover .b-result, .b-act:active .b-result { text-decoration: underline; }
 .b-result { float: right; color: var(--text); font-weight: 600; }
 
+/* Player props under each game */
+.props { margin-top: 12px; border-top: 1px solid var(--line); padding-top: 10px; }
+.props summary { cursor: pointer; font-size: 14px; font-weight: 600; color: var(--muted); list-style: none; }
+.props summary::-webkit-details-marker { display: none; }
+.props summary::before { content: '▸ '; }
+.props[open] summary::before { content: '▾ '; }
+.props-head { text-align: left; margin: 10px 0 4px; }
+.ptd-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; align-items: center; }
+.prop-name { font-weight: 600; font-size: 14px; }
+.td-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 6px; }
+.td-grid .pick .line { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.show-all { margin-top: 8px; }
+
 .past-banner {
   display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap;
   background: #18233a; border: 1px solid #3d5a99; border-radius: var(--radius);

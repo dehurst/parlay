@@ -10,6 +10,7 @@ export function normalize(data) {
   data.drafts ??= {}; // unsubmitted: { weekKey: { player: [key] } }
   data.schedule ??= {}; // { weekKey: { games, source, retryAt, demo? } }
   data.lines ??= {}; // { weekKey: { byMatchup, fetchedAt, remaining } }
+  data.props ??= {}; // player props: { weekKey: { byGame: { gameId: { td, ptd } }, fetchedAt } }
   // Parlays people put money on: { weekKey: { parlayId: { name, legs, decimal, american, stakes: { player: $ } } } }
   data.stakes ??= {};
   data.results ??= {}; // final scores: { weekKey: { gameId: { homeScore, awayScore } } }
@@ -40,8 +41,10 @@ export function normalize(data) {
 // them to price what would have hit. Others are dropped to keep the document small.
 function prune(data, currentWeek) {
   if (!currentWeek) return;
-  for (const week of Object.keys(data.lines)) {
-    if (week < currentWeek && !data.picks[week] && !data.stakes[week]) delete data.lines[week];
+  for (const kind of ['lines', 'props']) {
+    for (const week of Object.keys(data[kind] ?? {})) {
+      if (week < currentWeek && !data.picks[week] && !data.stakes[week]) delete data[kind][week];
+    }
   }
 }
 

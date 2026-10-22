@@ -3,22 +3,22 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { loadEnvFile } from './env.js';
 import { createStore } from './store.js';
-import { weekWindow, weekLabel } from './week.js';
+import { weekWindow, weekLabel, lastSlot, nextSlot } from './week.js';
 import { fetchEspnSchedule, fetchEspnRecords, demoSchedule, hasStarted, matchKey, teamKey } from './schedule.js';
-import { fetchOddsApiSchedule, fetchBookLines } from './oddsapi.js';
+import { fetchOddsApiSchedule, fetchBookLines, fetchEventIds, fetchEventProps } from './oddsapi.js';
+import { isProp, validProp, propLine, parseProps, parseBoxScore, PROP_MARKETS } from './props.js';
 import { tally, buildParlays, priceParlay, selectionLabel, MARKETS } from './parlay.js';
 import { gradeLeg, gradeParlay, actualDecimal } from './grading.js';
-import { fetchEspnScores, fetchOddsApiScores } from './results.js';
+import { fetchEspnScores, fetchOddsApiScores, fetchEspnPlayerStats } from './results.js';
 import { computeStats } from './stats.js';
 import { analyzeWeek } from './analysis.js';
-import { canSpend, spend, refreshesLeftToday, limitFor, LINES_COST, SCORES_COST } from './credits.js';
+import { canSpend, spend, limitFor, easternDate, easternWeekday, LINES_COST, SCORES_COST } from './credits.js';
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 loadEnvFile(join(root, '.env'));
 const {
   ODDS_API_KEY = '',
   BOOKMAKER = 'fanduel',
-  ODDS_CACHE_HOURS = '6',
   DAILY_CREDIT_LIMIT = '16',
   SUNDAY_CREDIT_LIMIT = '30',
   PLAYERS = 'Daniel,Asher,Matt',
@@ -28,8 +28,17 @@ const {
 
 const SCHEDULE_TTL = 30 * 60e3; // re-check the schedule every 30 min (it's free)
 const RETRY_AFTER_ERROR = 5 * 60e3;
-const LINES_TTL = Number(ODDS_CACHE_HOURS) * 3600e3;
+// Lines update at 11 AM and 6 PM Eastern (the first visit after each), plus up
+// to 2 manual refreshes on Sundays. Props update Thursday and Sunday at 11 AM.
+// That keeps a month under the free plan's 500 credits (see README).
+const LINE_HOURS = [11, 18];
+const PROPS_HOURS = [11];
+const PROPS_DAYS = [4, 0]; // Thursday, Sunday
+const SUNDAY_MANUAL_REFRESHES = 2;
 const MANUAL_REFRESH_GAP = 5 * 60e3; // so a double tap doesn't spend two refreshes
+// Props pause when the month's credits left would drop under this, so lines
+// keep working through the end of the month.
+const PROPS_RESERVE = 75;
 const limits = { daily: Number(DAILY_CREDIT_LIMIT), sunday: Number(SUNDAY_CREDIT_LIMIT) };
 const creditLimit = () => limitFor(new Date(), limits);
 const BOOK_NAMES = { fanduel: 'FanDuel', draftkings: 'DraftKings', betmgm: 'BetMGM', williamhill_us: 'Caesars' };
@@ -120,14 +129,18 @@ async function loadWeek({ refreshLines = false, key = null } = {}) {
   }
   const schedule = store.data.schedule[win.key];
 
-  // Paid refreshes: automatic when lines are stale, or on request, within the
-  // daily credit budget. Skipped once every game this week has kicked off.
+  // Paid refreshes: the first visit after 11 AM and after 6 PM Eastern (or
+  // right away if this week has no lines yet), plus Sunday's manual ones,
+  // within the daily credit cap. Skipped once every game has kicked off.
   let lines = store.data.lines[win.key];
   let limitHit = false;
-  const anyUpcoming = schedule.games.some((g) => !hasStarted(g));
+  const now = new Date();
+  const anyUpcoming = schedule.games.some((g) => !hasStarted(g, now));
   if (ODDS_API_KEY && !schedule.demo && anyUpcoming) {
     const age = lines ? Date.now() - lines.fetchedAt : Infinity;
-    const wanted = age > LINES_TTL || (refreshLines && age > MANUAL_REFRESH_GAP);
+    const due = !lines || lines.fetchedAt < lastSlot(now, LINE_HOURS).getTime();
+    const manual = !due && refreshLines && manualLeft(now) > 0 && age > MANUAL_REFRESH_GAP;
+    const wanted = due || manual;
     limitHit = wanted && !canSpend(store.data, LINES_COST, creditLimit());
     if (wanted && !limitHit) {
       try {
@@ -136,6 +149,11 @@ async function loadWeek({ refreshLines = false, key = null } = {}) {
         lines = { ...fresh, byMatchup: { ...lines?.byMatchup, ...fresh.byMatchup }, fetchedAt: Date.now() };
         store.data.lines[win.key] = lines;
         spend(store.data, LINES_COST);
+        noteRemaining(fresh.remaining);
+        if (manual) {
+          const today = easternDate(now);
+          store.data.manualRefreshes = { [today]: (store.data.manualRefreshes?.[today] ?? 0) + 1 };
+        }
         await save();
       } catch (err) {
         console.error(`${bookName} lines failed: ${describe(err)}`);
@@ -144,12 +162,89 @@ async function loadWeek({ refreshLines = false, key = null } = {}) {
     }
   }
 
+  if (ODDS_API_KEY && !schedule.demo && anyUpcoming) await refreshProps(win, schedule, now);
+
   const { games, gamesById } = withLines(win, schedule, lines);
   let warning = problems.join(' ') || null;
   if (schedule.demo) {
     warning = `Couldn't load the NFL schedule, so these are demo games. It retries every few minutes. ${warning ?? ''}`.trim();
   }
   return { win, games, gamesById, schedule, lines, warning, limitHit };
+}
+
+// Sunday's manual line refreshes left today (none on other days).
+function manualLeft(now = new Date()) {
+  if (easternWeekday(now) !== 'Sun') return 0;
+  return Math.max(0, SUNDAY_MANUAL_REFRESHES - (store.data.manualRefreshes?.[easternDate(now)] ?? 0));
+}
+
+// The Odds API reports the month's credits left on every paid call.
+function noteRemaining(remaining) {
+  const n = Number(remaining);
+  if (remaining != null && Number.isFinite(n)) store.data.apiRemaining = { value: n, at: Date.now() };
+}
+
+// Player props, Thursday and Sunday at 11 AM Eastern (the first visit after),
+// for games that haven't started. ~2 credits a game. Paused if the month's
+// credits would drop under PROPS_RESERVE.
+async function refreshProps(win, schedule, now) {
+  const slot = lastSlot(now, PROPS_HOURS, PROPS_DAYS);
+  const props = store.data.props[win.key];
+  if (!slot || slot < win.start) return; // no props time yet this week
+  if (props?.fetchedAt >= slot.getTime()) return;
+  // Someone else's visit is already fetching (or it just failed): wait.
+  if (props?.retryAt > Date.now()) return;
+  const upcoming = schedule.games.filter((g) => !hasStarted(g, now));
+  if (!upcoming.length) return;
+  const markets = Object.values(PROP_MARKETS);
+  const cost = upcoming.length * markets.length;
+  const left = store.data.apiRemaining?.value;
+  if (left != null && left - cost < PROPS_RESERVE) {
+    store.data.props[win.key] = { ...props, byGame: props?.byGame ?? {}, paused: true, retryAt: Date.now() + 3600e3 };
+    await save();
+    return;
+  }
+  store.data.props[win.key] = { ...props, byGame: props?.byGame ?? {}, retryAt: Date.now() + 3 * 60e3 };
+  await save();
+  try {
+    const ids = await fetchEventIds(ODDS_API_KEY, win); // free
+    const byGame = { ...props?.byGame }; // games that started keep their last props
+    let remaining = null;
+    let ok = 0;
+    // A few at a time to stay polite to the API.
+    for (let i = 0; i < upcoming.length; i += 4) {
+      const batch = await Promise.allSettled(upcoming.slice(i, i + 4).map(async (g) => {
+        const id = ids[matchKey(g.away, g.home)];
+        if (!id) return null;
+        const res = await fetchEventProps(ODDS_API_KEY, BOOKMAKER, id, markets);
+        return { gameId: g.id, props: parseProps(res.event, BOOKMAKER), remaining: res.remaining };
+      }));
+      for (const r of batch) {
+        if (r.status === 'rejected') console.error(`${bookName} props failed: ${describe(r.reason)}`);
+        else if (r.value) {
+          byGame[r.value.gameId] = r.value.props;
+          ok++;
+          const n = Number(r.value.remaining);
+          if (Number.isFinite(n)) remaining = remaining == null ? n : Math.min(remaining, n);
+        }
+      }
+    }
+    if (remaining != null) noteRemaining(remaining);
+    // Nothing came back (API down?): try again in 30 minutes, not every visit.
+    store.data.props[win.key] = ok
+      ? { byGame, fetchedAt: Date.now() }
+      : { byGame, fetchedAt: props?.fetchedAt, retryAt: Date.now() + 30 * 60e3 };
+  } catch (err) {
+    console.error(`${bookName} props failed: ${describe(err)}`);
+    store.data.props[win.key] = { ...store.data.props[win.key], retryAt: Date.now() + 30 * 60e3 };
+  }
+  await save();
+}
+
+// The book's current line for one side of a bet (props included).
+function lineFor(game, market, side) {
+  if (!game) return null;
+  return isProp(market) ? propLine(game.props, market, side) : game.lines?.[market]?.[side] ?? null;
 }
 
 // Attach the book's line to each game. Games that kicked off drop out of the
@@ -161,6 +256,8 @@ function withLines(win, schedule, lines) {
     lines: lines?.byMatchup[matchKey(g.away, g.home)] ?? null,
     homeRecord: records[teamKey(g.home)] ?? null,
     awayRecord: records[teamKey(g.away)] ?? null,
+    // Player props (Thursday and Sunday), if the book has them.
+    props: store.data.props[win.key]?.byGame?.[g.id] ?? null,
     // Final score, once known (looked up for games someone bet on).
     result: store.data.results[win.key]?.[g.id] ?? null,
   }));
@@ -218,7 +315,11 @@ app.get('/api/week', async (req, res, next) => {
       source: schedule.source,
       book: ODDS_API_KEY ? bookName : null,
       linesUpdated: live ? lines?.fetchedAt ?? null : null,
-      creditsLeft: live ? lines?.remaining ?? null : null,
+      creditsLeft: live ? store.data.apiRemaining?.value ?? lines?.remaining ?? null : null,
+      nextLinesAt: live ? nextSlot(now, LINE_HOURS)?.getTime() ?? null : null,
+      propsUpdated: store.data.props[win.key]?.fetchedAt ?? null,
+      nextPropsAt: live ? nextSlot(now, PROPS_HOURS, PROPS_DAYS)?.getTime() ?? null : null,
+      propsPaused: live ? !!store.data.props[win.key]?.paused : false,
       warning,
       games: games.map((g) => ({ ...g, started: hasStarted(g, now) })),
       players,
@@ -226,8 +327,9 @@ app.get('/api/week', async (req, res, next) => {
       // Your own unsubmitted selections (null if you have none); nobody else sees these.
       draft: (!past && me && store.data.drafts[win.key]?.[me]) || null,
       nextRefreshAt: live && lines ? lines.fetchedAt + MANUAL_REFRESH_GAP : null,
-      refreshesLeft: live ? refreshesLeftToday(store.data, creditLimit()) : null,
-      refreshesPerDay: Math.floor(creditLimit() / LINES_COST),
+      // Manual refreshes: Sundays only.
+      manualLeft: live ? manualLeft(now) : 0,
+      manualPerSunday: SUNDAY_MANUAL_REFRESHES,
       limitHit,
     });
   } catch (err) {
@@ -239,8 +341,9 @@ app.get('/api/week', async (req, res, next) => {
 function pickable(key, gamesById, now = new Date()) {
   const [gameId, market, side] = String(key).split('|');
   const game = gamesById.get(gameId);
-  const line = game?.lines?.[market]?.[side];
-  return MARKETS[market]?.includes(side) && line && !hasStarted(game, now) ? line : null;
+  const valid = isProp(market) ? validProp(market, side) : MARKETS[market]?.includes(side);
+  const line = lineFor(game, market, side);
+  return valid && line && !hasStarted(game, now) ? line : null;
 }
 
 function checkPlayer(req, res) {
@@ -391,7 +494,7 @@ async function currentParlays(key = null) {
   const startedIds = new Set(games.filter((g) => hasStarted(g, now)).map((g) => g.id));
   const tallied = tally(picks, gamesById).map((s) => ({
     ...s,
-    current: gamesById.get(s.gameId).lines?.[s.market]?.[s.side] ?? null,
+    current: lineFor(gamesById.get(s.gameId), s.market, s.side),
   }));
   const result = buildParlays(tallied, voters, { startedIds });
   for (const opt of result.options) opt.id = parlayId(opt.legs.map((l) => l.key));
@@ -429,7 +532,7 @@ app.get('/api/parlays', async (req, res, next) => {
         ...p,
         stakes: stakesFor(win, p.id),
         started: customStarted(p, gamesById),
-        legs: p.legs.map((l) => ({ ...l, current: gamesById.get(l.gameId)?.lines?.[l.market]?.[l.side] ?? null })),
+        legs: p.legs.map((l) => ({ ...l, current: lineFor(gamesById.get(l.gameId), l.market, l.side) })),
       }));
     const reactions = { parlays: {}, parlayDowns: {}, legs: {}, ...store.data.reactions[win.key] };
     res.json({ tallied, book: ODDS_API_KEY ? bookName : null, players, ...result, custom, inPlay, settled, reactions });
@@ -589,7 +692,7 @@ function gradedParlays(win, gamesById, optionIds) {
       const total = Object.values(stakes).reduce((a, b) => a + b, 0);
       const legs = p.legs.map((l) => ({
         ...l,
-        current: gamesById.get(l.gameId)?.lines?.[l.market]?.[l.side] ?? null,
+        current: lineFor(gamesById.get(l.gameId), l.market, l.side),
         grade: gradeLeg(l, results[l.gameId]),
       }));
       const decimal = actualDecimal(p, total);
@@ -627,8 +730,13 @@ async function refreshResults() {
     const bet = new Set();
     for (const picks of Object.values(store.data.picks[week] ?? {})) for (const p of picks) bet.add(p.key.split('|')[0]);
     for (const p of Object.values(store.data.stakes[week] ?? {})) for (const l of p.legs) bet.add(l.gameId);
+    // Games with a prop bet also need the players' stats once they're final.
+    const propGames = new Set();
+    for (const picks of Object.values(store.data.picks[week] ?? {})) for (const p of picks) if (isProp(p.key.split('|')[1])) propGames.add(p.key.split('|')[0]);
+    for (const p of Object.values(store.data.stakes[week] ?? {})) for (const l of p.legs) if (isProp(l.key.split('|')[1])) propGames.add(l.gameId);
+    const needsStats = () => games.filter((g) => propGames.has(g.id) && results[g.id] && !results[g.id].players);
     const due = games.filter((g) => bet.has(g.id) && !results[g.id] && Date.now() > new Date(g.commence).getTime() + GAME_LENGTH);
-    if (!due.length || Date.now() - (store.data.scoresCheckedAt[week] ?? 0) < SCORES_RECHECK) continue;
+    if ((!due.length && !needsStats().length) || Date.now() - (store.data.scoresCheckedAt[week] ?? 0) < SCORES_RECHECK) continue;
 
     store.data.scoresCheckedAt[week] = Date.now();
     changed = true;
@@ -648,6 +756,24 @@ async function refreshResults() {
       }
     }
     for (const g of due) if (found[g.id]) results[g.id] = found[g.id];
+
+    // Player stats for prop bets, from ESPN's box score (free).
+    const stats = needsStats();
+    if (stats.length) {
+      try {
+        // Scores from the backup source don't carry ESPN's game ID.
+        if (stats.some((g) => !results[g.id].espnId)) {
+          const espn = await fetchEspnScores(week, stats);
+          for (const g of stats) results[g.id].espnId ??= espn[g.id]?.espnId ?? null;
+        }
+        await Promise.all(stats.filter((g) => results[g.id].espnId).map(async (g) => {
+          const players = await fetchEspnPlayerStats(results[g.id].espnId);
+          if (players) results[g.id].players = players;
+        }));
+      } catch (err) {
+        console.error(`ESPN box scores failed: ${describe(err)}`);
+      }
+    }
   }
   if (changed) await save();
 }

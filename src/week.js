@@ -57,3 +57,33 @@ function defaultSeasonStart(ref) {
   while (laborDay.getUTCDay() !== 1) laborDay.setTime(laborDay.getTime() + DAY);
   return new Date(laborDay.getTime() + DAY); // Tuesday after Labor Day
 }
+
+// The most recent scheduled time at or before `now`: one of `hours` (Eastern,
+// 24-hour) on one of `weekdays` (0 = Sunday). Used for "lines update at 11 AM
+// and 6 PM" and "props update Thursday and Sunday at 11 AM".
+export function lastSlot(now, hours, weekdays = [0, 1, 2, 3, 4, 5, 6]) {
+  const e = easternParts(now);
+  for (let back = 0; back <= 8; back++) {
+    const day = new Date(Date.UTC(e.y, e.m, e.d - back));
+    if (!weekdays.includes(day.getUTCDay())) continue;
+    for (const hour of [...hours].sort((a, b) => b - a)) {
+      const t = easternHourOn(day.getUTCFullYear(), day.getUTCMonth(), day.getUTCDate(), hour);
+      if (t <= now) return t;
+    }
+  }
+  return null;
+}
+
+// The next scheduled time after `now` (same rules as lastSlot).
+export function nextSlot(now, hours, weekdays = [0, 1, 2, 3, 4, 5, 6]) {
+  const e = easternParts(now);
+  for (let ahead = 0; ahead <= 8; ahead++) {
+    const day = new Date(Date.UTC(e.y, e.m, e.d + ahead));
+    if (!weekdays.includes(day.getUTCDay())) continue;
+    for (const hour of [...hours].sort((a, b) => a - b)) {
+      const t = easternHourOn(day.getUTCFullYear(), day.getUTCMonth(), day.getUTCDate(), hour);
+      if (t > now) return t;
+    }
+  }
+  return null;
+}

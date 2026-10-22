@@ -1,10 +1,14 @@
 import { americanToDecimal } from './odds-math.js';
+import { isProp, gradeProp } from './props.js';
 
 // Grade one bet against a final score: 'win' | 'loss' | 'push' | 'pending'.
 // A leg is { key: "gameId|market|side", point, price }. Moneylines push on a
 // tie, as they do at FanDuel for NFL two-way moneylines.
 export function gradeLeg(leg, result) {
   if (!result) return 'pending';
+  // Props grade from the game's player stats (result.players), once fetched.
+  const [, market, side] = leg.key.split('|');
+  if (isProp(market)) return gradeProp(market, side, leg.point, result.players);
   const diff = legMargin(leg, result);
   return diff > 0 ? 'win' : diff < 0 ? 'loss' : 'push';
 }

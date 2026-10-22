@@ -1,4 +1,5 @@
 import { americanToDecimal, decimalToAmerican, estFairProb } from './odds-math.js';
+import { isProp, propLabel } from './props.js';
 
 export const MARKETS = {
   spread: ['home', 'away'],
@@ -9,6 +10,7 @@ export const MARKETS = {
 const fmtPoint = (p) => (p > 0 ? `+${p}` : `${p}`);
 
 export function selectionLabel(game, market, side, point) {
+  if (isProp(market)) return propLabel(market, side, point);
   if (market === 'total') return `${side === 'over' ? 'Over' : 'Under'} ${point}`;
   const team = side === 'home' ? game.homeShort : game.awayShort;
   return market === 'ml' ? `${team} ML` : `${team} ${fmtPoint(point)}`;

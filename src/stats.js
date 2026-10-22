@@ -1,6 +1,7 @@
 import { tally, selectionLabel } from './parlay.js';
 import { gradeLeg, gradeParlay, singleProfit, actualDecimal } from './grading.js';
 import { weekLabel } from './week.js';
+import { marketType } from './props.js';
 
 const record = () => ({ win: 0, loss: 0, push: 0, pending: 0 });
 
@@ -15,7 +16,7 @@ export function computeStats(data, players, { week = null } = {}) {
   const people = Object.fromEntries(players.map((p) => [p, {
     name: p,
     picks: record(),
-    byMarket: { spread: record(), total: record(), ml: record() },
+    byMarket: { spread: record(), total: record(), ml: record(), props: record() },
     flatNet: 0, // profit if they'd bet $10 on every pick
     staked: 0, // settled parlay money only
     returned: 0,
@@ -43,7 +44,7 @@ export function computeStats(data, players, { week = null } = {}) {
         const g = grade(p);
         const person = people[who];
         person.picks[g]++;
-        person.byMarket[p.key.split('|')[1]][g]++;
+        person.byMarket[marketType(p.key.split('|')[1])][g]++;
         person.flatNet += singleProfit(p.price, g);
         return { label: label(p.key, p.point), price: p.price, grade: g };
       });

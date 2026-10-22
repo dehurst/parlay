@@ -1,6 +1,7 @@
 import { americanToDecimal, impliedProb, estFairProb } from './odds-math.js';
 import { gradeLeg, legMargin, singleProfit } from './grading.js';
 import { selectionLabel, tally } from './parlay.js';
+import { isProp } from './props.js';
 
 // Analysis tab: win chances from the book's own prices, other ways to bet the
 // same game, and a look back at what nearly hit. No model: the odds (with the
@@ -99,6 +100,7 @@ function liveParlays(parlays, games) {
 // other way to back that team (spread <-> moneyline) would have won.
 function missInfo(game, leg) {
   const [, market, side] = leg.key.split('|');
+  if (isProp(market)) return { margin: null, alt: null }; // no points to miss by
   const margin = legMargin(leg, game.result);
   const alt = alternative(game, market, side);
   const altWon = alt && gradeLeg(alt, game.result) === 'win';
@@ -112,7 +114,8 @@ function misses(games, picks) {
   return tally(picks, byId)
     .map((s) => {
       const game = byId.get(s.gameId);
-      if (!game?.result || gradeLeg(s, game.result) !== 'loss') return null;
+      // Props are left out: there's no score margin or alternative to show.
+      if (isProp(s.market) || !game?.result || gradeLeg(s, game.result) !== 'loss') return null;
       return { label: s.label, matchup: s.matchup, price: s.price, pickers: s.pickers, market: s.market, ...missInfo(game, s) };
     })
     .filter(Boolean)

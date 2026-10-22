@@ -53,3 +53,21 @@ export function parseLines(events, book) {
   }
   return out;
 }
+
+// The Odds API's own event IDs for this week's games, by matchup (free call).
+export async function fetchEventIds(apiKey, win) {
+  const { data } = await get('events', { apiKey, ...timeRange(win) });
+  return Object.fromEntries(data.map((ev) => [matchKey(ev.away_team, ev.home_team), ev.id]));
+}
+
+// One game's player props from the book. Costs 1 credit per market the book
+// has for that game (so up to 2: anytime TD and passing TDs).
+export async function fetchEventProps(apiKey, book, eventId, markets) {
+  const { data, remaining } = await get(`events/${eventId}/odds`, {
+    apiKey,
+    bookmakers: book,
+    markets: markets.join(','),
+    oddsFormat: 'american',
+  });
+  return { event: data, remaining };
+}

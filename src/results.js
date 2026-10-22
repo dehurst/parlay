@@ -1,7 +1,9 @@
 import { makeGame } from './schedule.js';
+import { parseBoxScore } from './props.js';
 
 // Final scores, keyed by our game IDs: { gameId: { homeScore, awayScore } }.
 const ESPN = 'https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard';
+const ESPN_SUMMARY = 'https://site.api.espn.com/apis/site/v2/sports/football/nfl/summary';
 const ODDS_SCORES = 'https://api.the-odds-api.com/v4/sports/americanfootball_nfl/scores';
 
 // ESPN's scoreboard dates are US Eastern days.
@@ -20,9 +22,20 @@ export function parseEspnScores(board, weekKey) {
     const away = side('away');
     if (!home || !away) continue;
     const id = makeGame({ weekKey, home: home.team.displayName, away: away.team.displayName, commence: ev.date }).id;
-    out[id] = { homeScore: Number(home.score), awayScore: Number(away.score) };
+    // ESPN's own game ID, for looking up the box score (player props).
+    out[id] = { homeScore: Number(home.score), awayScore: Number(away.score), espnId: ev.id ?? null };
   }
   return out;
+}
+
+// Touchdowns per player for one finished game (free). Null if ESPN's box
+// score isn't filled in yet, so it's tried again later instead of grading
+// every prop as a void.
+export async function fetchEspnPlayerStats(espnId) {
+  const res = await fetch(`${ESPN_SUMMARY}?event=${encodeURIComponent(espnId)}`, { signal: AbortSignal.timeout(8000) });
+  if (!res.ok) throw new Error(`ESPN box score returned ${res.status}`);
+  const players = parseBoxScore(await res.json());
+  return Object.keys(players).length >= 10 ? players : null;
 }
 
 // Fetch final scores for the given games (only the days they were played).
