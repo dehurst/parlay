@@ -10,7 +10,8 @@ export function normalize(data) {
   data.drafts ??= {}; // unsubmitted: { weekKey: { player: [key] } }
   data.schedule ??= {}; // { weekKey: { games, source, retryAt, demo? } }
   data.lines ??= {}; // { weekKey: { byMatchup, fetchedAt, remaining } }
-  data.props ??= {}; // player props: { weekKey: { byGame: { gameId: { td, ptd } }, fetchedAt } }
+  data.props ??= {};
+  data.research ??= null; // ESPN season scoreboard by week: { season, weeks: { n: { games, fetchedAt, final } } } // player props: { weekKey: { byGame: { gameId: { td, ptd } }, fetchedAt } }
   // Parlays people put money on: { weekKey: { parlayId: { name, legs, decimal, american, stakes: { player: $ } } } }
   data.stakes ??= {};
   data.results ??= {}; // final scores: { weekKey: { gameId: { homeScore, awayScore } } }

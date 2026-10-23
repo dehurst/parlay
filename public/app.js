@@ -230,6 +230,7 @@ function render() {
   if (tab === 'slip') renderSlip();
   if (tab === 'stats') renderStats();
   if (tab === 'analysis') renderAnalysis();
+  if (tab === 'research') renderResearch();
 }
 
 // Grade a bet against a final score: 'win' | 'loss' | 'push' (same rules as
@@ -1173,6 +1174,101 @@ async function renderAnalysis() {
   $('#analysis').innerHTML = html;
 }
 
+// ---- Research ----------------------------------------------------------------
+
+let researchTeam = storage.get('parlay.team');
+const wlt = (r) => `${r.w}-${r.l}${r.t ? `-${r.t}` : ''}`;
+const wlPct = (r) => (r.w + r.l ? ` (${Math.round((r.w / (r.w + r.l)) * 100)}%)` : '');
+// 1 -> "1st", 12 -> "12th", 23 -> "23rd"
+function ordinal(n) {
+  const v = n % 100;
+  const s = ['th', 'st', 'nd', 'rd'];
+  return `${n}${s[(v - 20) % 10] || s[v] || s[0]}`;
+}
+const winPctText = (p) => (p == null ? '–' : p.toFixed(3).replace(/^0/, ''));
+const signedPts = (n) => (n == null ? '–' : `${n > 0 ? '+' : n < 0 ? '−' : ''}${Math.abs(n).toFixed(1)}`);
+const lineText = (n) => (n == null ? '–' : n === 0 ? 'PK' : fmtPoint(n));
+
+// One team's season: record, against the spread, over/under, strength of
+// schedule, and every game. Season-wide (not tied to the week up top).
+async function renderResearch(quiet = false) {
+  if (!quiet || !$('#research').innerHTML) $('#research').innerHTML = '<p class="muted">Loading team stats…</p>';
+  const data = await api('/api/research').catch((err) => (notice(err.message), null));
+  if (!data) return;
+  const teams = data.teams;
+  // Default: the team you looked at last, else one from this week's first game.
+  if (!teams.some((t) => t.name === researchTeam)) {
+    const first = week.games.find((g) => !g.started) ?? week.games[0];
+    researchTeam = teams.find((t) => t.name === first?.away)?.name ?? teams[0].name;
+  }
+  const t = teams.find((x) => x.name === researchTeam);
+  const next = t.log.find((e) => !e.final);
+  const when = (iso) => new Date(iso).toLocaleString([], { weekday: 'short', month: 'numeric', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+  const day = (iso) => new Date(iso).toLocaleDateString([], { weekday: 'short', month: 'numeric', day: 'numeric' });
+  const mark = (r) => ({ W: '<span class="mark win">✓</span>', L: '<span class="mark loss">✗</span>', P: '<span class="mark push">P</span>' })[r] ?? '';
+  const dots = t.last5.map((r) => `<span class="dot ${r === 'W' ? 'win' : r === 'L' ? 'loss' : 'push'}">${r}</span>`).join('');
+
+  const html = `
+    <label class="team-pick">
+      <select id="research-team" aria-label="Team">${teams.map((x) => `<option value="${esc(x.name)}" ${x.name === t.name ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select>
+    </label>
+    ${next ? `<div class="card next-game">
+      <div><span class="muted small">Next game</span><br><b>${next.home ? 'vs' : '@'} ${esc(next.oppName)}</b>
+        <div class="small muted">Week ${next.week} · ${esc(when(next.date))}</div>
+        ${next.line != null ? `<div class="small">Spread ${esc(lineText(next.line))}${next.total != null ? ` · Total ${next.total}` : ''}</div>` : ''}</div>
+      <button type="button" class="link small" data-team="${esc(next.oppName)}">See ${esc(next.opp)} →</button>
+    </div>` : ''}
+
+    <div class="card"><h3>Record</h3>
+      <div class="statline">
+        <div><b>${wlt(t.record)}</b><span>overall</span></div>
+        <div><b>${wlt(t.home)}</b><span>home</span></div>
+        <div><b>${wlt(t.away)}</b><span>away</span></div>
+        ${t.streak ? `<div><b>${t.streak}</b><span>streak</span></div>` : ''}
+      </div>
+      ${dots ? `<div class="small muted last5">Last ${t.last5.length}: ${dots}</div>` : ''}
+      <div class="small muted">Points per game: <b>${t.ppg?.toFixed(1) ?? '–'}</b> scored · <b>${t.papg?.toFixed(1) ?? '–'}</b> allowed · <b class="${netClass(t.margin ?? 0)}">${signedPts(t.margin)}</b> margin</div>
+    </div>
+
+    <div class="card"><h3>Against the spread</h3>
+      ${t.atsGames ? `<div class="statline">
+        <div><b>${wlt(t.ats)}</b><span>ATS${wlPct(t.ats)}</span></div>
+        <div><b>${wlt(t.atsFav)}</b><span>as favorite</span></div>
+        <div><b>${wlt(t.atsDog)}</b><span>as underdog</span></div>
+      </div>
+      <div class="small muted">Home ${wlt(t.atsHome)} · Away ${wlt(t.atsAway)} · Beats the spread by <b>${signedPts(t.coverAvg)}</b> pts a game on average</div>`
+      : '<p class="small muted">No lines on file for their games yet.</p>'}
+      <h4>Over / under</h4>
+      ${t.ou.w + t.ou.l + t.ou.t ? `<div class="small">Overs <b>${t.ou.w}</b> · Unders <b>${t.ou.l}</b>${t.ou.t ? ` · Pushes ${t.ou.t}` : ''}</div>
+        <div class="small muted">Their games average <b>${t.avgTotal.toFixed(1)}</b> points vs. a <b>${t.avgLineTotal.toFixed(1)}</b> line</div>`
+      : '<p class="small muted">No totals on file yet.</p>'}
+    </div>
+
+    <div class="card"><h3>Strength of schedule</h3>
+      <p class="small muted">Opponents' combined win % this season. 1st = hardest of 32.</p>
+      <div class="statline">
+        <div><b>${winPctText(t.sosPlayed)}</b><span>played${t.sosPlayedRank ? ` · ${ordinal(t.sosPlayedRank)}` : ''}</span></div>
+        <div><b>${winPctText(t.sosLeft)}</b><span>still to play${t.sosLeftRank ? ` · ${ordinal(t.sosLeftRank)}` : ''}</span></div>
+      </div>
+    </div>
+
+    <div class="card"><h3>Game log</h3>
+      <table class="slip log">
+        <thead><tr><th>Wk</th><th>Opp</th><th>Result</th><th class="num">Spread</th><th class="num">Total</th></tr></thead>
+        <tbody>${t.log.map((e) => `<tr class="${e.final ? '' : 'upcoming'}">
+          <td>${e.week}</td>
+          <td>${e.home ? '' : '@'}${esc(e.oppAbbr ?? e.opp)}</td>
+          <td>${e.final ? `<b class="${e.result === 'W' ? 'pos' : e.result === 'L' ? 'neg' : ''}">${e.result}</b> ${esc(e.score)}` : `<span class="muted small">${esc(day(e.date))}</span>`}</td>
+          <td class="num">${esc(lineText(e.line))} ${mark(e.cover)}</td>
+          <td class="num">${e.total ?? '–'}${e.ou ? ` <span class="muted">${e.ou}</span>` : ''}</td>
+        </tr>`).join('')}</tbody>
+      </table>
+    </div>
+    <p class="small muted">Scores and most lines come from ESPN; games without an ESPN line use the ${esc(data.book ?? 'sportsbook')} line saved here.
+      ✓ = covered the spread. A season is a small sample, and the line already prices in most of what these numbers show.</p>`;
+  $('#research').innerHTML = html;
+}
+
 let placingId = null; // Bet Slip parlay whose payout box is open
 
 // quiet: same as renderParlays (no placeholder, keep your scroll spot).
@@ -1354,6 +1450,21 @@ $('#stats').addEventListener('click', (e) => {
   if (!scope || scope === statsScope) return;
   statsScope = scope;
   renderStats();
+});
+$('#research').addEventListener('change', (e) => {
+  if (e.target.id !== 'research-team') return;
+  researchTeam = e.target.value;
+  storage.set('parlay.team', researchTeam);
+  renderResearch(true);
+  window.scrollTo(0, 0);
+});
+$('#research').addEventListener('click', (e) => {
+  const go = e.target.closest('[data-team]');
+  if (!go) return;
+  researchTeam = go.dataset.team;
+  storage.set('parlay.team', researchTeam);
+  renderResearch(true);
+  window.scrollTo(0, 0);
 });
 $('#tabs').addEventListener('click', (e) => {
   const btn = e.target.closest('button[data-tab]');

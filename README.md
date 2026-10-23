@@ -53,6 +53,13 @@ the plays most of you agree on and builds a few parlays out of them.
   (spread vs. moneyline), and **Drop**, each with the parlay's new hit chance
   and payout. Posting makes a new custom parlay "based on" the
   original, which stays as it was.
+- **Research**: pick any team for its season so far, from ESPN's scoreboard
+  (free): record (home/away, streak, last 5, points per game), against the
+  spread (overall, as favorite/underdog, home/away), over/under, strength of
+  schedule (opponents' win %, ranked), and a game log with each line and
+  result. Lines come from ESPN's odds, or the saved FanDuel line when ESPN has
+  none. Finished weeks are cached; weeks in progress re-check every 15 minutes
+  during games, else every 6 hours.
 - **Analysis**: each of your open picks with its win chance (FanDuel's odds on
   both sides with the house's cut removed) and the other way to bet the same
   team (spread vs. moneyline); live parlays' hit chances and weakest leg;

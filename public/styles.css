@@ -130,6 +130,22 @@ ul.legs li { display: flex; justify-content: space-between; align-items: flex-st
 .td-grid .pick .line { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
 .show-all { margin-top: 8px; }
 
+/* Research tab */
+.team-pick { display: block; margin-bottom: 12px; }
+.team-pick select {
+  width: 100%; padding: 10px 12px; border-radius: var(--radius); border: 1px solid var(--line);
+  background: var(--card); color: var(--text); font-weight: 600;
+}
+.next-game { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.next-game .link { color: var(--text); white-space: nowrap; }
+.last5 { margin: 8px 0 4px; display: flex; align-items: center; gap: 4px; }
+.dot { display: inline-flex; width: 20px; height: 20px; border-radius: 50%; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; color: #fff; }
+.dot.win { background: var(--accent); color: var(--accent-ink); }
+.dot.loss { background: var(--bad); }
+.dot.push { background: var(--line); }
+table.log td, table.log th { padding-left: 4px; padding-right: 4px; white-space: nowrap; }
+table.log tr.upcoming td { color: var(--muted); }
+
 .past-banner {
   display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap;
   background: #18233a; border: 1px solid #3d5a99; border-radius: var(--radius);
@@ -278,7 +294,7 @@ details.week summary .num { margin-left: auto; font-weight: 700; }
   .week-nav select { font-size: 16px; padding: 4px 2px; }
   /* Six tabs fit across a phone. */
   .tabs { gap: 0; justify-content: space-between; }
-  .tabs button { padding: 10px 6px; font-size: 14px; }
+  .tabs button { padding: 10px 3px; font-size: 13px; }
   .week-arrow { width: 28px; height: 28px; }
 }
 

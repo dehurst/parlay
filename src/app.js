@@ -12,6 +12,7 @@ import { gradeLeg, gradeParlay, actualDecimal } from './grading.js';
 import { fetchEspnScores, fetchOddsApiScores, fetchEspnPlayerStats } from './results.js';
 import { computeStats } from './stats.js';
 import { analyzeWeek } from './analysis.js';
+import { seasonYear, fetchSeasonWeek, parseSeasonWeek, buildTeams, REGULAR_SEASON_WEEKS } from './research.js';
 import { canSpend, spend, limitFor, easternDate, easternWeekday, LINES_COST, SCORES_COST } from './credits.js';
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -819,6 +820,52 @@ app.get('/api/analysis', async (req, res, next) => {
         },
       }),
     });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Research tab: every team's season from ESPN's scoreboard (free). Finished
+// weeks are kept for good; weeks with games still to play are re-checked
+// (every 15 minutes while games are on, else every 6 hours).
+async function loadResearch(now = new Date()) {
+  const season = seasonYear(now);
+  if (store.data.research?.season !== season) store.data.research = { season, weeks: {} };
+  const r = store.data.research;
+  const stale = [];
+  for (let n = 1; n <= REGULAR_SEASON_WEEKS; n++) {
+    const w = r.weeks[n];
+    if (w?.final) continue;
+    const live = w?.games.some((g) => !g.final && new Date(g.date) <= now);
+    if (!w || now - w.fetchedAt > (live ? 15 * 60e3 : 6 * 3600e3)) stale.push(n);
+  }
+  if (stale.length) {
+    const fetched = await Promise.allSettled(stale.map((n) => fetchSeasonWeek(season, n)));
+    let ok = 0;
+    fetched.forEach((res, i) => {
+      if (res.status === 'rejected') return console.error(`ESPN week ${stale[i]} failed: ${describe(res.reason)}`);
+      const games = parseSeasonWeek(res.value, stale[i]);
+      r.weeks[stale[i]] = { games, fetchedAt: Date.now(), final: games.length > 0 && games.every((g) => g.final) };
+      ok++;
+    });
+    if (ok) await save();
+  }
+  return Object.values(r.weeks).flatMap((w) => w.games);
+}
+
+// For games ESPN has no line for: the FanDuel line this app saved (the last
+// one before kickoff), if anyone opened the site that week.
+function savedLine(game) {
+  const lines = store.data.lines[weekWindow(new Date(game.date)).key]?.byMatchup?.[matchKey(game.away.name, game.home.name)];
+  if (!lines) return null;
+  return { homeLine: lines.spread?.home?.point ?? null, total: lines.total?.over?.point ?? null };
+}
+
+app.get('/api/research', async (req, res, next) => {
+  try {
+    const games = await loadResearch();
+    if (!games.length) return res.status(503).json({ error: 'Couldn’t reach ESPN for team stats. Try again in a few minutes.' });
+    res.json({ season: store.data.research.season, teams: buildTeams(games, savedLine), book: ODDS_API_KEY ? bookName : null });
   } catch (err) {
     next(err);
   }
