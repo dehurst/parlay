@@ -18,7 +18,7 @@ let viewKey = null;
 const isPast = () => !!week?.past;
 // Adds the viewed week to an API path (nothing for this week).
 const withWeek = (path) => (viewKey ? `${path}${path.includes('?') ? '&' : '?'}week=${viewKey}` : path);
-let statsScope = 'season'; // Stats tab: 'season' or 'week'
+let statsScope = 'week'; // Stats tab: 'week' (the one picked up top) or 'season'
 let tab = 'picks';
 // Payout calculator: a scratch parlay that's never saved or shared.
 let calc = false;
@@ -113,6 +113,7 @@ function renderWeekNav() {
 function goWeek(key) {
   const current = week.weeks.find((w) => w.current)?.key;
   viewKey = !key || key === current ? null : key;
+  statsScope = 'week'; // Stats follow the week you switched to
   calc = false;
   placingId = null;
   notice(null);
@@ -1006,8 +1007,8 @@ async function renderStats() {
   if (!data) return;
   // All season, or just the week picked in the header.
   const scope = `<div class="mode-switch" id="stats-scope">
+      <button type="button" data-scope="week" class="${byWeek ? 'active' : ''}">${isPast() ? esc(week.label) : 'Current week'}</button>
       <button type="button" data-scope="season" class="${byWeek ? '' : 'active'}">All season</button>
-      <button type="button" data-scope="week" class="${byWeek ? 'active' : ''}">${esc(week.label)}</button>
     </div>`;
   if (!data.weeks.length) {
     $('#stats').innerHTML = scope + `<div class="card muted">${byWeek
