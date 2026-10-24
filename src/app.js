@@ -578,6 +578,9 @@ app.get('/api/parlays', async (req, res, next) => {
     const settledIds = new Set([...settled, ...inPlay].map((p) => p.id));
     for (const opt of result.options) {
       opt.stakes = stakesFor(win, opt.id);
+      // A suggested parlay someone renamed keeps its new name.
+      const saved = store.data.stakes[win.key]?.[opt.id];
+      if (saved?.renamed) opt.name = saved.name;
       opt.placed = store.data.stakes[win.key]?.[opt.id]?.placed ?? null;
     }
     const custom = Object.values(store.data.stakes[win.key] ?? {})
@@ -687,6 +690,24 @@ app.post('/api/react', async (req, res, next) => {
   }
 });
 
+// Rename a saved parlay (a custom one, or a suggested one with money on it).
+app.post('/api/rename', async (req, res, next) => {
+  try {
+    const name = checkPlayer(req, res);
+    if (!name) return;
+    const title = String(req.body.title ?? '').replace(/\s+/g, ' ').trim();
+    if (!title || title.length > 40) return res.status(400).json({ error: 'Give it a name of 1 to 40 characters.' });
+    const saved = store.data.stakes[weekWindow().key]?.[String(req.body.id ?? '')];
+    if (!saved) return res.status(404).json({ error: 'Only parlays that are saved (custom, or with money on them) can be renamed.' });
+    saved.name = title;
+    saved.renamed = true;
+    await save();
+    res.json({ name: title });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // Put money on a parlay (or change/remove it with amount 0). The parlay is
 // saved as it is right now, so it stays on the bet slip even after kickoff or
 // if picks later change.
@@ -717,7 +738,8 @@ app.post('/api/stake', async (req, res, next) => {
       if (!option) return res.status(409).json({ error: 'That parlay changed. Refresh and try again.' });
       weekStakes[id] = {
         id,
-        name: option.name,
+        name: saved?.renamed ? saved.name : option.name,
+        ...(saved?.renamed ? { renamed: true } : {}),
         legs: option.legs.map(({ key, gameId, market, label, matchup, point, price, commence }) =>
           ({ key, gameId, market, side: key.split('|')[2], label, matchup, point, price, commence })),
         decimal: option.decimal,

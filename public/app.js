@@ -888,6 +888,21 @@ const betLine = (total, payout, when = '') =>
 const whoLine = (stakes) =>
   `<div>${Object.entries(stakes).map(([who, amt]) => `${esc(who)} ${money(amt)}`).join(' · ')}</div>`;
 
+// A parlay's name, with a ✎ to rename it when it's saved (custom, or with
+// money on it). While renaming, a small form takes its place.
+let renamingId = null;
+function titleHtml(p, editable = true) {
+  if (editable && renamingId === p.id) {
+    return `<form class="rename-form" data-rename="${esc(p.id)}">
+      <input name="parlayName" maxlength="40" value="${esc(p.name)}" aria-label="Parlay name">
+      <button type="submit" class="primary">Save</button>
+      <button type="button" class="link small" data-rename-cancel>Cancel</button>
+    </form>`;
+  }
+  return `<h3>${esc(p.name)}${editable ? ` <button type="button" class="link rename" data-rename-start="${esc(p.id)}" title="Rename" aria-label="Rename">✎</button>` : ''}</h3>`;
+}
+const rerenderParlayTab = () => (tab === 'slip' ? renderSlip(true) : renderParlays(true));
+
 // Parlays with money on them whose games have started but aren't decided:
 // legs that finished get a check or X; no more stakes can go in.
 function inPlayHtml(data) {
@@ -896,7 +911,7 @@ function inPlayHtml(data) {
     return `<div class="card parlay ${p.custom ? 'custom' : ''}">
       <div class="head">
         <div>${p.placed ? '<span class="chip placed">✓ Placed</span>' : '<span class="chip pending">Not placed</span>'}
-          <h3>${esc(p.name)}</h3><div class="small muted">${p.legs.length}-leg ${p.custom ? 'custom ' : ''}parlay</div></div>
+          ${titleHtml(p, !isPast())}<div class="small muted">${p.legs.length}-leg ${p.custom ? 'custom ' : ''}parlay</div></div>
         <div class="odds-col"><div class="odds">${fmtOdds(shownOdds(p))}</div>${copyButton(p)}</div>
       </div>
       <ul class="graded-legs">${p.legs.map((l) => `<li>${gradeMark(l.grade) || '<span class="mark">·</span>'}<span><b>${esc(l.label)}</b> <span class="muted">${fmtOdds(l.price)}</span>${legSub(l)}</span></li>`).join('')}</ul>
@@ -914,7 +929,7 @@ function settledHtml(data) {
     const back = p.status === 'won' ? `paid ${money(p.returned)} (${money(p.returned - p.total)} profit)` : p.status === 'push' ? 'refunded' : 'paid $0.00';
     return `<div class="card parlay done ${p.status}">
       <div class="head">
-        <div>${statusChip(p.status, p.returned, p.total)}<h3>${esc(p.name)}</h3><div class="small muted">${p.legs.length}-leg parlay</div></div>
+        <div>${statusChip(p.status, p.returned, p.total)}${titleHtml(p, !isPast())}<div class="small muted">${p.legs.length}-leg parlay</div></div>
         <div class="odds-col"><div class="odds">${fmtOdds(shownOdds(p))}</div>${copyButton(p)}</div>
       </div>
       <ul class="graded-legs">${p.legs.map((l) => `<li>${gradeMark(l.grade)}<span><b>${esc(l.label)}</b> <span class="muted">${fmtOdds(l.price)}</span>${legSub(l)}</span></li>`).join('')}</ul>
@@ -932,7 +947,7 @@ function customHtml(data) {
     <div class="card parlay custom">
       <div class="head">
         <div>${likersOf(p).length >= majority() ? '<span class="badge">Group\'s pick</span>' : ''}
-          <h3>${esc(p.name)}</h3><div class="small muted">${p.legs.length}-leg custom parlay${p.basedOn ? ` · based on ${esc(p.basedOn)}` : ''}</div></div>
+          ${titleHtml(p)}<div class="small muted">${p.legs.length}-leg custom parlay${p.basedOn ? ` · based on ${esc(p.basedOn)}` : ''}</div></div>
         <div class="odds-col"><div class="odds">${fmtOdds(shownOdds(p))}</div>${copyButton(p)}</div>
       </div>
       <ul class="legs">${p.legs.map((l) => `<li><span><b>${esc(l.label)}</b> <span class="muted">${fmtOdds(l.price)}</span>${legSub(l)}${lineMoved(l, data.book)}</span>${p.started ? '' : dislikeHtml(l)}</li>`).join('')}</ul>
@@ -983,7 +998,7 @@ async function renderParlays(quiet = false) {
       <div class="head">
         <div>
           ${groupPick ? '<span class="badge">Group\'s pick</span>' : ''}
-          <h3>${esc(p.name)}</h3><div class="small muted">${esc(p.blurb)}</div>
+          ${titleHtml(p, Object.keys(p.stakes).length > 0)}<div class="small muted">${esc(p.blurb)}</div>
         </div>
         <div class="odds-col"><div class="odds">${fmtOdds(shownOdds(p))}</div>${copyButton(p)}</div>
       </div>
@@ -1400,7 +1415,7 @@ async function renderSlip(quiet = false) {
         <td class="num">${money(amt)}</td><td class="num">${money(amt * (p.decimal - 1))}</td><td class="num">${money(amt * p.decimal)}</td></tr>`).join('');
     return `<div class="card parlay ${p.placed ? 'placed' : ''} ${p.status !== 'pending' ? `done ${p.status}` : ''}">
       <div class="head">
-        <div><span class="muted small">Bet ${i + 1}</span> ${p.placed ? '<span class="chip placed">✓ Placed</span>' : ''} ${statusChip(p.status, p.returned, p.total)} ${p.paidOut ? '<span class="chip paid">💵 Paid out</span>' : ''}<h3>${esc(p.name)} · ${p.legs.length}-leg parlay</h3></div>
+        <div><span class="muted small">Bet ${i + 1}</span> ${p.placed ? '<span class="chip placed">✓ Placed</span>' : ''} ${statusChip(p.status, p.returned, p.total)} ${p.paidOut ? '<span class="chip paid">💵 Paid out</span>' : ''}${titleHtml(p, !past)}<div class="small muted">${p.legs.length}-leg parlay</div></div>
         <div class="odds-col"><div class="odds">${fmtOdds(shownOdds(p))}</div>${copyButton(p)}</div>
       </div>
       ${p.stillOption || p.placed || past ? '' : '<div class="lines">Picks changed since people bought in, so this parlay is no longer one of the current options. Double-check before placing it.</div>'}
@@ -1583,6 +1598,36 @@ $('#login-form').addEventListener('submit', async (e) => {
   }
   btn.disabled = false;
 });
+// Renaming works the same on the Parlays tab and the Bet Slip.
+document.addEventListener('click', async (e) => {
+  const start = e.target.closest('[data-rename-start]');
+  if (start) {
+    renamingId = start.dataset.renameStart;
+    await rerenderParlayTab();
+    const input = document.querySelector('.rename-form input');
+    input?.focus();
+    input?.select();
+  }
+  if (e.target.closest('[data-rename-cancel]')) {
+    renamingId = null;
+    rerenderParlayTab();
+  }
+});
+// Capture phase, so the tabs' own form handlers (stakes, payouts) never see it.
+document.addEventListener('submit', async (e) => {
+  const form = e.target.closest?.('.rename-form');
+  if (!form) return;
+  e.preventDefault();
+  e.stopPropagation();
+  try {
+    await api('/api/rename', { method: 'POST', body: { name: me, id: form.dataset.rename, title: form.elements.parlayName.value } });
+    renamingId = null;
+    notice(null);
+  } catch (err) {
+    notice(err.message);
+  }
+  rerenderParlayTab();
+}, true);
 $('#tabs').addEventListener('click', (e) => {
   const btn = e.target.closest('button[data-tab]');
   if (!btn) return;
