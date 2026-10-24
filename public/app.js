@@ -37,7 +37,11 @@ async function api(path, opts = {}) {
     body: opts.body && JSON.stringify(opts.body),
   });
   const data = await res.json().catch(() => ({}));
-  if (res.status === 401) {
+  if (res.status === 401 && data.login && !path.startsWith('/api/login')) {
+    showLogin();
+    throw new Error('Please log in.');
+  }
+  if (res.status === 401 && !data.login) {
     $('#code-row').hidden = false;
     showJoin();
   }
@@ -60,10 +64,19 @@ async function load(refresh = false) {
   try {
     week = await api(`/api/week?${params}`);
   } catch (err) {
-    notice(err.message);
+    if ($('#login').hidden) notice(err.message); // the login screen speaks for itself
     return;
   }
-  notice(week.warning);
+  $('#week-nav').hidden = false;
+  notice(week.authMissing
+    ? 'Logins aren’t turned on yet: add LOGINS in Vercel’s settings (see the README). Until then anyone with the link can get in.'
+    : week.warning);
+  // Logged in: the server says who you are.
+  if (week.auth) {
+    me = week.me;
+    storage.set('parlay.name', me);
+  }
+  $('#login').hidden = true;
   renderWeekNav();
   // Lines status under the picks hint, with the refresh button right next to
   // the time it would update.
@@ -126,7 +139,10 @@ const isOpenPick = (key) => !gameOf(key)?.started;
 
 function renderWho() {
   // Who you are, as a small chip; tap it to switch.
-  $('#who').innerHTML = `<button class="me-chip" id="switch" type="button" title="Switch player">${esc(me)} <span class="muted">⇄</span></button>`;
+  // With logins it's a log out button; without, tap to switch player.
+  $('#who').innerHTML = week.auth
+    ? `<span class="me-chip static">${esc(me)}</span><button class="link small" id="logout" type="button">Log out</button>`
+    : `<button class="me-chip" id="switch" type="button" title="Switch player">${esc(me)} <span class="muted">⇄</span></button>`;
 }
 
 async function clearPicks() {
@@ -140,6 +156,19 @@ async function clearPicks() {
     notice(err.message);
   }
   render();
+}
+
+function showLogin() {
+  me = null;
+  $('#login').hidden = false;
+  $('#join').hidden = true;
+  $('#tabs').hidden = true;
+  $('#submit-bar').hidden = true;
+  $('#past-banner').hidden = true;
+  $('#week-nav').hidden = true;
+  $('#who').innerHTML = '';
+  document.querySelectorAll('.tab').forEach((t) => (t.hidden = true));
+  setTimeout(() => $('#login-form [name=username]')?.focus(), 0);
 }
 
 function showJoin() {
@@ -1470,6 +1499,23 @@ $('#research').addEventListener('click', (e) => {
   renderResearch(true);
   window.scrollTo(0, 0);
 });
+$('#login-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const form = e.target;
+  const btn = form.querySelector('button');
+  btn.disabled = true;
+  $('#login-error').hidden = true;
+  try {
+    await api('/api/login', { method: 'POST', body: { username: form.username.value, password: form.password.value } });
+    form.password.value = '';
+    $('#week-nav').hidden = false;
+    await load();
+  } catch (err) {
+    $('#login-error').textContent = err.message;
+    $('#login-error').hidden = false;
+  }
+  btn.disabled = false;
+});
 $('#tabs').addEventListener('click', (e) => {
   const btn = e.target.closest('button[data-tab]');
   if (!btn) return;
@@ -1589,6 +1635,13 @@ $('#slip').addEventListener('click', async (e) => {
   if (btn) setStake(btn.dataset.slipOut, 0, () => renderSlip(true));
 });
 $('#who').addEventListener('click', (e) => {
+  if (e.target.closest('#logout')) {
+    api('/api/logout', { method: 'POST' }).catch(() => {});
+    storage.del('parlay.name');
+    notice(null);
+    showLogin();
+    return;
+  }
   if (e.target.closest('#switch')) {
     me = null;
     storage.del('parlay.name');

@@ -11,6 +11,8 @@ import { tally, buildParlays, priceParlay, selectionLabel, MARKETS } from './par
 import { gradeLeg, gradeParlay, actualDecimal } from './grading.js';
 import { fetchEspnScores, fetchOddsApiScores, fetchEspnPlayerStats } from './results.js';
 import { computeStats } from './stats.js';
+import { createHash } from 'node:crypto';
+import { parseLogins, checkLogin, makeToken, readToken, cookieValue, sessionCookie, COOKIE } from './auth.js';
 import { analyzeWeek } from './analysis.js';
 import { seasonYear, fetchSeasonWeek, parseSeasonWeek, buildTeams, REGULAR_SEASON_WEEKS } from './research.js';
 import { canSpend, spend, limitFor, easternDate, easternWeekday, LINES_COST, SCORES_COST } from './credits.js';
@@ -24,6 +26,8 @@ const {
   SUNDAY_CREDIT_LIMIT = '30',
   PLAYERS = 'Daniel,Asher,Matt',
   GROUP_CODE = '',
+  LOGINS = '', // "matt:password,daniel:password,..." (set in Vercel, never in the code)
+  SESSION_SECRET = '',
   DATA_FILE = join(root, 'data', 'db.json'),
 } = process.env;
 
@@ -47,6 +51,13 @@ const bookName = BOOK_NAMES[BOOKMAKER] ?? BOOKMAKER;
 
 const players = PLAYERS.split(',').map((p) => p.trim()).filter(Boolean);
 
+// Logins: on once LOGINS is set. Sessions are signed with SESSION_SECRET, or
+// one derived from LOGINS (changing a password logs everyone out).
+const logins = parseLogins(LOGINS, players);
+const authOn = logins.size > 0;
+const sessionSecret = SESSION_SECRET || createHash('sha256').update(`parlay-session:${LOGINS}`).digest('hex');
+if (!authOn) console.log('No LOGINS set: the site is open to anyone with the link.');
+
 const describe = (err) => `${err.message}${err.cause?.code ? ` (${err.cause.code})` : ''}`;
 
 const SCORES_RECHECK = 10 * 60e3;
@@ -61,6 +72,33 @@ const json = express.json();
 app.use((req, res, next) => (req.body && typeof req.body === 'object' && !Buffer.isBuffer(req.body) ? next() : json(req, res, next)));
 // On Vercel, public/ is served by its CDN instead; this is for local runs.
 app.use(express.static(join(root, 'public')));
+
+// Log in with a username and password; sets a 60-day session cookie.
+const httpsReq = (req) => !!process.env.VERCEL || req.secure || req.get('x-forwarded-proto') === 'https';
+app.post('/api/login', async (req, res) => {
+  if (!authOn) return res.json({ me: null, auth: false });
+  const player = checkLogin(logins, req.body?.username, req.body?.password);
+  if (!player) {
+    await new Promise((r) => setTimeout(r, 700)); // slow down guessing
+    return res.status(401).json({ error: 'Wrong username or password.', login: true });
+  }
+  res.setHeader('Set-Cookie', sessionCookie(makeToken(player, sessionSecret), { secure: httpsReq(req) }));
+  res.json({ me: player, auth: true });
+});
+app.post('/api/logout', (req, res) => {
+  res.setHeader('Set-Cookie', sessionCookie(null, { secure: httpsReq(req) }));
+  res.json({ ok: true });
+});
+
+// Everything else needs a login (once LOGINS is set). The session decides who
+// you are, so nobody can pick or bet as someone else.
+app.use('/api', (req, res, next) => {
+  if (!authOn) return next();
+  const player = readToken(cookieValue(req.headers.cookie, COOKIE), sessionSecret);
+  if (!player || !players.includes(player)) return res.status(401).json({ error: 'Please log in.', login: true });
+  req.player = player;
+  next();
+});
 
 // Load the latest data for every API request.
 app.use('/api', async (req, res, next) => {
@@ -315,12 +353,15 @@ app.get('/api/week', async (req, res, next) => {
     const past = requestedWeek(req);
     const { win, games, schedule, lines, warning, limitHit } = await loadWeek({ refreshLines: !past && req.query.refresh === '1', key: past });
     const now = new Date();
-    const me = players.includes(req.query.me) ? req.query.me : null;
+    const me = req.player ?? (players.includes(req.query.me) ? req.query.me : null);
     const currentKey = weekWindow().key;
     const live = !past && ODDS_API_KEY;
     res.json({
       key: win.key,
       label: weekLabel(win),
+      me, // who's logged in (or the name you picked, without logins)
+      auth: authOn,
+      authMissing: !authOn && !!process.env.VERCEL, // hosted with no LOGINS set
       past: !!past,
       // Every week you can switch to, this one first.
       weeks: [{ key: currentKey, label: weekLabel(weekWindow()), current: true }, ...pastWeeks(currentKey)],
@@ -360,7 +401,8 @@ function pickable(key, gamesById, now = new Date()) {
 }
 
 function checkPlayer(req, res) {
-  const name = req.body?.name;
+  // Logged in: always you. Without logins: the name the page sends.
+  const name = req.player ?? req.body?.name;
   if (!players.includes(name)) {
     res.status(400).json({ error: 'Pick your name first' });
     return null;
@@ -810,7 +852,7 @@ app.get('/api/analysis', async (req, res, next) => {
     const { win, games, gamesById, result } = await currentParlays(past);
     const now = new Date();
     const withStarted = games.map((g) => ({ ...g, started: hasStarted(g, now) }));
-    const me = players.includes(req.query.me) ? req.query.me : null;
+    const me = req.player ?? (players.includes(req.query.me) ? req.query.me : null);
     // Your picks to rate: what you're editing (or selecting) if anything,
     // else what you submitted. Bets you'd submitted keep the line you got.
     const submittedPicks = (me && submitted(win)[me]) ?? [];
