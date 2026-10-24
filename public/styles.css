@@ -131,12 +131,12 @@ ul.legs li { display: flex; justify-content: space-between; align-items: flex-st
 .show-all { margin-top: 8px; }
 
 /* Research tab */
-.team-pick { display: block; margin-bottom: 12px; }
-.team-pick { position: relative; }
+.team-pick { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; position: relative; }
+.team-pick .team-logo { width: 32px; height: 32px; margin-right: 0; }
 /* Safari ignores padding on native dropdowns, so draw our own (with an arrow). */
 .team-pick select {
   -webkit-appearance: none; appearance: none;
-  width: 100%; min-height: 54px; padding: 14px 44px 14px 16px; border-radius: var(--radius);
+  flex: 1; min-height: 54px; padding: 14px 44px 14px 16px; border-radius: var(--radius);
   border: 1px solid var(--line); background: var(--card); color: var(--text);
   font-size: 17px; font-weight: 600; cursor: pointer;
 }
@@ -146,6 +146,7 @@ ul.legs li { display: flex; justify-content: space-between; align-items: flex-st
 }
 .compare-pick { display: flex; align-items: center; gap: 10px; }
 .compare-pick select { flex: 1; }
+.compare-pick .team-logo { width: 28px; height: 28px; margin-right: 0; }
 .next-game { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
 .next-game .link { color: var(--text); white-space: nowrap; }
 .last5 { margin: 8px 0 4px; display: flex; align-items: center; gap: 4px; }
@@ -216,7 +217,8 @@ html { touch-action: manipulation; -webkit-text-size-adjust: 100%; }
   display: grid; grid-template-columns: 1fr repeat(3, minmax(0, 1fr));
   gap: 6px; align-items: center;
 }
-.game-grid .team { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.game-grid .team { display: flex; align-items: center; gap: 6px; font-weight: 600; overflow: hidden; }
+.game-grid .team span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .game-grid .colhead { font-size: 12px; color: var(--muted); text-align: center; }
 
 .pick {
@@ -314,6 +316,13 @@ details.week summary .num { margin-left: auto; font-weight: 700; }
 .hist-parlay ul, .hist-picks ul { margin: 6px 0; padding-left: 0; list-style: none; font-size: 14px; }
 .hist-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 4px 16px; }
 .team-line { display: block; }
+.team-logo {
+  width: 22px; height: 22px; object-fit: contain; flex: none;
+  vertical-align: -5px; margin-right: 6px;
+}
+.team-logo.small { width: 16px; height: 16px; vertical-align: -3px; margin-right: 4px; }
+.game-grid .team .team-logo { margin-right: 0; }
+table.slip td .team-logo { margin-bottom: -1px; }
 .rec { font-weight: 400; color: var(--muted); font-size: 14px; }
 .kick { white-space: nowrap; font-size: 12px; color: var(--muted); }
 .kick.locked { color: var(--warn); }

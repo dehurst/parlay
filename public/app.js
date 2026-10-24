@@ -391,7 +391,7 @@ function renderGames() {
     }
     const kick = new Date(g.commence).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' });
     const row = (team, side, totalSide) => `
-      <div class="team" title="${esc(team)}">${esc(side === 'home' ? g.homeShort : g.awayShort)}</div>
+      <div class="team" title="${esc(team)}">${teamLogo(team, 'small')}<span>${esc(side === 'home' ? g.homeShort : g.awayShort)}</span></div>
       ${cell('spread', side)}${cell('total', totalSide)}${cell('ml', side)}`;
     const status = g.result
       ? `Final: ${esc(abbr(g.away))} ${g.result.awayScore}, ${esc(abbr(g.home))} ${g.result.homeScore}`
@@ -400,8 +400,8 @@ function renderGames() {
     return `<div class="card ${isFinal(g) ? 'done' : ''}" data-game="${esc(g.id)}">
       <div class="game-head">
         <h3>
-          <span class="team-line">${esc(g.away)}${rec(g.awayRecord)} @</span>
-          <span class="team-line">${esc(g.home)}${rec(g.homeRecord)}</span>
+          <span class="team-line">${teamLogo(g.away)}${esc(g.away)}${rec(g.awayRecord)} @</span>
+          <span class="team-line">${teamLogo(g.home)}${esc(g.home)}${rec(g.homeRecord)}</span>
         </h3>
       </div>
       ${g.started ? `<div class="score small">${status}</div>` : ''}
@@ -661,6 +661,9 @@ const ABBR = {
   titans: 'TEN', commanders: 'WAS',
 };
 const abbr = (team) => ABBR[team.split(' ').pop().toLowerCase()] ?? team.split(' ').pop();
+// NFL.com's own club-logo CDN, keyed by the same abbreviations we already use.
+const logoUrl = (team) => `https://static.www.nfl.com/league/api/clubs/logos/${abbr(team)}.png`;
+const teamLogo = (team, cls = '') => (team ? `<img class="team-logo ${cls}" src="${logoUrl(team)}" alt="" loading="lazy">` : '');
 const dayKey = (iso) => new Date(iso).toDateString();
 
 // Which day's picks to copy: today if you have picks today, otherwise the next
@@ -1330,10 +1333,10 @@ async function renderResearch(quiet = false) {
     const b = teams.find((x) => x.name === compareB);
     $('#research').innerHTML = `
       ${modeSwitch}
-      <div class="team-pick compare-pick">${teamPick('compare-a', a.name)}<span class="muted small">vs</span>${teamPick('compare-b', b.name)}</div>
-      <div class="card"><h3>${esc(a.short)} offense vs ${esc(b.short)} defense</h3>
+      <div class="team-pick compare-pick">${teamLogo(a.name)}${teamPick('compare-a', a.name)}<span class="muted small">vs</span>${teamLogo(b.name)}${teamPick('compare-b', b.name)}</div>
+      <div class="card"><h3>${teamLogo(a.name, 'small')}${esc(a.short)} offense vs ${teamLogo(b.name, 'small')}${esc(b.short)} defense</h3>
         ${a.advGames || b.advGames ? advTable(a, b, `${a.short} off`, `${b.short} def`) : '<p class="small muted">No box scores yet.</p>'}</div>
-      <div class="card"><h3>${esc(b.short)} offense vs ${esc(a.short)} defense</h3>
+      <div class="card"><h3>${teamLogo(b.name, 'small')}${esc(b.short)} offense vs ${teamLogo(a.name, 'small')}${esc(a.short)} defense</h3>
         ${a.advGames || b.advGames ? advTable(b, a, `${b.short} off`, `${a.short} def`) : '<p class="small muted">No box scores yet.</p>'}</div>
       <p class="small muted">Per game this season from ESPN's box scores. Ranks are out of 32 (1st = best). A season is a small sample.</p>`;
     return;
@@ -1346,9 +1349,9 @@ async function renderResearch(quiet = false) {
 
   const html = `
     ${modeSwitch}
-    <label class="team-pick">${teamPick('research-team', t.name)}</label>
+    <label class="team-pick">${teamLogo(t.name)}${teamPick('research-team', t.name)}</label>
     ${next ? `<div class="card next-game">
-      <div><span class="muted small">Next game</span><br><b>${next.home ? 'vs' : '@'} ${esc(next.oppName)}</b>
+      <div><span class="muted small">Next game</span><br><b>${next.home ? 'vs' : '@'} ${teamLogo(next.oppName, 'small')}${esc(next.oppName)}</b>
         <div class="small muted">Week ${next.week} · ${esc(when(next.date))}</div>
         ${next.line != null ? `<div class="small">Spread ${esc(lineText(next.line))}${next.total != null ? ` · Total ${next.total}` : ''}</div>` : ''}</div>
       <button type="button" class="link small" data-team="${esc(next.oppName)}">See ${esc(next.opp)} →</button>
@@ -1405,7 +1408,7 @@ async function renderResearch(quiet = false) {
         <thead><tr><th>Wk</th><th>Opp</th><th>Result</th><th class="num">Spread</th><th class="num">Total</th></tr></thead>
         <tbody>${t.log.map((e) => `<tr class="${e.final ? '' : 'upcoming'}">
           <td>${e.week}</td>
-          <td>${e.home ? '' : '@'}${esc(e.oppAbbr ?? e.opp)}</td>
+          <td>${e.home ? '' : '@'}${teamLogo(e.oppName, 'small')}${esc(e.oppAbbr ?? e.opp)}</td>
           <td>${e.final ? `<b class="${e.result === 'W' ? 'pos' : e.result === 'L' ? 'neg' : ''}">${e.result}</b> ${esc(e.score)}` : `<span class="muted small">${esc(day(e.date))}</span>`}</td>
           <td class="num">${esc(lineText(e.line))} ${mark(e.cover)}</td>
           <td class="num">${e.total ?? '–'}${e.ou ? ` <span class="muted">${e.ou}</span>` : ''}</td>
@@ -1444,7 +1447,7 @@ function leagueHtml(teams) {
     </div></div>`;
 
   const row = (t, i, cells) => `<tr class="team-row" data-team="${esc(t.name)}"><td class="rank">${i + 1}</td>
-    <td><b>${esc(t.short ?? t.name)}</b></td>${cells}</tr>`;
+    <td>${teamLogo(t.name, 'small')}<b>${esc(t.short ?? t.name)}</b></td>${cells}</tr>`;
   const ats = teams.filter((t) => t.atsGames)
     .sort((a, b) => rate(b.ats) - rate(a.ats) || b.coverAvg - a.coverAvg);
   const atsTable = `<div class="card"><h3>Against the spread</h3>
