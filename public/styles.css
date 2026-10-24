@@ -153,6 +153,11 @@ ul.legs li { display: flex; justify-content: space-between; align-items: flex-st
 .dot.push { background: var(--line); }
 table.log td, table.log th { padding-left: 4px; padding-right: 4px; white-space: nowrap; }
 table.log tr.upcoming td { color: var(--muted); }
+table.league td.rank { color: var(--muted); width: 22px; }
+table.league tr.team-row { cursor: pointer; }
+table.league tr.team-row:hover td { background: rgba(255, 255, 255, .03); }
+.statline.trends { gap: 12px 22px; }
+.statline.trends span.small { font-size: 11px; }
 
 /* Login */
 .login form { display: flex; flex-direction: column; gap: 12px; margin-top: 8px; }

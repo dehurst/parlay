@@ -1210,6 +1210,7 @@ async function renderAnalysis() {
 // ---- Research ----------------------------------------------------------------
 
 let researchTeam = storage.get('parlay.team');
+let researchMode = 'team'; // 'team' (one team's season) or 'league' (rankings)
 const wlt = (r) => `${r.w}-${r.l}${r.t ? `-${r.t}` : ''}`;
 const wlPct = (r) => (r.w + r.l ? ` (${Math.round((r.w / (r.w + r.l)) * 100)}%)` : '');
 // 1 -> "1st", 12 -> "12th", 23 -> "23rd"
@@ -1234,6 +1235,15 @@ async function renderResearch(quiet = false) {
     const first = week.games.find((g) => !g.started) ?? week.games[0];
     researchTeam = teams.find((t) => t.name === first?.away)?.name ?? teams[0].name;
   }
+  // Team | League switch, like My picks | Build a parlay.
+  const modeSwitch = `<div class="mode-switch" id="research-mode">
+      <button type="button" data-rmode="team" class="${researchMode === 'team' ? 'active' : ''}">Team</button>
+      <button type="button" data-rmode="league" class="${researchMode === 'league' ? 'active' : ''}">League</button>
+    </div>`;
+  if (researchMode === 'league') {
+    $('#research').innerHTML = modeSwitch + leagueHtml(teams);
+    return;
+  }
   const t = teams.find((x) => x.name === researchTeam);
   const next = t.log.find((e) => !e.final);
   const when = (iso) => new Date(iso).toLocaleString([], { weekday: 'short', month: 'numeric', day: 'numeric', hour: 'numeric', minute: '2-digit' });
@@ -1241,7 +1251,7 @@ async function renderResearch(quiet = false) {
   const mark = (r) => ({ W: '<span class="mark win">✓</span>', L: '<span class="mark loss">✗</span>', P: '<span class="mark push">P</span>' })[r] ?? '';
   const dots = t.last5.map((r) => `<span class="dot ${r === 'W' ? 'win' : r === 'L' ? 'loss' : 'push'}">${r}</span>`).join('');
 
-  const html = `
+  const html = `${modeSwitch}
     <label class="team-pick">
       <select id="research-team" aria-label="Team">${teams.map((x) => `<option value="${esc(x.name)}" ${x.name === t.name ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select>
     </label>
@@ -1300,6 +1310,56 @@ async function renderResearch(quiet = false) {
     <p class="small muted">Scores and lines come from ESPN (the closing line for finished games); games ESPN has no line for use the ${esc(data.book ?? 'sportsbook')} line saved here.
       ✓ = covered the spread, O/U = went over or under the total. A season is a small sample, and the line already prices in most of what these numbers show.</p>`;
   $('#research').innerHTML = html;
+}
+
+// League view: how favorites, underdogs, home teams, and overs are doing, then
+// every team ranked against the spread and on over/unders. Tap a team to
+// open its page.
+function leagueHtml(teams) {
+  const sum = (key) => teams.reduce((r, t) => ({ w: r.w + t[key].w, l: r.l + t[key].l, t: r.t + t[key].t }), { w: 0, l: 0, t: 0 });
+  const rate = (r) => (r.w + r.l ? r.w / (r.w + r.l) : null);
+  const pctTxt = (p) => (p == null ? '–' : `${Math.round(p * 100)}%`);
+  // Each game shows up once as a favorite and once as an underdog (and once
+  // home, once away). Each total shows up twice (both teams), so halve it.
+  const fav = sum('atsFav');
+  const dog = sum('atsDog');
+  const home = sum('atsHome');
+  const away = sum('atsAway');
+  const ou = sum('ou');
+  const overs = { w: ou.w / 2, l: ou.l / 2, t: ou.t / 2 };
+  const trend = (label, r, note) => `<div><b>${pctTxt(rate(r))}</b><span>${label}</span><span class="small">${note}</span></div>`;
+  const trends = `<div class="card"><h3>League trends</h3>
+    <p class="small muted">Every game with a line this season.</p>
+    <div class="statline trends">
+      ${trend('favorites cover', fav, wlt(fav))}
+      ${trend('underdogs cover', dog, wlt(dog))}
+      ${trend('home teams cover', home, wlt(home))}
+      ${trend('road teams cover', away, wlt(away))}
+      ${trend('overs hit', overs, `${overs.w}-${overs.l}${overs.t ? `-${overs.t}` : ''}`)}
+    </div></div>`;
+
+  const row = (t, i, cells) => `<tr class="team-row" data-team="${esc(t.name)}"><td class="rank">${i + 1}</td>
+    <td><b>${esc(t.short ?? t.name)}</b></td>${cells}</tr>`;
+  const ats = teams.filter((t) => t.atsGames)
+    .sort((a, b) => rate(b.ats) - rate(a.ats) || b.coverAvg - a.coverAvg);
+  const atsTable = `<div class="card"><h3>Against the spread</h3>
+    <p class="small muted">Best cover rate first. "+/−" is how many points a game they beat (or missed) the spread by, on average.</p>
+    ${ats.length ? `<table class="slip league"><thead><tr><th></th><th>Team</th><th class="num">ATS</th><th class="num">Cover</th><th class="num">+/−</th></tr></thead>
+      <tbody>${ats.map((t, i) => row(t, i, `<td class="num">${wlt(t.ats)}</td><td class="num">${pctTxt(rate(t.ats))}</td>
+        <td class="num ${netClass(t.coverAvg)}">${signedPts(t.coverAvg)}</td>`)).join('')}</tbody></table>`
+      : '<p class="small muted">No lines on file yet.</p>'}</div>`;
+
+  const ouTeams = teams.filter((t) => t.ou.w + t.ou.l + t.ou.t)
+    .sort((a, b) => rate(b.ou) - rate(a.ou) || (b.avgTotal - b.avgLineTotal) - (a.avgTotal - a.avgLineTotal));
+  const ouTable = `<div class="card"><h3>Over / under</h3>
+    <p class="small muted">Most overs first. "Pts vs line" is how far their games' scoring lands above or below the total, on average.</p>
+    ${ouTeams.length ? `<table class="slip league"><thead><tr><th></th><th>Team</th><th class="num">O-U</th><th class="num">Over</th><th class="num">Pts vs line</th></tr></thead>
+      <tbody>${ouTeams.map((t, i) => row(t, i, `<td class="num">${t.ou.w}-${t.ou.l}${t.ou.t ? `-${t.ou.t}` : ''}</td><td class="num">${pctTxt(rate(t.ou))}</td>
+        <td class="num">${signedPts(t.avgTotal - t.avgLineTotal)}</td>`)).join('')}</tbody></table>`
+      : '<p class="small muted">No totals on file yet.</p>'}</div>`;
+
+  return `${trends}${atsTable}${ouTable}
+    <p class="small muted">Tap a team to see its page. Lines are ESPN's closing lines. A few weeks is a small sample, and the lines adjust to these trends quickly.</p>`;
 }
 
 let placingId = null; // Bet Slip parlay whose payout box is open
@@ -1492,8 +1552,15 @@ $('#research').addEventListener('change', (e) => {
   window.scrollTo(0, 0);
 });
 $('#research').addEventListener('click', (e) => {
+  const mode = e.target.closest('[data-rmode]')?.dataset.rmode;
+  if (mode && mode !== researchMode) {
+    researchMode = mode;
+    renderResearch(true);
+    return;
+  }
   const go = e.target.closest('[data-team]');
   if (!go) return;
+  researchMode = 'team'; // a tapped team (league list or "See ...") opens its page
   researchTeam = go.dataset.team;
   storage.set('parlay.team', researchTeam);
   renderResearch(true);
