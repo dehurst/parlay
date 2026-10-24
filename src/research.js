@@ -8,6 +8,7 @@
 
 const ESPN = 'https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard';
 const ESPN_SUMMARY = 'https://site.api.espn.com/apis/site/v2/sports/football/nfl/summary';
+const ESPN_CORE = 'https://sports.core.api.espn.com/v2/sports/football/leagues/nfl';
 export const REGULAR_SEASON_WEEKS = 18;
 
 const num = (v) => (v === '' || v == null || !Number.isFinite(Number(v)) ? null : Number(v));
@@ -69,7 +70,7 @@ export function parseSeasonWeek(board, week) {
       week,
       date: ev.date,
       final: !!status.completed,
-      espnId: ev.id ?? null,
+      espnId: ev.id ?? null, // ESPN's game ID, to look up box scores and the closing line
       home: team(h),
       away: team(a),
       homeLine: homeLine(odds, h.team.abbreviation, a.team.abbreviation),
@@ -109,6 +110,46 @@ export async function fetchGameTeamStats(espnId) {
   const res = await fetch(`${ESPN_SUMMARY}?event=${encodeURIComponent(espnId)}`, { signal: AbortSignal.timeout(8000) });
   if (!res.ok) throw new Error(`ESPN box score returned ${res.status}`);
   return parseGameTeamStats(await res.json());
+}
+
+// The scoreboard drops a game's line once it's over, so keep the last one we
+// saw (or one looked up from the game page) when a week is re-fetched.
+export function mergeWeek(oldGames = [], newGames) {
+  const key = (g) => g.espnId ?? `${g.away.name}@${g.home.name}`;
+  const before = new Map(oldGames.map((g) => [key(g), g]));
+  return newGames.map((g) => {
+    const old = before.get(key(g));
+    if (!old) return g;
+    return {
+      ...g,
+      homeLine: g.homeLine ?? old.homeLine ?? null,
+      total: g.total ?? old.total ?? null,
+      ...(old.lineChecked ? { lineChecked: old.lineChecked } : {}),
+    };
+  });
+}
+
+// The closing spread and total for a finished game, from ESPN's game page
+// ("pickcenter"), or its odds feed if that's empty. Null if neither has one.
+export async function fetchGameLine(game) {
+  const pick = (list) => {
+    for (const o of list ?? []) {
+      const line = homeLine(o, game.home.abbr, game.away.abbr);
+      const total = num(o?.overUnder);
+      if (line != null || total != null) return { homeLine: line, total };
+    }
+    return null;
+  };
+  const get = async (url) => {
+    const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
+    if (!res.ok) throw new Error(`ESPN returned ${res.status}`);
+    return res.json();
+  };
+  const summary = await get(`${ESPN_SUMMARY}?event=${encodeURIComponent(game.espnId)}`);
+  const found = pick(summary.pickcenter) ?? pick(summary.odds);
+  if (found) return found;
+  const odds = await get(`${ESPN_CORE}/events/${encodeURIComponent(game.espnId)}/competitions/${encodeURIComponent(game.espnId)}/odds`);
+  return pick(odds.items);
 }
 
 const rec = () => ({ w: 0, l: 0, t: 0 });

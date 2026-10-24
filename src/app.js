@@ -11,8 +11,10 @@ import { tally, buildParlays, priceParlay, selectionLabel, MARKETS } from './par
 import { gradeLeg, gradeParlay, actualDecimal } from './grading.js';
 import { fetchEspnScores, fetchOddsApiScores, fetchEspnPlayerStats } from './results.js';
 import { computeStats } from './stats.js';
+import { createHash } from 'node:crypto';
+import { parseLogins, checkLogin, makeToken, readToken, cookieValue, sessionCookie, COOKIE } from './auth.js';
 import { analyzeWeek } from './analysis.js';
-import { seasonYear, fetchSeasonWeek, parseSeasonWeek, buildTeams, fetchGameTeamStats, REGULAR_SEASON_WEEKS } from './research.js';
+import { seasonYear, fetchSeasonWeek, parseSeasonWeek, mergeWeek, fetchGameLine, buildTeams, fetchGameTeamStats, REGULAR_SEASON_WEEKS } from './research.js';
 import { fetchTeamRoster, fetchTeamDepthChart, teamInjuries, dropStaleHistory, weekOf } from './injuries.js';
 import { canSpend, spend, limitFor, easternDate, easternWeekday, LINES_COST, SCORES_COST } from './credits.js';
 
@@ -25,6 +27,8 @@ const {
   SUNDAY_CREDIT_LIMIT = '30',
   PLAYERS = 'Daniel,Asher,Matt',
   GROUP_CODE = '',
+  LOGINS = '', // "matt:password,daniel:password,..." (set in Vercel, never in the code)
+  SESSION_SECRET = '',
   DATA_FILE = join(root, 'data', 'db.json'),
 } = process.env;
 
@@ -48,6 +52,13 @@ const bookName = BOOK_NAMES[BOOKMAKER] ?? BOOKMAKER;
 
 const players = PLAYERS.split(',').map((p) => p.trim()).filter(Boolean);
 
+// Logins: on once LOGINS is set. Sessions are signed with SESSION_SECRET, or
+// one derived from LOGINS (changing a password logs everyone out).
+const logins = parseLogins(LOGINS, players);
+const authOn = logins.size > 0;
+const sessionSecret = SESSION_SECRET || createHash('sha256').update(`parlay-session:${LOGINS}`).digest('hex');
+if (!authOn) console.log('No LOGINS set: the site is open to anyone with the link.');
+
 const describe = (err) => `${err.message}${err.cause?.code ? ` (${err.cause.code})` : ''}`;
 
 const SCORES_RECHECK = 10 * 60e3;
@@ -62,6 +73,33 @@ const json = express.json();
 app.use((req, res, next) => (req.body && typeof req.body === 'object' && !Buffer.isBuffer(req.body) ? next() : json(req, res, next)));
 // On Vercel, public/ is served by its CDN instead; this is for local runs.
 app.use(express.static(join(root, 'public')));
+
+// Log in with a username and password; sets a 60-day session cookie.
+const httpsReq = (req) => !!process.env.VERCEL || req.secure || req.get('x-forwarded-proto') === 'https';
+app.post('/api/login', async (req, res) => {
+  if (!authOn) return res.json({ me: null, auth: false });
+  const player = checkLogin(logins, req.body?.username, req.body?.password);
+  if (!player) {
+    await new Promise((r) => setTimeout(r, 700)); // slow down guessing
+    return res.status(401).json({ error: 'Wrong username or password.', login: true });
+  }
+  res.setHeader('Set-Cookie', sessionCookie(makeToken(player, sessionSecret), { secure: httpsReq(req) }));
+  res.json({ me: player, auth: true });
+});
+app.post('/api/logout', (req, res) => {
+  res.setHeader('Set-Cookie', sessionCookie(null, { secure: httpsReq(req) }));
+  res.json({ ok: true });
+});
+
+// Everything else needs a login (once LOGINS is set). The session decides who
+// you are, so nobody can pick or bet as someone else.
+app.use('/api', (req, res, next) => {
+  if (!authOn) return next();
+  const player = readToken(cookieValue(req.headers.cookie, COOKIE), sessionSecret);
+  if (!player || !players.includes(player)) return res.status(401).json({ error: 'Please log in.', login: true });
+  req.player = player;
+  next();
+});
 
 // Load the latest data for every API request.
 app.use('/api', async (req, res, next) => {
@@ -189,17 +227,28 @@ function noteRemaining(remaining) {
 // Player props, Thursday and Sunday at 11 AM Eastern (the first visit after),
 // for games that haven't started. ~2 credits a game. Paused if the month's
 // credits would drop under PROPS_RESERVE.
+//
+// In between, games that came back with no props (the book hadn't posted
+// them yet, common for night games, or the request failed) get another look
+// every few hours until kickoff. The Odds API charges only for markets it
+// returns, so a look that finds nothing costs nothing.
+const PROPS_RECHECK = 3 * 3600e3;
 async function refreshProps(win, schedule, now) {
-  const slot = lastSlot(now, PROPS_HOURS, PROPS_DAYS);
   const props = store.data.props[win.key];
-  if (!slot || slot < win.start) return; // no props time yet this week
-  if (props?.fetchedAt >= slot.getTime()) return;
   // Someone else's visit is already fetching (or it just failed): wait.
   if (props?.retryAt > Date.now()) return;
   const upcoming = schedule.games.filter((g) => !hasStarted(g, now));
   if (!upcoming.length) return;
+  const slot = lastSlot(now, PROPS_HOURS, PROPS_DAYS);
+  const scheduled = slot && slot >= win.start && !(props?.fetchedAt >= slot.getTime());
+  const has = (g) => props?.byGame?.[g.id]?.td?.length || props?.byGame?.[g.id]?.ptd?.length;
+  const missing = upcoming.filter((g) => !has(g));
+  const recheck = !scheduled && props?.fetchedAt && missing.length
+    && Date.now() - (props.checkedAt ?? props.fetchedAt) > PROPS_RECHECK;
+  if (!scheduled && !recheck) return;
+  const targets = scheduled ? upcoming : missing;
   const markets = Object.values(PROP_MARKETS);
-  const cost = upcoming.length * markets.length;
+  const cost = targets.length * markets.length;
   const left = store.data.apiRemaining?.value;
   if (left != null && left - cost < PROPS_RESERVE) {
     store.data.props[win.key] = { ...props, byGame: props?.byGame ?? {}, paused: true, retryAt: Date.now() + 3600e3 };
@@ -214,8 +263,8 @@ async function refreshProps(win, schedule, now) {
     let remaining = null;
     let ok = 0;
     // A few at a time to stay polite to the API.
-    for (let i = 0; i < upcoming.length; i += 4) {
-      const batch = await Promise.allSettled(upcoming.slice(i, i + 4).map(async (g) => {
+    for (let i = 0; i < targets.length; i += 4) {
+      const batch = await Promise.allSettled(targets.slice(i, i + 4).map(async (g) => {
         const id = ids[matchKey(g.away, g.home)];
         if (!id) return null;
         const res = await fetchEventProps(ODDS_API_KEY, BOOKMAKER, id, markets);
@@ -233,9 +282,10 @@ async function refreshProps(win, schedule, now) {
     }
     if (remaining != null) noteRemaining(remaining);
     // Nothing came back (API down?): try again in 30 minutes, not every visit.
+    // A recheck keeps the scheduled time as "props from" and notes when it looked.
     store.data.props[win.key] = ok
-      ? { byGame, fetchedAt: Date.now() }
-      : { byGame, fetchedAt: props?.fetchedAt, retryAt: Date.now() + 30 * 60e3 };
+      ? { byGame, fetchedAt: scheduled ? Date.now() : props.fetchedAt, checkedAt: Date.now() }
+      : { byGame, fetchedAt: props?.fetchedAt, checkedAt: props?.checkedAt, retryAt: Date.now() + 30 * 60e3 };
   } catch (err) {
     console.error(`${bookName} props failed: ${describe(err)}`);
     store.data.props[win.key] = { ...store.data.props[win.key], retryAt: Date.now() + 30 * 60e3 };
@@ -304,12 +354,15 @@ app.get('/api/week', async (req, res, next) => {
     const past = requestedWeek(req);
     const { win, games, schedule, lines, warning, limitHit } = await loadWeek({ refreshLines: !past && req.query.refresh === '1', key: past });
     const now = new Date();
-    const me = players.includes(req.query.me) ? req.query.me : null;
+    const me = req.player ?? (players.includes(req.query.me) ? req.query.me : null);
     const currentKey = weekWindow().key;
     const live = !past && ODDS_API_KEY;
     res.json({
       key: win.key,
       label: weekLabel(win),
+      me, // who's logged in (or the name you picked, without logins)
+      auth: authOn,
+      authMissing: !authOn && !!process.env.VERCEL, // hosted with no LOGINS set
       past: !!past,
       // Every week you can switch to, this one first.
       weeks: [{ key: currentKey, label: weekLabel(weekWindow()), current: true }, ...pastWeeks(currentKey)],
@@ -349,7 +402,8 @@ function pickable(key, gamesById, now = new Date()) {
 }
 
 function checkPlayer(req, res) {
-  const name = req.body?.name;
+  // Logged in: always you. Without logins: the name the page sends.
+  const name = req.player ?? req.body?.name;
   if (!players.includes(name)) {
     res.status(400).json({ error: 'Pick your name first' });
     return null;
@@ -525,6 +579,9 @@ app.get('/api/parlays', async (req, res, next) => {
     const settledIds = new Set([...settled, ...inPlay].map((p) => p.id));
     for (const opt of result.options) {
       opt.stakes = stakesFor(win, opt.id);
+      // A suggested parlay someone renamed keeps its new name.
+      const saved = store.data.stakes[win.key]?.[opt.id];
+      if (saved?.renamed) opt.name = saved.name;
       opt.placed = store.data.stakes[win.key]?.[opt.id]?.placed ?? null;
     }
     const custom = Object.values(store.data.stakes[win.key] ?? {})
@@ -634,6 +691,24 @@ app.post('/api/react', async (req, res, next) => {
   }
 });
 
+// Rename a saved parlay (a custom one, or a suggested one with money on it).
+app.post('/api/rename', async (req, res, next) => {
+  try {
+    const name = checkPlayer(req, res);
+    if (!name) return;
+    const title = String(req.body.title ?? '').replace(/\s+/g, ' ').trim();
+    if (!title || title.length > 40) return res.status(400).json({ error: 'Give it a name of 1 to 40 characters.' });
+    const saved = store.data.stakes[weekWindow().key]?.[String(req.body.id ?? '')];
+    if (!saved) return res.status(404).json({ error: 'Only parlays that are saved (custom, or with money on them) can be renamed.' });
+    saved.name = title;
+    saved.renamed = true;
+    await save();
+    res.json({ name: title });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // Put money on a parlay (or change/remove it with amount 0). The parlay is
 // saved as it is right now, so it stays on the bet slip even after kickoff or
 // if picks later change.
@@ -664,7 +739,8 @@ app.post('/api/stake', async (req, res, next) => {
       if (!option) return res.status(409).json({ error: 'That parlay changed. Refresh and try again.' });
       weekStakes[id] = {
         id,
-        name: option.name,
+        name: saved?.renamed ? saved.name : option.name,
+        ...(saved?.renamed ? { renamed: true } : {}),
         legs: option.legs.map(({ key, gameId, market, label, matchup, point, price, commence }) =>
           ({ key, gameId, market, side: key.split('|')[2], label, matchup, point, price, commence })),
         decimal: option.decimal,
@@ -799,7 +875,7 @@ app.get('/api/analysis', async (req, res, next) => {
     const { win, games, gamesById, result } = await currentParlays(past);
     const now = new Date();
     const withStarted = games.map((g) => ({ ...g, started: hasStarted(g, now) }));
-    const me = players.includes(req.query.me) ? req.query.me : null;
+    const me = req.player ?? (players.includes(req.query.me) ? req.query.me : null);
     // Your picks to rate: what you're editing (or selecting) if anything,
     // else what you submitted. Bets you'd submitted keep the line you got.
     const submittedPicks = (me && submitted(win)[me]) ?? [];
@@ -829,14 +905,15 @@ app.get('/api/analysis', async (req, res, next) => {
 // Research tab: every team's season from ESPN's scoreboard (free). Finished
 // weeks are kept for good; weeks with games still to play are re-checked
 // (every 15 minutes while games are on, else every 6 hours).
-async function loadResearch(now = new Date()) {
+async function loadResearch(team = null, now = new Date()) {
   const season = seasonYear(now);
   if (store.data.research?.season !== season) store.data.research = { season, weeks: {} };
   const r = store.data.research;
   const stale = [];
   for (let n = 1; n <= REGULAR_SEASON_WEEKS; n++) {
     const w = r.weeks[n];
-    if (w?.final) continue;
+    // Weeks saved before game IDs were kept get fetched once more.
+    if (w?.final && w.games.every((g) => g.espnId)) continue;
     const live = w?.games.some((g) => !g.final && new Date(g.date) <= now);
     if (!w || now - w.fetchedAt > (live ? 15 * 60e3 : 6 * 3600e3)) stale.push(n);
   }
@@ -845,7 +922,7 @@ async function loadResearch(now = new Date()) {
     let ok = 0;
     fetched.forEach((res, i) => {
       if (res.status === 'rejected') return console.error(`ESPN week ${stale[i]} failed: ${describe(res.reason)}`);
-      const games = parseSeasonWeek(res.value, stale[i]);
+      const games = mergeWeek(r.weeks[stale[i]]?.games, parseSeasonWeek(res.value, stale[i]));
       r.weeks[stale[i]] = { games, fetchedAt: Date.now(), final: games.length > 0 && games.every((g) => g.final) };
       ok++;
     });
@@ -854,6 +931,33 @@ async function loadResearch(now = new Date()) {
   const games = Object.values(r.weeks).flatMap((w) => w.games);
   await loadBoxScores(r, games);
   await loadInjuries(r, games, now);
+
+  // Finished games with no line: look up the closing line on ESPN's game
+  // page and keep it for good. The team you're viewing goes first; up to
+  // LINE_LOOKUPS a visit so the whole league fills in over a few visits.
+  const LINE_LOOKUPS = 24;
+  // Bump to look again at games already checked (e.g. after a parsing fix).
+  const LINE_LOOKUP_VERSION = 1;
+  const needs = games.filter((g) => g.final && g.espnId && g.homeLine == null && g.lineChecked !== LINE_LOOKUP_VERSION);
+  const mine = (g) => g.home.name === team || g.away.name === team;
+  const todo = [...needs.filter(mine), ...needs.filter((g) => !mine(g))].slice(0, LINE_LOOKUPS);
+  if (todo.length) {
+    for (let i = 0; i < todo.length; i += 6) {
+      await Promise.all(todo.slice(i, i + 6).map(async (g) => {
+        try {
+          const found = await fetchGameLine(g);
+          if (found) {
+            g.homeLine = found.homeLine;
+            g.total ??= found.total;
+          }
+          g.lineChecked = LINE_LOOKUP_VERSION; // looked, found or not: don't ask again
+        } catch (err) {
+          console.error(`ESPN line for game ${g.espnId} failed: ${describe(err)}`); // try again next visit
+        }
+      }));
+    }
+    await save();
+  }
   return games;
 }
 
@@ -914,7 +1018,7 @@ function savedLine(game) {
 
 app.get('/api/research', async (req, res, next) => {
   try {
-    const games = await loadResearch();
+    const games = await loadResearch(typeof req.query.team === 'string' ? req.query.team : null);
     if (!games.length) return res.status(503).json({ error: 'Couldn’t reach ESPN for team stats. Try again in a few minutes.' });
     const teams = buildTeams(games, savedLine, store.data.research.boxscores);
     const injuries = store.data.research.injuries?.teams ?? {};

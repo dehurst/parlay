@@ -24,6 +24,16 @@
   <div id="notice" class="notice" hidden></div>
   <div id="past-banner" class="past-banner" hidden></div>
 
+  <section id="login" class="card login" hidden>
+    <h2>Log in</h2>
+    <form id="login-form" autocomplete="on">
+      <label>Username <input name="username" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" required></label>
+      <label>Password <input name="password" type="password" autocomplete="current-password" required></label>
+      <p id="login-error" class="small warn-text" hidden></p>
+      <button type="submit" class="primary">Log in</button>
+    </form>
+  </section>
+
   <section id="join" class="card join" hidden>
     <h2>Who are you?</h2>
     <div id="player-list" class="chips"></div>

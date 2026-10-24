@@ -58,7 +58,10 @@ the plays most of you agree on and builds a few parlays out of them.
   spread (overall, as favorite/underdog, home/away), over/under, strength of
   schedule (opponents' win %, ranked), and a game log with each line and
   result. Lines come from ESPN's odds, or the saved FanDuel line when ESPN has
-  none. Finished weeks are cached; weeks in progress re-check every 15 minutes
+  none. A **Team | League** switch adds a league view: how favorites,
+  underdogs, home and road teams, and overs are doing, plus every team ranked
+  against the spread and on over/unders (tap one to open its page). Finished
+  weeks are cached; weeks in progress re-check every 15 minutes
   during games, else every 6 hours.
 - **Analysis**: each of your open picks with its win chance (FanDuel's odds on
   both sides with the house's cut removed) and the other way to bet the same
@@ -120,6 +123,8 @@ Settings (in `.env` or as environment variables):
 | `BOOKMAKER` | `fanduel` | Book to pull lines from (`draftkings`, `betmgm`, `williamhill_us`, ...) |
 | `DAILY_CREDIT_LIMIT` | `16` | Backstop: most credits line refreshes can spend per day (Eastern) |
 | `SUNDAY_CREDIT_LIMIT` | `30` | The same, on Sundays |
+| `LOGINS` | _(empty)_ | Turns on the login page: `matt:pass,daniel:pass,asher:pass` (usernames match players). Set it in Vercel, not in the repo |
+| `SESSION_SECRET` | _(from LOGINS)_ | Optional key that signs login sessions (60 days) |
 | `GROUP_CODE` | _(empty)_ | Optional shared code friends enter before they can use the site |
 | `SEASON_START` | Tuesday after Labor Day | Sets the "Week N" label (YYYY-MM-DD, a Tuesday) |
 | `PORT` | `3000` | |
@@ -141,7 +146,9 @@ no lines yet gets them on its first visit. **Sundays** add 2 manual refreshes
 
 **Props** update **Thursday and Sunday at 11 AM Eastern**, for games that
 haven't started. They pause if the month's credits left would drop under 75,
-so lines keep working to the end of the month.
+so lines keep working to the end of the month. Games that come back with no props
+(often night games, posted later) are checked again every 3 hours until
+kickoff; a check that finds nothing costs nothing.
 
 | | Lines | Props | Per week |
 | --- | --- | --- | --- |

@@ -37,7 +37,11 @@ async function api(path, opts = {}) {
     body: opts.body && JSON.stringify(opts.body),
   });
   const data = await res.json().catch(() => ({}));
-  if (res.status === 401) {
+  if (res.status === 401 && data.login && !path.startsWith('/api/login')) {
+    showLogin();
+    throw new Error('Please log in.');
+  }
+  if (res.status === 401 && !data.login) {
     $('#code-row').hidden = false;
     showJoin();
   }
@@ -60,10 +64,19 @@ async function load(refresh = false) {
   try {
     week = await api(`/api/week?${params}`);
   } catch (err) {
-    notice(err.message);
+    if ($('#login').hidden) notice(err.message); // the login screen speaks for itself
     return;
   }
-  notice(week.warning);
+  $('#week-nav').hidden = false;
+  notice(week.authMissing
+    ? 'Logins aren’t turned on yet: add LOGINS in Vercel’s settings (see the README). Until then anyone with the link can get in.'
+    : week.warning);
+  // Logged in: the server says who you are.
+  if (week.auth) {
+    me = week.me;
+    storage.set('parlay.name', me);
+  }
+  $('#login').hidden = true;
   renderWeekNav();
   // Lines status under the picks hint, with the refresh button right next to
   // the time it would update.
@@ -126,7 +139,10 @@ const isOpenPick = (key) => !gameOf(key)?.started;
 
 function renderWho() {
   // Who you are, as a small chip; tap it to switch.
-  $('#who').innerHTML = `<button class="me-chip" id="switch" type="button" title="Switch player">${esc(me)} <span class="muted">⇄</span></button>`;
+  // With logins it's a log out button; without, tap to switch player.
+  $('#who').innerHTML = week.auth
+    ? `<span class="me-chip static">${esc(me)}</span><button class="link small" id="logout" type="button">Log out</button>`
+    : `<button class="me-chip" id="switch" type="button" title="Switch player">${esc(me)} <span class="muted">⇄</span></button>`;
 }
 
 async function clearPicks() {
@@ -140,6 +156,19 @@ async function clearPicks() {
     notice(err.message);
   }
   render();
+}
+
+function showLogin() {
+  me = null;
+  $('#login').hidden = false;
+  $('#join').hidden = true;
+  $('#tabs').hidden = true;
+  $('#submit-bar').hidden = true;
+  $('#past-banner').hidden = true;
+  $('#week-nav').hidden = true;
+  $('#who').innerHTML = '';
+  document.querySelectorAll('.tab').forEach((t) => (t.hidden = true));
+  setTimeout(() => $('#login-form [name=username]')?.focus(), 0);
 }
 
 function showJoin() {
@@ -355,6 +384,10 @@ function renderGames() {
         ${!showAll && scorers.length > shown.length ? `<button type="button" class="link small show-all" data-all-td="${esc(g.id)}">Show all ${scorers.length} players</button>` : ''}
         ${orphans ? `<div class="td-grid">${orphans}</div>` : ''}
       </details>`;
+    }
+    // Props for this week loaded, but none for this game yet.
+    else if (!g.started && week.propsUpdated && !isPast()) {
+      propsHtml = '<div class="props props-none small muted">Player props: not posted yet. Checked again every few hours until kickoff.</div>';
     }
     const kick = new Date(g.commence).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' });
     const row = (team, side, totalSide) => `
@@ -855,6 +888,21 @@ const betLine = (total, payout, when = '') =>
 const whoLine = (stakes) =>
   `<div>${Object.entries(stakes).map(([who, amt]) => `${esc(who)} ${money(amt)}`).join(' · ')}</div>`;
 
+// A parlay's name, with a ✎ to rename it when it's saved (custom, or with
+// money on it). While renaming, a small form takes its place.
+let renamingId = null;
+function titleHtml(p, editable = true) {
+  if (editable && renamingId === p.id) {
+    return `<form class="rename-form" data-rename="${esc(p.id)}">
+      <input name="parlayName" maxlength="40" value="${esc(p.name)}" aria-label="Parlay name">
+      <button type="submit" class="primary">Save</button>
+      <button type="button" class="link small" data-rename-cancel>Cancel</button>
+    </form>`;
+  }
+  return `<h3>${esc(p.name)}${editable ? ` <button type="button" class="link rename" data-rename-start="${esc(p.id)}" title="Rename" aria-label="Rename">✎</button>` : ''}</h3>`;
+}
+const rerenderParlayTab = () => (tab === 'slip' ? renderSlip(true) : renderParlays(true));
+
 // Parlays with money on them whose games have started but aren't decided:
 // legs that finished get a check or X; no more stakes can go in.
 function inPlayHtml(data) {
@@ -863,7 +911,7 @@ function inPlayHtml(data) {
     return `<div class="card parlay ${p.custom ? 'custom' : ''}">
       <div class="head">
         <div>${p.placed ? '<span class="chip placed">✓ Placed</span>' : '<span class="chip pending">Not placed</span>'}
-          <h3>${esc(p.name)}</h3><div class="small muted">${p.legs.length}-leg ${p.custom ? 'custom ' : ''}parlay</div></div>
+          ${titleHtml(p, !isPast())}<div class="small muted">${p.legs.length}-leg ${p.custom ? 'custom ' : ''}parlay</div></div>
         <div class="odds-col"><div class="odds">${fmtOdds(shownOdds(p))}</div>${copyButton(p)}</div>
       </div>
       <ul class="graded-legs">${p.legs.map((l) => `<li>${gradeMark(l.grade) || '<span class="mark">·</span>'}<span><b>${esc(l.label)}</b> <span class="muted">${fmtOdds(l.price)}</span>${legSub(l)}</span></li>`).join('')}</ul>
@@ -881,7 +929,7 @@ function settledHtml(data) {
     const back = p.status === 'won' ? `paid ${money(p.returned)} (${money(p.returned - p.total)} profit)` : p.status === 'push' ? 'refunded' : 'paid $0.00';
     return `<div class="card parlay done ${p.status}">
       <div class="head">
-        <div>${statusChip(p.status, p.returned, p.total)}<h3>${esc(p.name)}</h3><div class="small muted">${p.legs.length}-leg parlay</div></div>
+        <div>${statusChip(p.status, p.returned, p.total)}${titleHtml(p, !isPast())}<div class="small muted">${p.legs.length}-leg parlay</div></div>
         <div class="odds-col"><div class="odds">${fmtOdds(shownOdds(p))}</div>${copyButton(p)}</div>
       </div>
       <ul class="graded-legs">${p.legs.map((l) => `<li>${gradeMark(l.grade)}<span><b>${esc(l.label)}</b> <span class="muted">${fmtOdds(l.price)}</span>${legSub(l)}</span></li>`).join('')}</ul>
@@ -899,7 +947,7 @@ function customHtml(data) {
     <div class="card parlay custom">
       <div class="head">
         <div>${likersOf(p).length >= majority() ? '<span class="badge">Group\'s pick</span>' : ''}
-          <h3>${esc(p.name)}</h3><div class="small muted">${p.legs.length}-leg custom parlay${p.basedOn ? ` · based on ${esc(p.basedOn)}` : ''}</div></div>
+          ${titleHtml(p)}<div class="small muted">${p.legs.length}-leg custom parlay${p.basedOn ? ` · based on ${esc(p.basedOn)}` : ''}</div></div>
         <div class="odds-col"><div class="odds">${fmtOdds(shownOdds(p))}</div>${copyButton(p)}</div>
       </div>
       <ul class="legs">${p.legs.map((l) => `<li><span><b>${esc(l.label)}</b> <span class="muted">${fmtOdds(l.price)}</span>${legSub(l)}${lineMoved(l, data.book)}</span>${p.started ? '' : dislikeHtml(l)}</li>`).join('')}</ul>
@@ -950,7 +998,7 @@ async function renderParlays(quiet = false) {
       <div class="head">
         <div>
           ${groupPick ? '<span class="badge">Group\'s pick</span>' : ''}
-          <h3>${esc(p.name)}</h3><div class="small muted">${esc(p.blurb)}</div>
+          ${titleHtml(p, Object.keys(p.stakes).length > 0)}<div class="small muted">${esc(p.blurb)}</div>
         </div>
         <div class="odds-col"><div class="odds">${fmtOdds(shownOdds(p))}</div>${copyButton(p)}</div>
       </div>
@@ -1177,7 +1225,7 @@ async function renderAnalysis() {
 // ---- Research ----------------------------------------------------------------
 
 let researchTeam = storage.get('parlay.team');
-let researchMode = 'team'; // 'team' (one team's full page) | 'compare' (two teams, head to head)
+let researchMode = 'team'; // 'team' (one team's full page) | 'compare' (two teams, head to head) | 'league' (rankings)
 let compareA = null;
 let compareB = null;
 const wlt = (r) => `${r.w}-${r.l}${r.t ? `-${r.t}` : ''}`;
@@ -1248,10 +1296,10 @@ function advTable(off, def, offLabel, defLabel) {
 
 // One team's season: record, against the spread, over/under, strength of
 // schedule, and every game; or (Compare mode) two teams' offense vs defense
-// side by side. Season-wide (not tied to the week up top).
+// side by side, or (League mode) every team ranked. Season-wide (not tied to the week up top).
 async function renderResearch(quiet = false) {
   if (!quiet || !$('#research').innerHTML) $('#research').innerHTML = '<p class="muted">Loading team stats…</p>';
-  const data = await api('/api/research').catch((err) => (notice(err.message), null));
+  const data = await api(`/api/research?team=${encodeURIComponent(researchTeam ?? '')}`).catch((err) => (notice(err.message), null));
   if (!data) return;
   const teams = data.teams;
   // Default: the team you looked at last, else one from this week's first game.
@@ -1265,7 +1313,13 @@ async function renderResearch(quiet = false) {
   const modeSwitch = `<div class="mode-switch" id="research-mode" role="tablist">
     <button type="button" data-mode="team" class="${researchMode === 'team' ? 'active' : ''}">Team</button>
     <button type="button" data-mode="compare" class="${researchMode === 'compare' ? 'active' : ''}">Compare</button>
+    <button type="button" data-mode="league" class="${researchMode === 'league' ? 'active' : ''}">League</button>
   </div>`;
+
+  if (researchMode === 'league') {
+    $('#research').innerHTML = modeSwitch + leagueHtml(teams);
+    return;
+  }
 
   if (researchMode === 'compare') {
     if (!teams.some((x) => x.name === compareA)) compareA = t.name;
@@ -1358,9 +1412,59 @@ async function renderResearch(quiet = false) {
         </tr>`).join('')}</tbody>
       </table>
     </div>
-    <p class="small muted">Scores and most lines come from ESPN; games without an ESPN line use the ${esc(data.book ?? 'sportsbook')} line saved here.
-      ✓ = covered the spread. A season is a small sample, and the line already prices in most of what these numbers show.</p>`;
+    <p class="small muted">Scores and lines come from ESPN (the closing line for finished games); games ESPN has no line for use the ${esc(data.book ?? 'sportsbook')} line saved here.
+      ✓ = covered the spread, O/U = went over or under the total. A season is a small sample, and the line already prices in most of what these numbers show.</p>`;
   $('#research').innerHTML = html;
+}
+
+// League view: how favorites, underdogs, home teams, and overs are doing, then
+// every team ranked against the spread and on over/unders. Tap a team to
+// open its page.
+function leagueHtml(teams) {
+  const sum = (key) => teams.reduce((r, t) => ({ w: r.w + t[key].w, l: r.l + t[key].l, t: r.t + t[key].t }), { w: 0, l: 0, t: 0 });
+  const rate = (r) => (r.w + r.l ? r.w / (r.w + r.l) : null);
+  const pctTxt = (p) => (p == null ? '–' : `${Math.round(p * 100)}%`);
+  // Each game shows up once as a favorite and once as an underdog (and once
+  // home, once away). Each total shows up twice (both teams), so halve it.
+  const fav = sum('atsFav');
+  const dog = sum('atsDog');
+  const home = sum('atsHome');
+  const away = sum('atsAway');
+  const ou = sum('ou');
+  const overs = { w: ou.w / 2, l: ou.l / 2, t: ou.t / 2 };
+  const trend = (label, r, note) => `<div><b>${pctTxt(rate(r))}</b><span>${label}</span><span class="small">${note}</span></div>`;
+  const trends = `<div class="card"><h3>League trends</h3>
+    <p class="small muted">Every game with a line this season.</p>
+    <div class="statline trends">
+      ${trend('favorites cover', fav, wlt(fav))}
+      ${trend('underdogs cover', dog, wlt(dog))}
+      ${trend('home teams cover', home, wlt(home))}
+      ${trend('road teams cover', away, wlt(away))}
+      ${trend('overs hit', overs, `${overs.w}-${overs.l}${overs.t ? `-${overs.t}` : ''}`)}
+    </div></div>`;
+
+  const row = (t, i, cells) => `<tr class="team-row" data-team="${esc(t.name)}"><td class="rank">${i + 1}</td>
+    <td><b>${esc(t.short ?? t.name)}</b></td>${cells}</tr>`;
+  const ats = teams.filter((t) => t.atsGames)
+    .sort((a, b) => rate(b.ats) - rate(a.ats) || b.coverAvg - a.coverAvg);
+  const atsTable = `<div class="card"><h3>Against the spread</h3>
+    <p class="small muted">Best cover rate first. "+/−" is how many points a game they beat (or missed) the spread by, on average.</p>
+    ${ats.length ? `<table class="slip league"><thead><tr><th></th><th>Team</th><th class="num">ATS</th><th class="num">Cover</th><th class="num">+/−</th></tr></thead>
+      <tbody>${ats.map((t, i) => row(t, i, `<td class="num">${wlt(t.ats)}</td><td class="num">${pctTxt(rate(t.ats))}</td>
+        <td class="num ${netClass(t.coverAvg)}">${signedPts(t.coverAvg)}</td>`)).join('')}</tbody></table>`
+      : '<p class="small muted">No lines on file yet.</p>'}</div>`;
+
+  const ouTeams = teams.filter((t) => t.ou.w + t.ou.l + t.ou.t)
+    .sort((a, b) => rate(b.ou) - rate(a.ou) || (b.avgTotal - b.avgLineTotal) - (a.avgTotal - a.avgLineTotal));
+  const ouTable = `<div class="card"><h3>Over / under</h3>
+    <p class="small muted">Most overs first. "Pts vs line" is how far their games' scoring lands above or below the total, on average.</p>
+    ${ouTeams.length ? `<table class="slip league"><thead><tr><th></th><th>Team</th><th class="num">O-U</th><th class="num">Over</th><th class="num">Pts vs line</th></tr></thead>
+      <tbody>${ouTeams.map((t, i) => row(t, i, `<td class="num">${t.ou.w}-${t.ou.l}${t.ou.t ? `-${t.ou.t}` : ''}</td><td class="num">${pctTxt(rate(t.ou))}</td>
+        <td class="num">${signedPts(t.avgTotal - t.avgLineTotal)}</td>`)).join('')}</tbody></table>`
+      : '<p class="small muted">No totals on file yet.</p>'}</div>`;
+
+  return `${trends}${atsTable}${ouTable}
+    <p class="small muted">Tap a team to see its page. Lines are ESPN's closing lines. A few weeks is a small sample, and the lines adjust to these trends quickly.</p>`;
 }
 
 let placingId = null; // Bet Slip parlay whose payout box is open
@@ -1401,7 +1505,7 @@ async function renderSlip(quiet = false) {
         <td class="num">${money(amt)}</td><td class="num">${money(amt * (p.decimal - 1))}</td><td class="num">${money(amt * p.decimal)}</td></tr>`).join('');
     return `<div class="card parlay ${p.placed ? 'placed' : ''} ${p.status !== 'pending' ? `done ${p.status}` : ''}">
       <div class="head">
-        <div><span class="muted small">Bet ${i + 1}</span> ${p.placed ? '<span class="chip placed">✓ Placed</span>' : ''} ${statusChip(p.status, p.returned, p.total)} ${p.paidOut ? '<span class="chip paid">💵 Paid out</span>' : ''}<h3>${esc(p.name)} · ${p.legs.length}-leg parlay</h3></div>
+        <div><span class="muted small">Bet ${i + 1}</span> ${p.placed ? '<span class="chip placed">✓ Placed</span>' : ''} ${statusChip(p.status, p.returned, p.total)} ${p.paidOut ? '<span class="chip paid">💵 Paid out</span>' : ''}${titleHtml(p, !past)}<div class="small muted">${p.legs.length}-leg parlay</div></div>
         <div class="odds-col"><div class="odds">${fmtOdds(shownOdds(p))}</div>${copyButton(p)}</div>
       </div>
       ${p.stillOption || p.placed || past ? '' : '<div class="lines">Picks changed since people bought in, so this parlay is no longer one of the current options. Double-check before placing it.</div>'}
@@ -1569,11 +1673,59 @@ $('#research').addEventListener('click', (e) => {
   }
   const go = e.target.closest('[data-team]');
   if (!go) return;
+  researchMode = 'team'; // a tapped team (league list or "See ...") opens its page
   researchTeam = go.dataset.team;
   storage.set('parlay.team', researchTeam);
   renderResearch(true);
   window.scrollTo(0, 0);
 });
+$('#login-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const form = e.target;
+  const btn = form.querySelector('button');
+  btn.disabled = true;
+  $('#login-error').hidden = true;
+  try {
+    await api('/api/login', { method: 'POST', body: { username: form.username.value, password: form.password.value } });
+    form.password.value = '';
+    $('#week-nav').hidden = false;
+    await load();
+  } catch (err) {
+    $('#login-error').textContent = err.message;
+    $('#login-error').hidden = false;
+  }
+  btn.disabled = false;
+});
+// Renaming works the same on the Parlays tab and the Bet Slip.
+document.addEventListener('click', async (e) => {
+  const start = e.target.closest('[data-rename-start]');
+  if (start) {
+    renamingId = start.dataset.renameStart;
+    await rerenderParlayTab();
+    const input = document.querySelector('.rename-form input');
+    input?.focus();
+    input?.select();
+  }
+  if (e.target.closest('[data-rename-cancel]')) {
+    renamingId = null;
+    rerenderParlayTab();
+  }
+});
+// Capture phase, so the tabs' own form handlers (stakes, payouts) never see it.
+document.addEventListener('submit', async (e) => {
+  const form = e.target.closest?.('.rename-form');
+  if (!form) return;
+  e.preventDefault();
+  e.stopPropagation();
+  try {
+    await api('/api/rename', { method: 'POST', body: { name: me, id: form.dataset.rename, title: form.elements.parlayName.value } });
+    renamingId = null;
+    notice(null);
+  } catch (err) {
+    notice(err.message);
+  }
+  rerenderParlayTab();
+}, true);
 $('#tabs').addEventListener('click', (e) => {
   const btn = e.target.closest('button[data-tab]');
   if (!btn) return;
@@ -1693,6 +1845,13 @@ $('#slip').addEventListener('click', async (e) => {
   if (btn) setStake(btn.dataset.slipOut, 0, () => renderSlip(true));
 });
 $('#who').addEventListener('click', (e) => {
+  if (e.target.closest('#logout')) {
+    api('/api/logout', { method: 'POST' }).catch(() => {});
+    storage.del('parlay.name');
+    notice(null);
+    showLogin();
+    return;
+  }
   if (e.target.closest('#switch')) {
     me = null;
     storage.del('parlay.name');
