@@ -321,6 +321,7 @@ details.week summary .num { margin-left: auto; font-weight: 700; }
   vertical-align: -5px; margin-right: 6px;
 }
 .team-logo.small { width: 16px; height: 16px; vertical-align: -3px; margin-right: 4px; }
+.team-logo.lg { width: 32px; height: 32px; vertical-align: -8px; margin-right: 6px; }
 .game-grid .team .team-logo { margin-right: 0; }
 table.slip td .team-logo { margin-bottom: -1px; }
 .rec { font-weight: 400; color: var(--muted); font-size: 14px; }

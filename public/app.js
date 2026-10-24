@@ -1351,7 +1351,7 @@ async function renderResearch(quiet = false) {
     ${modeSwitch}
     <label class="team-pick">${teamLogo(t.name)}${teamPick('research-team', t.name)}</label>
     ${next ? `<div class="card next-game">
-      <div><span class="muted small">Next game</span><br><b>${next.home ? 'vs' : '@'} ${teamLogo(next.oppName, 'small')}${esc(next.oppName)}</b>
+      <div><span class="muted small">Next game</span><br><b>${next.home ? 'vs' : '@'} ${teamLogo(next.oppName, 'lg')}${esc(next.oppName)}</b>
         <div class="small muted">Week ${next.week} · ${esc(when(next.date))}</div>
         ${next.line != null ? `<div class="small">Spread ${esc(lineText(next.line))}${next.total != null ? ` · Total ${next.total}` : ''}</div>` : ''}</div>
       <button type="button" class="link small" data-team="${esc(next.oppName)}">See ${esc(next.opp)} →</button>
