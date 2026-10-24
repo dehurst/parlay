@@ -188,17 +188,28 @@ function noteRemaining(remaining) {
 // Player props, Thursday and Sunday at 11 AM Eastern (the first visit after),
 // for games that haven't started. ~2 credits a game. Paused if the month's
 // credits would drop under PROPS_RESERVE.
+//
+// In between, games that came back with no props (the book hadn't posted
+// them yet, common for night games, or the request failed) get another look
+// every few hours until kickoff. The Odds API charges only for markets it
+// returns, so a look that finds nothing costs nothing.
+const PROPS_RECHECK = 3 * 3600e3;
 async function refreshProps(win, schedule, now) {
-  const slot = lastSlot(now, PROPS_HOURS, PROPS_DAYS);
   const props = store.data.props[win.key];
-  if (!slot || slot < win.start) return; // no props time yet this week
-  if (props?.fetchedAt >= slot.getTime()) return;
   // Someone else's visit is already fetching (or it just failed): wait.
   if (props?.retryAt > Date.now()) return;
   const upcoming = schedule.games.filter((g) => !hasStarted(g, now));
   if (!upcoming.length) return;
+  const slot = lastSlot(now, PROPS_HOURS, PROPS_DAYS);
+  const scheduled = slot && slot >= win.start && !(props?.fetchedAt >= slot.getTime());
+  const has = (g) => props?.byGame?.[g.id]?.td?.length || props?.byGame?.[g.id]?.ptd?.length;
+  const missing = upcoming.filter((g) => !has(g));
+  const recheck = !scheduled && props?.fetchedAt && missing.length
+    && Date.now() - (props.checkedAt ?? props.fetchedAt) > PROPS_RECHECK;
+  if (!scheduled && !recheck) return;
+  const targets = scheduled ? upcoming : missing;
   const markets = Object.values(PROP_MARKETS);
-  const cost = upcoming.length * markets.length;
+  const cost = targets.length * markets.length;
   const left = store.data.apiRemaining?.value;
   if (left != null && left - cost < PROPS_RESERVE) {
     store.data.props[win.key] = { ...props, byGame: props?.byGame ?? {}, paused: true, retryAt: Date.now() + 3600e3 };
@@ -213,8 +224,8 @@ async function refreshProps(win, schedule, now) {
     let remaining = null;
     let ok = 0;
     // A few at a time to stay polite to the API.
-    for (let i = 0; i < upcoming.length; i += 4) {
-      const batch = await Promise.allSettled(upcoming.slice(i, i + 4).map(async (g) => {
+    for (let i = 0; i < targets.length; i += 4) {
+      const batch = await Promise.allSettled(targets.slice(i, i + 4).map(async (g) => {
         const id = ids[matchKey(g.away, g.home)];
         if (!id) return null;
         const res = await fetchEventProps(ODDS_API_KEY, BOOKMAKER, id, markets);
@@ -232,9 +243,10 @@ async function refreshProps(win, schedule, now) {
     }
     if (remaining != null) noteRemaining(remaining);
     // Nothing came back (API down?): try again in 30 minutes, not every visit.
+    // A recheck keeps the scheduled time as "props from" and notes when it looked.
     store.data.props[win.key] = ok
-      ? { byGame, fetchedAt: Date.now() }
-      : { byGame, fetchedAt: props?.fetchedAt, retryAt: Date.now() + 30 * 60e3 };
+      ? { byGame, fetchedAt: scheduled ? Date.now() : props.fetchedAt, checkedAt: Date.now() }
+      : { byGame, fetchedAt: props?.fetchedAt, checkedAt: props?.checkedAt, retryAt: Date.now() + 30 * 60e3 };
   } catch (err) {
     console.error(`${bookName} props failed: ${describe(err)}`);
     store.data.props[win.key] = { ...store.data.props[win.key], retryAt: Date.now() + 30 * 60e3 };

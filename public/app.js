@@ -356,6 +356,10 @@ function renderGames() {
         ${orphans ? `<div class="td-grid">${orphans}</div>` : ''}
       </details>`;
     }
+    // Props for this week loaded, but none for this game yet.
+    else if (!g.started && week.propsUpdated && !isPast()) {
+      propsHtml = '<div class="props props-none small muted">Player props: not posted yet. Checked again every few hours until kickoff.</div>';
+    }
     const kick = new Date(g.commence).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' });
     const row = (team, side, totalSide) => `
       <div class="team" title="${esc(team)}">${esc(side === 'home' ? g.homeShort : g.awayShort)}</div>

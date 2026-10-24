@@ -141,7 +141,9 @@ no lines yet gets them on its first visit. **Sundays** add 2 manual refreshes
 
 **Props** update **Thursday and Sunday at 11 AM Eastern**, for games that
 haven't started. They pause if the month's credits left would drop under 75,
-so lines keep working to the end of the month.
+so lines keep working to the end of the month. Games that come back with no props
+(often night games, posted later) are checked again every 3 hours until
+kickoff; a check that finds nothing costs nothing.
 
 | | Lines | Props | Per week |
 | --- | --- | --- | --- |
