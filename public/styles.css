@@ -132,9 +132,17 @@ ul.legs li { display: flex; justify-content: space-between; align-items: flex-st
 
 /* Research tab */
 .team-pick { display: block; margin-bottom: 12px; }
+.team-pick { position: relative; }
+/* Safari ignores padding on native dropdowns, so draw our own (with an arrow). */
 .team-pick select {
-  width: 100%; padding: 10px 12px; border-radius: var(--radius); border: 1px solid var(--line);
-  background: var(--card); color: var(--text); font-weight: 600;
+  -webkit-appearance: none; appearance: none;
+  width: 100%; min-height: 54px; padding: 14px 44px 14px 16px; border-radius: var(--radius);
+  border: 1px solid var(--line); background: var(--card); color: var(--text);
+  font-size: 17px; font-weight: 600; cursor: pointer;
+}
+.team-pick::after {
+  content: '▾'; position: absolute; right: 16px; top: 50%; transform: translateY(-50%);
+  color: var(--muted); pointer-events: none; font-size: 16px;
 }
 .next-game { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
 .next-game .link { color: var(--text); white-space: nowrap; }
