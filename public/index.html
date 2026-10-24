@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <title>Parlay Builder</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏈</text></svg>">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <h1>Parlay Builder</h1>
+      <div id="who" class="who"></div>
+    </div>
+    <span class="week-nav" id="week-nav">
+      <button id="week-prev" class="week-arrow" type="button" aria-label="Previous week">‹</button>
+      <select id="week-select" aria-label="Week"></select>
+      <button id="week-next" class="week-arrow" type="button" aria-label="Next week">›</button>
+      <button id="back-to-now" class="back-now" type="button" hidden></button>
+    </span>
+  </header>
+
+  <div id="notice" class="notice" hidden></div>
+  <div id="past-banner" class="past-banner" hidden></div>
+
+  <section id="join" class="card join" hidden>
+    <h2>Who are you?</h2>
+    <div id="player-list" class="chips"></div>
+    <div id="code-row" class="row" hidden>
+      <input id="group-code" placeholder="Group code" autocomplete="off">
+      <button id="code-save" type="button">Save code</button>
+    </div>
+  </section>
+
+  <nav id="tabs" class="tabs" hidden>
+    <button data-tab="picks" class="active">Picks</button>
+    <button data-tab="board">Board</button>
+    <button data-tab="parlays">Parlays</button>
+    <button data-tab="slip">Bet Slip</button>
+    <button data-tab="stats">Stats</button>
+    <button data-tab="analysis">Analysis</button>
+    <button data-tab="research">Research</button>
+  </nav>
+
+  <main>
+    <section id="tab-picks" class="tab">
+      <div id="picks-mode" class="mode-switch" role="tablist">
+        <button type="button" data-mode="picks" class="active">My picks</button>
+        <button type="button" data-mode="calc">Build a parlay</button>
+      </div>
+      <p id="picks-hint" class="muted small"></p>
+      <p id="schedule-meta" class="muted small meta"></p>
+      <div id="games"></div>
+    </section>
+
+    <section id="tab-board" class="tab" hidden>
+      <div id="board"></div>
+    </section>
+
+    <section id="tab-parlays" class="tab" hidden>
+      <p id="parlays-hint" class="muted small">👍 or 👎 each parlay (tap again to clear it), and 👎 any leg you don't trust. Put money on the ones you're in on (the person placing bets sees it all on the Bet Slip), or Copy &amp; edit one to make your own version.</p>
+      <div id="parlays"></div>
+    </section>
+
+    <section id="tab-slip" class="tab" hidden>
+      <div id="slip"></div>
+    </section>
+
+    <section id="tab-analysis" class="tab" hidden>
+      <div id="analysis"></div>
+    </section>
+
+    <section id="tab-research" class="tab" hidden>
+      <div id="research"></div>
+    </section>
+
+    <section id="tab-stats" class="tab" hidden>
+      <div id="stats"></div>
+    </section>
+  </main>
+
+  <div id="submit-bar" class="submit-bar" hidden></div>
+
+
+  <script src="app.js" type="module"></script>
+</body>
+</html>

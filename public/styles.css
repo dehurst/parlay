@@ -1,0 +1,382 @@
+:root {
+  --bg: #0f1419;
+  --bar: #17271f; /* bottom bar: a faint green tint so it stands out from the cards */
+  --bar-line: rgba(47, 191, 113, .45);
+  --card: #1a2129;
+  --line: #2a333d;
+  --text: #e8edf2;
+  --muted: #8b97a3;
+  --accent: #2fbf71;
+  --accent-ink: #06240f;
+  --warn: #e0a526;
+  --bad: #e5484d;
+  --radius: 10px;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+/* Classes like .row and .tabs set display, which would override [hidden]. */
+[hidden] { display: none !important; }
+
+body {
+  margin: 0 auto;
+  max-width: 860px;
+  padding: 0 16px 40px;
+  background: var(--bg);
+  color: var(--text);
+  font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+h1 { font-size: 22px; margin: 0; }
+h2 { font-size: 18px; margin: 0 0 6px; }
+h3 { font-size: 16px; margin: 0; }
+.muted { color: var(--muted); }
+.small { font-size: 13px; }
+
+/* Header: title and your name chip on one row, the week switcher below. */
+header { padding: 16px 0 8px; }
+.brand { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.me-chip { padding: 5px 12px; border-radius: 999px; font-size: 14px; font-weight: 600; }
+.week-nav { margin: 6px 0 0 -6px; }
+.back-now {
+  margin-left: 8px; padding: 4px 12px; border-radius: 999px; font-size: 13px; font-weight: 600;
+  background: #18233a; border-color: #3d5a99; color: var(--text); white-space: nowrap;
+}
+
+/* "FanDuel lines from Tue 7:09 AM  ↻ Refresh" under the picks hint. */
+.meta { display: flex; flex-direction: column; gap: 4px; }
+.lines-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.refresh { padding: 3px 10px; font-size: 12px; border-radius: 999px; }
+.meta-details { opacity: .8; }
+
+/* Week switcher in the header: ‹ Week 7 › */
+.week-nav { display: inline-flex; align-items: center; gap: 2px; }
+.week-arrow {
+  width: 30px; height: 30px; padding: 0; border-radius: 999px;
+  font-size: 20px; line-height: 1; color: var(--muted); background: none;
+}
+.week-arrow:disabled { opacity: .3; cursor: default; }
+.week-arrow:disabled:hover { border-color: var(--line); }
+.week-nav select {
+  appearance: none; -webkit-appearance: none;
+  background: none; border: none; color: var(--text); font-weight: 600;
+  padding: 4px 4px; text-align: center; cursor: pointer;
+}
+.week-nav select:disabled { cursor: default; opacity: 1; }
+.week-nav select option { background: var(--card); color: var(--text); }
+
+/* Shown while looking at a past week. */
+/* Analysis tab */
+.card > p.small:first-child { margin-top: 0; }
+.an-row { padding: 10px 0; border-bottom: 1px solid var(--line); }
+.an-row:first-child { padding-top: 0; }
+.an-row:last-child { border-bottom: none; padding-bottom: 0; }
+.an-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.an-chance { text-align: right; white-space: nowrap; }
+.an-chance b { display: block; font-size: 20px; line-height: 1.1; }
+.an-chance span { font-size: 12px; color: var(--muted); }
+.bar.chance { margin: 6px 0 4px; }
+.alt { margin-top: 6px; padding: 6px 10px; border-radius: 8px; background: var(--bg); }
+.chip.tag { font-size: 11px; padding: 1px 7px; background: var(--line); color: var(--text); }
+.an-legs { list-style: none; padding: 0; margin: 8px 0 0; }
+.an-legs li { display: flex; justify-content: space-between; gap: 8px; padding: 3px 0; font-size: 14px; }
+/* Likes on parlays, dislikes on legs: 👍 2 (D)(M) */
+.react-row { display: flex; align-items: center; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+.react { padding: 3px 10px; border-radius: 999px; font-size: 13px; line-height: 1.4; background: var(--bg); }
+.react.on { border-color: var(--accent); background: rgba(47, 191, 113, .15); }
+.react.down.on { border-color: var(--bad); background: rgba(229, 72, 77, .15); }
+.react-pair { display: inline-flex; align-items: center; gap: 6px; }
+.react-pair .faces + .react { margin-left: 4px; }
+.react.dislike { padding: 1px 6px; font-size: 12px; opacity: .55; }
+.react.dislike.on { opacity: 1; border-color: var(--bad); background: rgba(229, 72, 77, .15); }
+.react:disabled { cursor: default; }
+.edit-copy { margin-left: auto; color: var(--text); }
+.faces { display: inline-flex; }
+.face {
+  width: 20px; height: 20px; border-radius: 50%; margin-left: -4px; border: 2px solid var(--card);
+  background: var(--line); color: var(--text); font-size: 10px; font-weight: 700;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.faces .face:first-child { margin-left: 2px; }
+ul.legs { list-style: none; padding: 0; }
+ul.legs li { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; padding: 4px 0; }
+.leg-sub { margin-top: 1px; }
+.leg-react { display: inline-flex; align-items: center; flex: none; }
+
+/* Build a parlay: each leg, then small swap / drop actions under it */
+.builder { border-color: var(--bar-line); }
+.b-leg { padding: 10px 0 8px; border-top: 1px solid var(--line); margin-top: 10px; }
+.b-leg.disliked .b-leg-head > span > b { color: var(--bad); }
+.b-leg-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.dislike-note { display: inline-flex; align-items: center; margin-left: 6px; }
+.b-act {
+  display: block; width: 100%; text-align: left; margin-top: 4px; padding: 4px 0 4px 12px;
+  background: none; border: none; border-radius: 0; font-size: 14px; color: var(--text);
+}
+.b-act.drop { color: var(--bad); }
+.b-act:hover .b-result, .b-act:active .b-result { text-decoration: underline; }
+.b-result { float: right; color: var(--text); font-weight: 600; }
+
+/* Player props under each game */
+.props { margin-top: 12px; border-top: 1px solid var(--line); padding-top: 10px; }
+.props summary { cursor: pointer; font-size: 14px; font-weight: 600; color: var(--muted); list-style: none; }
+.props summary::-webkit-details-marker { display: none; }
+.props summary::before { content: '▸ '; }
+.props[open] summary::before { content: '▾ '; }
+.props-head { text-align: left; margin: 10px 0 4px; }
+.ptd-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; align-items: center; }
+.prop-name { font-weight: 600; font-size: 14px; }
+.td-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 6px; }
+.td-grid .pick .line { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.show-all { margin-top: 8px; }
+
+/* Research tab */
+.team-pick { display: block; margin-bottom: 12px; }
+.team-pick select {
+  width: 100%; padding: 10px 12px; border-radius: var(--radius); border: 1px solid var(--line);
+  background: var(--card); color: var(--text); font-weight: 600;
+}
+.compare-pick { display: flex; align-items: center; gap: 10px; }
+.compare-pick select { flex: 1; }
+.next-game { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.next-game .link { color: var(--text); white-space: nowrap; }
+.last5 { margin: 8px 0 4px; display: flex; align-items: center; gap: 4px; }
+.dot { display: inline-flex; width: 20px; height: 20px; border-radius: 50%; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; color: #fff; }
+.dot.win { background: var(--accent); color: var(--accent-ink); }
+.dot.loss { background: var(--bad); }
+.dot.push { background: var(--line); }
+table.log td, table.log th { padding-left: 4px; padding-right: 4px; white-space: nowrap; }
+table.log tr.upcoming td { color: var(--muted); }
+
+.past-banner {
+  display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap;
+  background: #18233a; border: 1px solid #3d5a99; border-radius: var(--radius);
+  padding: 10px 12px; margin-bottom: 12px; font-size: 14px;
+}
+.past-banner .link { color: var(--text); white-space: nowrap; }
+.who { display: flex; align-items: center; }
+
+button, input {
+  font: inherit; color: inherit; border-radius: 8px;
+  border: 1px solid var(--line); background: var(--card); padding: 8px 12px;
+}
+button { cursor: pointer; }
+button:hover { border-color: var(--muted); }
+button[type=submit], .primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
+button.link { background: none; border: none; color: var(--muted); text-decoration: underline; padding: 0; }
+input { min-width: 0; flex: 1; }
+/* iPhones zoom in when you tap a text box under 16px, so keep them at 16. */
+input, select, textarea { font-size: 16px; }
+/* No double-tap zoom. */
+html { touch-action: manipulation; -webkit-text-size-adjust: 100%; }
+
+.row { display: flex; gap: 8px; margin-top: 10px; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0; }
+
+.card {
+  background: var(--card); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 14px; margin-bottom: 12px;
+}
+
+.notice { background: #3a2e0d; border: 1px solid var(--warn); border-radius: var(--radius); padding: 10px 12px; margin-bottom: 12px; }
+
+.tabs { display: flex; gap: 6px; margin-bottom: 14px; border-bottom: 1px solid var(--line); overflow-x: auto; scrollbar-width: none; }
+.tabs button { white-space: nowrap; flex: none; }
+.tabs button { border: none; background: none; border-bottom: 2px solid transparent; border-radius: 0; color: var(--muted); padding: 10px 12px; }
+.tabs button.active { color: var(--text); border-bottom-color: var(--accent); }
+
+.game-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-bottom: 10px; }
+.game-grid {
+  display: grid; grid-template-columns: 1fr repeat(3, minmax(0, 1fr));
+  gap: 6px; align-items: center;
+}
+.game-grid .team { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.game-grid .colhead { font-size: 12px; color: var(--muted); text-align: center; }
+
+.pick {
+  position: relative; display: flex; flex-direction: column; align-items: center;
+  padding: 6px 4px; font-size: 13px; line-height: 1.2;
+}
+.pick .line { font-weight: 600; }
+.pick .price { color: var(--muted); font-size: 12px; }
+.pick.empty .line { color: var(--muted); font-weight: 400; }
+.pick.on { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.pick.on .price { color: var(--accent-ink); }
+.pick:disabled { opacity: .55; cursor: not-allowed; }
+.locked { font-size: 12px; color: var(--warn); }
+
+.board-row { display: flex; justify-content: space-between; gap: 10px; padding: 8px 0; border-top: 1px solid var(--line); }
+.board-row:first-of-type { border-top: none; }
+.bar { height: 6px; background: var(--line); border-radius: 3px; margin-top: 4px; overflow: hidden; }
+.bar > span { display: block; height: 100%; background: var(--accent); }
+
+.parlay .head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+.parlay .odds { font-size: 22px; font-weight: 700; color: var(--accent); }
+.parlay ul { margin: 10px 0; padding-left: 18px; }
+.parlay li { margin: 3px 0; }
+.stats { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 13px; color: var(--muted); }
+.stats b { color: var(--text); }
+.ev-bad { color: var(--bad); }
+
+#picks-hint { margin-bottom: 4px; }
+.meta { margin-top: 0; font-size: 12px; }
+
+@media (max-width: 520px) {
+  .game-grid { grid-template-columns: 1fr repeat(3, minmax(58px, 1fr)); }
+  .pick { font-size: 12px; }
+}
+
+.lines { font-size: 12px; color: var(--warn); }
+.chips button { min-width: 96px; padding: 12px 16px; font-weight: 600; }
+.is-locked .pick:disabled { opacity: 1; cursor: default; }
+.is-locked .pick:not(.on) { opacity: .45; }
+button:disabled { cursor: not-allowed; }
+.primary:disabled { opacity: .5; }
+
+/* Sticky bar at the bottom of the picks tab. */
+body { padding-bottom: 90px; }
+.submit-bar {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 10;
+  display: flex; justify-content: space-between; align-items: center; gap: 12px;
+  max-width: 860px; margin: 0 auto; padding: 12px 16px;
+  background: var(--bar); border-top: 1px solid var(--bar-line);
+  box-shadow: 0 -6px 20px rgba(0, 0, 0, .35);
+}
+.submit-bar .actions { display: flex; align-items: center; gap: 8px; }
+.submit-bar button { white-space: nowrap; }
+.submit-bar button:not(.primary) { background: var(--bg); }
+.submit-bar > span:first-child { min-width: 0; }
+.submit-bar #clear-picks { display: block; margin-top: 2px; color: var(--bad); background: none; }
+.stake-form { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
+.stake-form label { display: flex; align-items: center; gap: 6px; font-size: 14px; }
+.stake-form input { width: 90px; flex: none; }
+.backers { margin-top: 8px; }
+.danger, button.link.danger { color: var(--bad); }
+table.slip { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 14px; }
+table.slip th, table.slip td { text-align: left; padding: 6px 4px; border-top: 1px solid var(--line); }
+table.slip thead th { color: var(--muted); font-weight: 500; font-size: 12px; border-top: none; }
+table.slip .num { text-align: right; font-variant-numeric: tabular-nums; }
+table.slip tfoot th { font-weight: 700; }
+@media (max-width: 420px) { .tabs button { padding: 10px 8px; } }
+.parlay.group-pick { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+.badge {
+  display: inline-block; margin-bottom: 6px; padding: 2px 8px; border-radius: 999px;
+  background: var(--accent); color: var(--accent-ink); font-size: 11px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: .04em;
+}
+
+.mark { display: inline-block; width: 18px; margin-right: 4px; font-weight: 700; text-align: center; }
+.mark.win { color: var(--accent); }
+.mark.loss { color: var(--bad); }
+.mark.push { color: var(--muted); }
+.chip { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 12px; font-weight: 600; vertical-align: middle; }
+.chip.won { background: var(--accent); color: var(--accent-ink); }
+.chip.lost { background: var(--bad); color: #fff; }
+.chip.push, .chip.pending { background: var(--line); color: var(--text); }
+.pos { color: var(--accent); }
+.neg { color: var(--bad); }
+.statline { display: flex; flex-wrap: wrap; gap: 10px 28px; margin-top: 10px; }
+.statline div { display: flex; flex-direction: column; }
+.statline b { font-size: 22px; }
+.statline span { font-size: 12px; color: var(--muted); }
+h3.section { margin: 22px 0 10px; }
+h4 { margin: 14px 0 6px; font-size: 14px; color: var(--muted); }
+details.week summary { cursor: pointer; display: flex; gap: 10px; align-items: baseline; }
+details.week summary .num { margin-left: auto; font-weight: 700; }
+.hist-parlay { padding: 8px 0; border-top: 1px solid var(--line); }
+.hist-parlay:first-of-type { border-top: none; }
+.hist-parlay ul, .hist-picks ul { margin: 6px 0; padding-left: 0; list-style: none; font-size: 14px; }
+.hist-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 4px 16px; }
+.team-line { display: block; }
+.rec { font-weight: 400; color: var(--muted); font-size: 14px; }
+.kick { white-space: nowrap; font-size: 12px; color: var(--muted); }
+.kick.locked { color: var(--warn); }
+@media (max-width: 420px) {
+  h1 { font-size: 19px; }
+  .week-nav select { font-size: 16px; padding: 4px 2px; }
+  /* Six tabs fit across a phone. */
+  .tabs { gap: 0; justify-content: space-between; }
+  .tabs button { padding: 10px 3px; font-size: 13px; }
+  .week-arrow { width: 28px; height: 28px; }
+}
+
+/* On wider screens the bottom bar floats as a card lined up with the ones
+   above it (same width as the page content, rounded, inset from the bottom). */
+@media (min-width: 700px) {
+  body { padding-bottom: 110px; }
+  .submit-bar {
+    left: 16px; right: 16px; bottom: 16px;
+    max-width: 828px; /* page max-width 860 minus the 16px side padding */
+    border: 1px solid var(--bar-line);
+    border-radius: var(--radius);
+    padding: 12px 14px; /* same side padding as the cards */
+  }
+}
+
+/* My picks / Build a parlay switch */
+.mode-switch { display: inline-flex; padding: 3px; gap: 3px; margin-bottom: 8px; background: var(--card); border: 1px solid var(--line); border-radius: 999px; }
+.mode-switch button { border: none; background: none; border-radius: 999px; padding: 6px 14px; font-size: 14px; color: var(--muted); }
+.mode-switch button.active { background: var(--line); color: var(--text); font-weight: 600; }
+/* Calculator selections look different from real picks. */
+.pick.on.calc { background: #2a2410; border-color: var(--warn); color: var(--text); }
+.pick.on.calc .price { color: var(--warn); }
+.calc-sum { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.warn-text { color: var(--warn); }
+.stake-box { display: flex; align-items: center; gap: 4px; }
+.stake-box input { width: 72px; flex: none; }
+
+.section-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin: 22px 0 10px; }
+.section-head h3.section { margin: 0; }
+h3.section.first { margin-top: 4px; }
+.parlay.custom { border-color: rgba(224, 165, 38, .45); }
+.calc-sum .link { align-self: flex-start; margin-top: 2px; }
+#build-custom { white-space: nowrap; padding: 6px 12px; font-size: 14px; flex: none; }
+
+.odds-col { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; flex: none; }
+.copy-parlay { padding: 4px 10px; font-size: 13px; white-space: nowrap; }
+
+.place-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
+.chip.placed { background: rgba(47, 191, 113, .18); color: var(--accent); border: 1px solid var(--bar-line); }
+.parlay.placed { opacity: .85; }
+.payout-form { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; width: 100%; }
+.payout-form label { display: flex; align-items: center; gap: 6px; font-size: 14px; }
+.payout-form input { width: 110px; flex: none; }
+.payout-form p { margin: 0; flex-basis: 100%; }
+
+/* Finished games: grayed out at the bottom of the Picks tab, except the
+   graded picks, which stay at full strength so wins and losses stand out. */
+.card.done { background: #151b22; }
+.card.done .game-head, .card.done .team, .card.done .colhead, .card.done .kick,
+.card.done .pick:not(.graded) { opacity: .5; }
+.pick.graded:disabled { opacity: 1; cursor: default; }
+.pick.graded.win { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.pick.graded.loss { background: var(--bad); border-color: var(--bad); color: #fff; }
+.pick.graded.loss .price { color: #fff; }
+.pick.graded.push { background: var(--line); border-color: var(--muted); color: var(--text); }
+/* The side that actually won, where your pick lost: outline only, no fill. */
+.pick.graded.right { background: transparent; border: 2px dashed var(--accent); color: var(--text); }
+.pick .mark-badge {
+  position: absolute; top: -7px; right: -5px; min-width: 18px; height: 18px; padding: 0 4px;
+  border-radius: 9px; font-size: 11px; font-weight: 800; line-height: 18px; text-align: center;
+  background: var(--bg); border: 1px solid currentColor;
+}
+.pick.graded.win .mark-badge { color: var(--accent); }
+.pick.graded.loss .mark-badge { color: var(--bad); }
+.pick.graded.right .mark-badge { color: var(--accent); }
+.card .score { margin: -4px 0 8px; color: var(--muted); font-weight: 600; }
+.score .live { color: var(--bad); }
+.pick.graded.push .price, .pick.graded.right .price { color: var(--muted); }
+
+/* Settled parlays on the Parlays tab and Bet Slip: grayed, with the result badge bright. */
+.parlay.done { background: #151b22; }
+.parlay.done h3, .parlay.done .odds, .parlay.done .backers, .parlay.done ul, .parlay.done table { opacity: .6; }
+.parlay.done.won { border-color: rgba(47, 191, 113, .5); }
+.parlay.done.lost { border-color: rgba(229, 72, 77, .4); }
+.graded-legs { list-style: none; padding-left: 0; }
+.graded-legs li { display: flex; align-items: baseline; margin: 6px 0; }
+.graded-legs .mark { flex: none; }
+
+.chip.paid { background: rgba(224, 165, 38, .18); color: var(--warn); border: 1px solid rgba(224, 165, 38, .45); }
+.owed { margin-top: 8px; color: var(--warn); }
+/* Keep payout actions readable on grayed (settled) cards. */
+.parlay.done .place-row { opacity: 1; }
