@@ -1226,7 +1226,7 @@ const lineText = (n) => (n == null ? '–' : n === 0 ? 'PK' : fmtPoint(n));
 // schedule, and every game. Season-wide (not tied to the week up top).
 async function renderResearch(quiet = false) {
   if (!quiet || !$('#research').innerHTML) $('#research').innerHTML = '<p class="muted">Loading team stats…</p>';
-  const data = await api('/api/research').catch((err) => (notice(err.message), null));
+  const data = await api(`/api/research?team=${encodeURIComponent(researchTeam ?? '')}`).catch((err) => (notice(err.message), null));
   if (!data) return;
   const teams = data.teams;
   // Default: the team you looked at last, else one from this week's first game.
@@ -1297,8 +1297,8 @@ async function renderResearch(quiet = false) {
         </tr>`).join('')}</tbody>
       </table>
     </div>
-    <p class="small muted">Scores and most lines come from ESPN; games without an ESPN line use the ${esc(data.book ?? 'sportsbook')} line saved here.
-      ✓ = covered the spread. A season is a small sample, and the line already prices in most of what these numbers show.</p>`;
+    <p class="small muted">Scores and lines come from ESPN (the closing line for finished games); games ESPN has no line for use the ${esc(data.book ?? 'sportsbook')} line saved here.
+      ✓ = covered the spread, O/U = went over or under the total. A season is a small sample, and the line already prices in most of what these numbers show.</p>`;
   $('#research').innerHTML = html;
 }
 

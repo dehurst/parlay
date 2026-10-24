@@ -56,3 +56,28 @@ test('builds records, ATS, over/under, and strength of schedule', () => {
   assert.equal(den.log[1].final, false);
   assert.equal(den.log[1].line, 7);
 });
+
+test('keeps lines across re-fetches and looks up closing lines', async () => {
+  const { mergeWeek, fetchGameLine } = await import('../src/research.js');
+  const before = [{ id: '1', home: { name: 'A' }, away: { name: 'B' }, homeLine: -3, total: 44, final: false }];
+  const after = [{ id: '1', home: { name: 'A' }, away: { name: 'B' }, homeLine: null, total: null, final: true }];
+  assert.deepEqual(mergeWeek(before, after)[0], { ...after[0], homeLine: -3, total: 44 });
+
+  const game = { id: '401', home: { abbr: 'KC' }, away: { abbr: 'DEN' } };
+  const realFetch = globalThis.fetch;
+  try {
+    // Game page has the line.
+    globalThis.fetch = async (url) => Response.json(url.includes('/summary')
+      ? { pickcenter: [{ provider: { name: 'ESPN BET' }, details: 'DEN -2.5', overUnder: 41.5 }] } : {});
+    assert.deepEqual(await fetchGameLine(game), { homeLine: 2.5, total: 41.5 });
+    // Game page empty: falls back to the odds feed.
+    globalThis.fetch = async (url) => Response.json(url.includes('/summary')
+      ? { pickcenter: [] } : { items: [{ details: 'KC -7', overUnder: 47 }] });
+    assert.deepEqual(await fetchGameLine(game), { homeLine: -7, total: 47 });
+    // Neither has one.
+    globalThis.fetch = async () => Response.json({});
+    assert.equal(await fetchGameLine(game), null);
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});

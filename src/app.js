@@ -14,7 +14,7 @@ import { computeStats } from './stats.js';
 import { createHash } from 'node:crypto';
 import { parseLogins, checkLogin, makeToken, readToken, cookieValue, sessionCookie, COOKIE } from './auth.js';
 import { analyzeWeek } from './analysis.js';
-import { seasonYear, fetchSeasonWeek, parseSeasonWeek, buildTeams, REGULAR_SEASON_WEEKS } from './research.js';
+import { seasonYear, fetchSeasonWeek, parseSeasonWeek, mergeWeek, fetchGameLine, buildTeams, REGULAR_SEASON_WEEKS } from './research.js';
 import { canSpend, spend, limitFor, easternDate, easternWeekday, LINES_COST, SCORES_COST } from './credits.js';
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -882,14 +882,15 @@ app.get('/api/analysis', async (req, res, next) => {
 // Research tab: every team's season from ESPN's scoreboard (free). Finished
 // weeks are kept for good; weeks with games still to play are re-checked
 // (every 15 minutes while games are on, else every 6 hours).
-async function loadResearch(now = new Date()) {
+async function loadResearch(team = null, now = new Date()) {
   const season = seasonYear(now);
   if (store.data.research?.season !== season) store.data.research = { season, weeks: {} };
   const r = store.data.research;
   const stale = [];
   for (let n = 1; n <= REGULAR_SEASON_WEEKS; n++) {
     const w = r.weeks[n];
-    if (w?.final) continue;
+    // Weeks saved before game IDs were kept get fetched once more.
+    if (w?.final && w.games.every((g) => g.id)) continue;
     const live = w?.games.some((g) => !g.final && new Date(g.date) <= now);
     if (!w || now - w.fetchedAt > (live ? 15 * 60e3 : 6 * 3600e3)) stale.push(n);
   }
@@ -898,13 +899,41 @@ async function loadResearch(now = new Date()) {
     let ok = 0;
     fetched.forEach((res, i) => {
       if (res.status === 'rejected') return console.error(`ESPN week ${stale[i]} failed: ${describe(res.reason)}`);
-      const games = parseSeasonWeek(res.value, stale[i]);
+      const games = mergeWeek(r.weeks[stale[i]]?.games, parseSeasonWeek(res.value, stale[i]));
       r.weeks[stale[i]] = { games, fetchedAt: Date.now(), final: games.length > 0 && games.every((g) => g.final) };
       ok++;
     });
     if (ok) await save();
   }
-  return Object.values(r.weeks).flatMap((w) => w.games);
+
+  // Finished games with no line: look up the closing line on ESPN's game
+  // page and keep it for good. The team you're viewing goes first; up to
+  // LINE_LOOKUPS a visit so the whole league fills in over a few visits.
+  const LINE_LOOKUPS = 24;
+  // Bump to look again at games already checked (e.g. after a parsing fix).
+  const LINE_LOOKUP_VERSION = 1;
+  const all = Object.values(r.weeks).flatMap((w) => w.games);
+  const needs = all.filter((g) => g.final && g.id && g.homeLine == null && g.lineChecked !== LINE_LOOKUP_VERSION);
+  const mine = (g) => g.home.name === team || g.away.name === team;
+  const todo = [...needs.filter(mine), ...needs.filter((g) => !mine(g))].slice(0, LINE_LOOKUPS);
+  if (todo.length) {
+    for (let i = 0; i < todo.length; i += 6) {
+      await Promise.all(todo.slice(i, i + 6).map(async (g) => {
+        try {
+          const found = await fetchGameLine(g);
+          if (found) {
+            g.homeLine = found.homeLine;
+            g.total ??= found.total;
+          }
+          g.lineChecked = LINE_LOOKUP_VERSION; // looked, found or not: don't ask again
+        } catch (err) {
+          console.error(`ESPN line for game ${g.id} failed: ${describe(err)}`); // try again next visit
+        }
+      }));
+    }
+    await save();
+  }
+  return all;
 }
 
 // For games ESPN has no line for: the FanDuel line this app saved (the last
@@ -917,7 +946,7 @@ function savedLine(game) {
 
 app.get('/api/research', async (req, res, next) => {
   try {
-    const games = await loadResearch();
+    const games = await loadResearch(typeof req.query.team === 'string' ? req.query.team : null);
     if (!games.length) return res.status(503).json({ error: 'Couldn’t reach ESPN for team stats. Try again in a few minutes.' });
     res.json({ season: store.data.research.season, teams: buildTeams(games, savedLine), book: ODDS_API_KEY ? bookName : null });
   } catch (err) {
