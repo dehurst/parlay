@@ -1312,7 +1312,8 @@ async function renderResearch(quiet = false) {
   }
   const t = teams.find((x) => x.name === researchTeam);
   const next = t.log.find((e) => !e.final);
-  const teamPick = (id, selected) => `<select id="${id}" aria-label="Team">${teams.map((x) => `<option value="${esc(x.name)}" ${x.name === selected ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select>`;
+  // The logo sits inside the dropdown box, beside the selected team's name.
+  const teamPick = (id, selected) => `<span class="team-select">${teamLogo(selected)}<select id="${id}" aria-label="Team">${teams.map((x) => `<option value="${esc(x.name)}" ${x.name === selected ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select></span>`;
   const modeSwitch = `<div class="mode-switch" id="research-mode" role="tablist">
     <button type="button" data-mode="team" class="${researchMode === 'team' ? 'active' : ''}">Team</button>
     <button type="button" data-mode="compare" class="${researchMode === 'compare' ? 'active' : ''}">Compare</button>
@@ -1333,7 +1334,7 @@ async function renderResearch(quiet = false) {
     const b = teams.find((x) => x.name === compareB);
     $('#research').innerHTML = `
       ${modeSwitch}
-      <div class="team-pick compare-pick">${teamLogo(a.name)}${teamPick('compare-a', a.name)}<span class="muted small">vs</span>${teamLogo(b.name)}${teamPick('compare-b', b.name)}</div>
+      <div class="team-pick">${teamPick('compare-a', a.name)}<span class="muted small">vs</span>${teamPick('compare-b', b.name)}</div>
       <div class="card"><h3>${teamLogo(a.name, 'small')}${esc(a.short)} offense vs ${teamLogo(b.name, 'small')}${esc(b.short)} defense</h3>
         ${a.advGames || b.advGames ? advTable(a, b, `${a.short} off`, `${b.short} def`) : '<p class="small muted">No box scores yet.</p>'}</div>
       <div class="card"><h3>${teamLogo(b.name, 'small')}${esc(b.short)} offense vs ${teamLogo(a.name, 'small')}${esc(a.short)} defense</h3>
@@ -1349,7 +1350,7 @@ async function renderResearch(quiet = false) {
 
   const html = `
     ${modeSwitch}
-    <label class="team-pick">${teamLogo(t.name)}${teamPick('research-team', t.name)}</label>
+    <label class="team-pick">${teamPick('research-team', t.name)}</label>
     ${next ? `<div class="card next-game">
       <div><span class="muted small">Next game</span><br><b>${next.home ? 'vs' : '@'} ${teamLogo(next.oppName, 'lg')}${esc(next.oppName)}</b>
         <div class="small muted">Week ${next.week} · ${esc(when(next.date))}</div>

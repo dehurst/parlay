@@ -131,22 +131,29 @@ ul.legs li { display: flex; justify-content: space-between; align-items: flex-st
 .show-all { margin-top: 8px; }
 
 /* Research tab */
-.team-pick { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; position: relative; }
-.team-pick .team-logo { width: 32px; height: 32px; margin-right: 0; }
-/* Safari ignores padding on native dropdowns, so draw our own (with an arrow). */
-.team-pick select {
-  -webkit-appearance: none; appearance: none;
-  flex: 1; min-height: 54px; padding: 14px 44px 14px 16px; border-radius: var(--radius);
-  border: 1px solid var(--line); background: var(--card); color: var(--text);
-  font-size: 17px; font-weight: 600; cursor: pointer;
+.team-pick { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+/* Each dropdown box holds the team's logo beside its name, plus our own arrow. */
+.team-select { position: relative; flex: 1; min-width: 0; display: flex; }
+.team-select .team-logo {
+  position: absolute; left: 16px; top: 50%; transform: translateY(-50%);
+  width: 32px; height: 32px; margin-right: 0; pointer-events: none; z-index: 1;
 }
-.team-pick::after {
+/* Safari ignores padding on native dropdowns, so draw our own (with an arrow). */
+.team-select select {
+  -webkit-appearance: none; appearance: none;
+  flex: 1; min-width: 0; min-height: 54px; padding: 14px 44px 14px 58px; border-radius: var(--radius);
+  border: 1px solid var(--line); background: var(--card); color: var(--text);
+  font-size: 17px; font-weight: 600; cursor: pointer; text-overflow: ellipsis;
+}
+/* On phones, stack the two Compare boxes so full team names fit. */
+@media (max-width: 600px) {
+  .team-pick { flex-direction: column; align-items: stretch; gap: 6px; }
+  .team-pick > .muted { text-align: center; }
+}
+.team-select::after {
   content: '▾'; position: absolute; right: 16px; top: 50%; transform: translateY(-50%);
   color: var(--muted); pointer-events: none; font-size: 16px;
 }
-.compare-pick { display: flex; align-items: center; gap: 10px; }
-.compare-pick select { flex: 1; }
-.compare-pick .team-logo { width: 28px; height: 28px; margin-right: 0; }
 .next-game { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
 .next-game .link { color: var(--text); white-space: nowrap; }
 .last5 { margin: 8px 0 4px; display: flex; align-items: center; gap: 4px; }
