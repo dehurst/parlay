@@ -394,7 +394,7 @@ function renderGames() {
       <div class="team" title="${esc(team)}">${teamLogo(team, 'small')}<span>${esc(side === 'home' ? g.homeShort : g.awayShort)}</span></div>
       ${cell('spread', side)}${cell('total', totalSide)}${cell('ml', side)}`;
     const status = g.result
-      ? `Final: ${esc(abbr(g.away))} ${g.result.awayScore}, ${esc(abbr(g.home))} ${g.result.homeScore}`
+      ? `Final: ${teamLogo(g.away, 'small')}${esc(abbr(g.away))} ${g.result.awayScore}, ${teamLogo(g.home, 'small')}${esc(abbr(g.home))} ${g.result.homeScore}`
       // No score on file: a game runs about 3½ hours from kickoff.
       : Date.now() - new Date(g.commence) > 3.5 * 3600e3 ? 'Final' : '<span class="live">● Live</span>';
     return `<div class="card ${isFinal(g) ? 'done' : ''}" data-game="${esc(g.id)}">
@@ -568,10 +568,10 @@ function builderHtml() {
     const alt = swapFor(key);
     return `<div class="b-leg ${disliked.length ? 'disliked' : ''}">
       <div class="b-leg-head">
-        <span><b>${esc(keyLabel(key))}</b> <span class="muted">${fmtOdds(bookLine(key).price)}</span>${disliked.length ? `<span class="small dislike-note">👎${faces(disliked)}</span>` : ''}</span>
+        <span><b>${betLabel(keyLabel(key))}</b> <span class="muted">${fmtOdds(bookLine(key).price)}</span>${disliked.length ? `<span class="small dislike-note">👎${faces(disliked)}</span>` : ''}</span>
         <b>${chanceText(chanceOf(key))}</b>
       </div>
-      ${alt ? `<button type="button" class="b-act" data-swap-from="${esc(key)}" data-swap-to="${esc(alt)}">⇄ ${esc(keyLabel(alt))} <span class="muted">${fmtOdds(bookLine(alt).price)}</span> ${result([...rest, alt])}</button>` : ''}
+      ${alt ? `<button type="button" class="b-act" data-swap-from="${esc(key)}" data-swap-to="${esc(alt)}">⇄ ${betLabel(keyLabel(alt))} <span class="muted">${fmtOdds(bookLine(alt).price)}</span> ${result([...rest, alt])}</button>` : ''}
       ${rest.length ? `<button type="button" class="b-act drop" data-drop="${esc(key)}">✕ Drop ${result(rest)}</button>` : ''}
     </div>`;
   }).join('');
@@ -665,6 +665,12 @@ const abbr = (team) => ABBR[team.split(' ').pop().toLowerCase()] ?? team.split('
 const logoUrl = (team) => `https://static.www.nfl.com/league/api/clubs/logos/${abbr(team)}.png`;
 const teamLogo = (team, cls = '') => (team ? `<img class="team-logo ${cls}" src="${logoUrl(team)}" alt="" loading="lazy">` : '');
 const dayKey = (iso) => new Date(iso).toDateString();
+// The team a bet label names ("49ers ML", "Panthers +3"); null for totals and props.
+const labelTeam = (label) => { const w = String(label ?? '').split(' ')[0].toLowerCase(); return ABBR[w] ? w : null; };
+// A bet label with its team's logo in front.
+const betLabel = (label) => `${teamLogo(labelTeam(label), 'small')}${esc(label)}`;
+// "49ers @ Falcons", each team with its logo.
+const matchupHtml = (m) => shortMatchup(m).split(' @ ').map((t) => `${teamLogo(t, 'small')}${esc(t)}`).join(' @ ');
 
 // Which day's picks to copy: today if you have picks today, otherwise the next
 // day you do (Saturday copies Sunday's), otherwise the most recent day.
@@ -824,7 +830,7 @@ async function submit() {
 // "San Francisco 49ers @ Atlanta Falcons" -> "49ers @ Falcons"
 const shortMatchup = (m) => String(m).split(' @ ').map((t) => t.split(' ').pop()).join(' @ ');
 // A leg's matchup on its own small line under the bet.
-const legSub = (l, extra = '') => `<div class="small muted leg-sub">${esc(shortMatchup(l.matchup))}${extra}</div>`;
+const legSub = (l, extra = '') => `<div class="small muted leg-sub">${matchupHtml(l.matchup)}${extra}</div>`;
 
 // Note when the book's line has moved off the one the group took.
 function lineMoved(s, book) {
@@ -851,8 +857,8 @@ async function renderBoard() {
   const rows = data.tallied.map((s) => `
     <div class="board-row">
       <div style="flex:1">
-        <div><b>${esc(s.label)}</b> <span class="muted">${fmtOdds(s.price)}</span></div>
-        <div class="small muted">${esc(shortMatchup(s.matchup))} · ${s.pickers.map(esc).join(', ')}</div>
+        <div><b>${betLabel(s.label)}</b> <span class="muted">${fmtOdds(s.price)}</span></div>
+        <div class="small muted">${matchupHtml(s.matchup)} · ${s.pickers.map(esc).join(', ')}</div>
         ${lineMoved(s, data.book)}
         ${s.lines.length > 1 ? `<div class="lines">Submitted at different lines: ${s.lines.map((l) =>
           `${l.point === null ? '' : `${s.market === 'spread' ? fmtPoint(l.point) : l.point} `}${fmtOdds(l.price)} (${l.users.map(esc).join(', ')})`).join(' · ')}</div>` : ''}
@@ -917,7 +923,7 @@ function inPlayHtml(data) {
           ${titleHtml(p, !isPast())}<div class="small muted">${p.legs.length}-leg ${p.custom ? 'custom ' : ''}parlay</div></div>
         <div class="odds-col"><div class="odds">${fmtOdds(shownOdds(p))}</div>${copyButton(p)}</div>
       </div>
-      <ul class="graded-legs">${p.legs.map((l) => `<li>${gradeMark(l.grade) || '<span class="mark">·</span>'}<span><b>${esc(l.label)}</b> <span class="muted">${fmtOdds(l.price)}</span>${legSub(l)}</span></li>`).join('')}</ul>
+      <ul class="graded-legs">${p.legs.map((l) => `<li>${gradeMark(l.grade) || '<span class="mark">·</span>'}<span><b>${betLabel(l.label)}</b> <span class="muted">${fmtOdds(l.price)}</span>${legSub(l)}</span></li>`).join('')}</ul>
       <div class="small muted backers">${betLine(p.total, p.payout, ' if it hits')}${whoLine(p.stakes)}</div>
     </div>`;
   }).join('');
@@ -935,7 +941,7 @@ function settledHtml(data) {
         <div>${statusChip(p.status, p.returned, p.total)}${titleHtml(p, !isPast())}<div class="small muted">${p.legs.length}-leg parlay</div></div>
         <div class="odds-col"><div class="odds">${fmtOdds(shownOdds(p))}</div>${copyButton(p)}</div>
       </div>
-      <ul class="graded-legs">${p.legs.map((l) => `<li>${gradeMark(l.grade)}<span><b>${esc(l.label)}</b> <span class="muted">${fmtOdds(l.price)}</span>${legSub(l)}</span></li>`).join('')}</ul>
+      <ul class="graded-legs">${p.legs.map((l) => `<li>${gradeMark(l.grade)}<span><b>${betLabel(l.label)}</b> <span class="muted">${fmtOdds(l.price)}</span>${legSub(l)}</span></li>`).join('')}</ul>
       <div class="small muted backers"><b>${money(p.total)} bet</b>, ${back}${whoLine(p.stakes)}</div>
     </div>`;
   }).join('');
@@ -953,7 +959,7 @@ function customHtml(data) {
           ${titleHtml(p)}<div class="small muted">${p.legs.length}-leg custom parlay${p.basedOn ? ` · based on ${esc(p.basedOn)}` : ''}</div></div>
         <div class="odds-col"><div class="odds">${fmtOdds(shownOdds(p))}</div>${copyButton(p)}</div>
       </div>
-      <ul class="legs">${p.legs.map((l) => `<li><span><b>${esc(l.label)}</b> <span class="muted">${fmtOdds(l.price)}</span>${legSub(l)}${lineMoved(l, data.book)}</span>${p.started ? '' : dislikeHtml(l)}</li>`).join('')}</ul>
+      <ul class="legs">${p.legs.map((l) => `<li><span><b>${betLabel(l.label)}</b> <span class="muted">${fmtOdds(l.price)}</span>${legSub(l)}${lineMoved(l, data.book)}</span>${p.started ? '' : dislikeHtml(l)}</li>`).join('')}</ul>
       <div class="stats"><span>$10.00 pays <b>${money(10 * p.decimal)}</b></span></div>
       ${p.started ? '' : reactHtml(p)}
       ${stakeHtml(p, p.started)}
@@ -1005,7 +1011,7 @@ async function renderParlays(quiet = false) {
         </div>
         <div class="odds-col"><div class="odds">${fmtOdds(shownOdds(p))}</div>${copyButton(p)}</div>
       </div>
-      <ul class="legs">${p.legs.map((l) => `<li><span><b>${esc(l.label)}</b> <span class="muted">${fmtOdds(l.price)}</span>${legSub(l, ` · ${l.pickers.length}/${data.voters} picked`)}${lineMoved(l, data.book)}</span>${dislikeHtml(l)}</li>`).join('')}</ul>
+      <ul class="legs">${p.legs.map((l) => `<li><span><b>${betLabel(l.label)}</b> <span class="muted">${fmtOdds(l.price)}</span>${legSub(l, ` · ${l.pickers.length}/${data.voters} picked`)}${lineMoved(l, data.book)}</span>${dislikeHtml(l)}</li>`).join('')}</ul>
       <div class="stats">
         <span>${money(p.stake)} pays <b>${money(p.payout)}</b></span>
         <span>Hit chance ~<b>${pct(p.hitProb)}</b></span>
@@ -1019,7 +1025,7 @@ async function renderParlays(quiet = false) {
   if (data.almost.length) {
     html += `<div class="card"><b>One vote away</b>
       <p class="small muted">These would join the consensus with one more pick:</p>
-      <ul>${data.almost.map((s) => `<li>${esc(s.label)} <span class="muted">${fmtOdds(s.price)} · ${s.pickers.map(esc).join(', ')}</span></li>`).join('')}</ul>
+      <ul>${data.almost.map((s) => `<li>${betLabel(s.label)} <span class="muted">${fmtOdds(s.price)} · ${s.pickers.map(esc).join(', ')}</span></li>`).join('')}</ul>
     </div>`;
   }
 
@@ -1117,11 +1123,11 @@ async function renderStats() {
   const weeks = data.weeks.map((w, i) => {
     const parlays = w.parlays.map((p) => `<div class="hist-parlay">
         <div class="head"><b>${esc(p.name)} ${fmtOdds(p.american)}</b> ${statusChip(p.status, p.returned, p.total) || '<span class="chip pending">Live</span>'}</div>
-        <ul>${p.legs.map((l) => `<li>${gradeMark(l.grade)}${esc(l.label)} <span class="muted">${fmtOdds(l.price)}</span></li>`).join('')}</ul>
+        <ul>${p.legs.map((l) => `<li>${gradeMark(l.grade)}${betLabel(l.label)} <span class="muted">${fmtOdds(l.price)}</span></li>`).join('')}</ul>
         <div class="small muted">${Object.entries(p.stakes).map(([who, amt]) => `${esc(who)} ${money(amt)}`).join(' · ')} · ${money(p.total)} total</div>
       </div>`).join('') || '<p class="small muted">No parlays placed.</p>';
     const picks = Object.entries(w.picks).map(([who, rows]) => `<div class="hist-picks"><b>${esc(who)}</b>
-        <ul>${rows.map((r) => `<li>${gradeMark(r.grade)}${esc(r.label)} <span class="muted">${fmtOdds(r.price)}</span></li>`).join('')}</ul></div>`).join('');
+        <ul>${rows.map((r) => `<li>${gradeMark(r.grade)}${betLabel(r.label)} <span class="muted">${fmtOdds(r.price)}</span></li>`).join('')}</ul></div>`).join('');
     return `<details class="card week" ${i === 0 ? 'open' : ''}>
       <summary><b>${esc(w.label)}</b> <span class="muted small">${w.parlays.length} parlay${w.parlays.length === 1 ? '' : 's'}</span>
         <span class="num ${netClass(w.net)}">${w.parlays.some((p) => p.status !== 'pending') ? signed(w.net) : ''}</span></summary>
@@ -1162,13 +1168,13 @@ async function renderAnalysis() {
       const tag = alt && (alt.chance > m.chance ? '<span class="chip tag">safer</span>' : '<span class="chip tag">bigger payout</span>');
       return `<div class="an-row">
         <div class="an-head">
-          <div><b>${esc(m.label)}</b> <span class="muted">${fmtOdds(m.price)}</span>
-            <div class="small muted">${esc(shortMatchup(m.matchup))} · ${esc(kick(m.commence))}</div></div>
+          <div><b>${betLabel(m.label)}</b> <span class="muted">${fmtOdds(m.price)}</span>
+            <div class="small muted">${matchupHtml(m.matchup)} · ${esc(kick(m.commence))}</div></div>
           <div class="an-chance"><b>${chanceText(m.chance)}</b><span>${chanceVerb(m.market)}</span></div>
         </div>
         ${chanceBar(m.chance)}
         <div class="small muted">$10 pays ${money(m.pays)}</div>
-        ${alt ? `<div class="alt small">Or <b>${esc(alt.label)}</b> ${fmtOdds(alt.price)}: ${chanceText(alt.chance)} ${chanceVerb(alt.market)}, $10 pays ${money(alt.pays)} ${tag}</div>` : ''}
+        ${alt ? `<div class="alt small">Or <b>${betLabel(alt.label)}</b> ${fmtOdds(alt.price)}: ${chanceText(alt.chance)} ${chanceVerb(alt.market)}, $10 pays ${money(alt.pays)} ${tag}</div>` : ''}
       </div>`;
     }).join('');
     html += `<h3 class="section">Your picks</h3><div class="card">${rows
@@ -1185,7 +1191,7 @@ async function renderAnalysis() {
         <div class="an-chance"><b>${chanceText(p.hitChance)}</b><span>to hit</span></div>
       </div>
       ${chanceBar(p.hitChance)}
-      <ul class="an-legs">${p.left.map((l, i) => `<li><span>${esc(l.label)} <span class="muted">${fmtOdds(l.price)}</span>${i === 0 && p.left.length > 1 ? ' <span class="chip tag">weakest</span>' : ''}</span><b>${chanceText(l.chance)}</b></li>`).join('')}</ul>
+      <ul class="an-legs">${p.left.map((l, i) => `<li><span>${betLabel(l.label)} <span class="muted">${fmtOdds(l.price)}</span>${i === 0 && p.left.length > 1 ? ' <span class="chip tag">weakest</span>' : ''}</span><b>${chanceText(l.chance)}</b></li>`).join('')}</ul>
     </div>`).join('');
   }
 
@@ -1194,17 +1200,17 @@ async function renderAnalysis() {
     html += `<h3 class="section">Close calls</h3>
       <p class="small muted">Picks that lost, closest first, and whether betting the same team the other way would have won.</p>
       <div class="card">${data.misses.map((m) => `<div class="an-row">
-        <div><b>${esc(m.label)}</b> <span class="muted">${fmtOdds(m.price)} · ${m.pickers.map(esc).join(', ')}</span></div>
+        <div><b>${betLabel(m.label)}</b> <span class="muted">${fmtOdds(m.price)} · ${m.pickers.map(esc).join(', ')}</span></div>
         <div class="small">${m.market === 'ml' ? `Lost by ${pointsText(m.margin)}` : `Missed by ${pointsText(m.margin)}`}${m.alt
-          ? `. <span class="pos">${esc(m.alt.label)}${m.alt.price != null ? ` (${fmtOdds(m.alt.price)})` : ''} would have won.</span>` : '.'}</div>
+          ? `. <span class="pos">${betLabel(m.alt.label)}${m.alt.price != null ? ` (${fmtOdds(m.alt.price)})` : ''} would have won.</span>` : '.'}</div>
       </div>`).join('')}</div>`;
   }
 
   if (data.oneLegAway.length) {
     html += `<h3 class="section">One leg away</h3><div class="card">${data.oneLegAway.map((p) => `<div class="an-row">
       <div><b>${esc(p.name)}</b> <span class="muted">${money(p.total)} bet</span></div>
-      <div class="small">Lost only on ${esc(p.leg.label)}${p.leg.margin != null ? ` (missed by ${pointsText(p.leg.margin)})` : ''}.
-        ${p.alt ? `<span class="pos">With ${esc(p.alt.label)} instead, it would have hit${p.alt.payout != null ? ` and paid about ${money(p.alt.payout)}` : ''}.</span>` : ''}</div>
+      <div class="small">Lost only on ${betLabel(p.leg.label)}${p.leg.margin != null ? ` (missed by ${pointsText(p.leg.margin)})` : ''}.
+        ${p.alt ? `<span class="pos">With ${betLabel(p.alt.label)} instead, it would have hit${p.alt.payout != null ? ` and paid about ${money(p.alt.payout)}` : ''}.</span>` : ''}</div>
     </div>`).join('')}</div>`;
   }
 
@@ -1355,7 +1361,7 @@ async function renderResearch(quiet = false) {
       <div><span class="muted small">Next game</span><br><b>${next.home ? 'vs' : '@'} ${teamLogo(next.oppName, 'lg')}${esc(next.oppName)}</b>
         <div class="small muted">Week ${next.week} · ${esc(when(next.date))}</div>
         ${next.line != null ? `<div class="small">Spread ${esc(lineText(next.line))}${next.total != null ? ` · Total ${next.total}` : ''}</div>` : ''}</div>
-      <button type="button" class="link small" data-team="${esc(next.oppName)}">See ${esc(next.opp)} →</button>
+      <button type="button" class="link small" data-team="${esc(next.oppName)}">See ${teamLogo(next.oppName, 'small')}${esc(next.opp)} →</button>
     </div>` : ''}
 
     <div class="card"><h3>Record</h3>
@@ -1503,7 +1509,7 @@ async function renderSlip(quiet = false) {
   const owedTotal = Object.values(owed).reduce((a, b) => a + b, 0);
   const at = (t) => new Date(t).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' });
   const card = (p, i) => {
-    const legs = p.legs.map((l) => `<li>${gradeMark(l.grade) || '<span class="mark">·</span>'}<span><b>${esc(l.label)}</b> <span class="muted">${fmtOdds(l.price)}</span>${legSub(l)}${l.grade === 'pending' ? lineMoved(l, data.book) : ''}</span></li>`).join('');
+    const legs = p.legs.map((l) => `<li>${gradeMark(l.grade) || '<span class="mark">·</span>'}<span><b>${betLabel(l.label)}</b> <span class="muted">${fmtOdds(l.price)}</span>${legSub(l)}${l.grade === 'pending' ? lineMoved(l, data.book) : ''}</span></li>`).join('');
     const rows = Object.entries(p.stakes).map(([who, amt]) => `<tr>
         <td>${esc(who)}${who === me && !p.placed && !past ? ` <button type="button" class="link danger" data-slip-out="${esc(p.id)}">remove</button>` : ''}</td>
         <td class="num">${money(amt)}</td><td class="num">${money(amt * (p.decimal - 1))}</td><td class="num">${money(amt * p.decimal)}</td></tr>`).join('');
