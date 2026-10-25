@@ -1237,6 +1237,12 @@ let researchTeam = storage.get('parlay.team');
 let researchMode = 'team'; // 'team' (one team's full page) | 'compare' (two teams, head to head) | 'league' (rankings)
 let compareA = null;
 let compareB = null;
+// Research cards folded shut this visit, by id. Every card starts open.
+const folded = new Set();
+// A card with an arrow on its heading: ▾ while open; tap the heading to fold it shut (the arrow flips up).
+const foldCard = (id, title, body) => `<div class="card fold ${folded.has(id) ? 'folded' : ''}" data-fold="${esc(id)}">
+  <button type="button" class="fold-head" aria-expanded="${!folded.has(id)}"><h3>${title}</h3><span class="fold-arrow" aria-hidden="true">▾</span></button>
+  <div class="fold-body">${body}</div></div>`;
 const wlt = (r) => `${r.w}-${r.l}${r.t ? `-${r.t}` : ''}`;
 const wlPct = (r) => (r.w + r.l ? ` (${Math.round((r.w / (r.w + r.l)) * 100)}%)` : '');
 // 1 -> "1st", 12 -> "12th", 23 -> "23rd"
@@ -1331,6 +1337,61 @@ async function renderResearch(quiet = false) {
     return;
   }
 
+  const kickTime = (iso) => new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  const day = (iso) => new Date(iso).toLocaleDateString([], { weekday: 'short', month: 'numeric', day: 'numeric' });
+  const mark = (r) => ({ W: '<span class="mark win">✓</span>', L: '<span class="mark loss">✗</span>', P: '<span class="mark push">P</span>' })[r] ?? '';
+
+  // Each section of a team's page, contents only: Team shows one team's,
+  // Compare puts two teams' side by side.
+  const recordBody = (x) => {
+    const dots = x.last5.map((r) => `<span class="dot ${r === 'W' ? 'win' : r === 'L' ? 'loss' : 'push'}">${r}</span>`).join('');
+    return `<div class="statline">
+        <div><b>${wlt(x.record)}</b><span>overall</span></div>
+        <div><b>${wlt(x.home)}</b><span>home</span></div>
+        <div><b>${wlt(x.away)}</b><span>away</span></div>
+        ${x.streak ? `<div><b>${x.streak}</b><span>streak</span></div>` : ''}
+      </div>
+      ${dots ? `<div class="small muted last5">Last ${x.last5.length}: ${dots}</div>` : ''}
+      <div class="small muted">Points per game: <b>${x.ppg?.toFixed(1) ?? '–'}</b> scored · <b>${x.papg?.toFixed(1) ?? '–'}</b> allowed · <b class="${netClass(x.margin ?? 0)}">${signedPts(x.margin)}</b> margin</div>`;
+  };
+  const injuriesNote = 'Roster position, depth-chart standing, and how long they\'ve carried the tag. From ESPN, refreshed every few hours.';
+  const injuriesBody = (x) => injuryTable(x.injuries ?? []);
+  const statsBody = (x) => (x.advGames
+    ? `${advTable(x, x, 'Offense', 'Defense')}
+      <div class="small muted">Turnover margin <b class="${netClass(x.turnoverMargin ?? 0)}">${signedPts(x.turnoverMargin)}</b>/gm${x.turnoverMarginRank ? ` (${ordinal(x.turnoverMarginRank)})` : ''}
+        · Time of possession <b>${mmss(x.possessionPerGame)}</b>/gm
+        · Penalties <b>${fmt1(x.penaltiesPerGame)}</b> for <b>${fmt1(x.penaltyYdsPerGame)}</b> yds/gm${x.penaltyYdsPerGameRank ? ` (${ordinal(x.penaltyYdsPerGameRank)} fewest)` : ''}</div>`
+    : '<p class="small muted">No box scores yet for their finished games.</p>');
+  const atsBody = (x) => `${x.atsGames ? `<div class="statline">
+        <div><b>${wlt(x.ats)}</b><span>ATS${wlPct(x.ats)}</span></div>
+        <div><b>${wlt(x.atsFav)}</b><span>as favorite</span></div>
+        <div><b>${wlt(x.atsDog)}</b><span>as underdog</span></div>
+      </div>
+      <div class="small muted">Home ${wlt(x.atsHome)} · Away ${wlt(x.atsAway)} · Beats the spread by <b>${signedPts(x.coverAvg)}</b> pts a game on average</div>`
+      : '<p class="small muted">No lines on file for their games yet.</p>'}
+      <h4>Over / under</h4>
+      ${x.ou.w + x.ou.l + x.ou.t ? `<div class="small">Overs <b>${x.ou.w}</b> · Unders <b>${x.ou.l}</b>${x.ou.t ? ` · Pushes ${x.ou.t}` : ''}</div>
+        <div class="small muted">Their games average <b>${x.avgTotal.toFixed(1)}</b> points vs. a <b>${x.avgLineTotal.toFixed(1)}</b> line</div>`
+      : '<p class="small muted">No totals on file yet.</p>'}`;
+  const sosNote = 'Opponents\' combined win % this season. 1st = hardest of 32.';
+  const sosBody = (x) => `<div class="statline">
+        <div><b>${winPctText(x.sosPlayed)}</b><span>played${x.sosPlayedRank ? ` · ${ordinal(x.sosPlayedRank)}` : ''}</span></div>
+        <div><b>${winPctText(x.sosLeft)}</b><span>still to play${x.sosLeftRank ? ` · ${ordinal(x.sosLeftRank)}` : ''}</span></div>
+      </div>`;
+  const logBody = (x) => `<table class="slip log">
+        <thead><tr><th>Wk</th><th>Opp</th><th>Result</th><th class="num">Spread</th><th class="num">Total</th></tr></thead>
+        <tbody>${x.log.map((e) => `<tr class="${e.final ? '' : 'upcoming'}">
+          <td>${e.week}</td>
+          <td>${e.home ? '' : '@'}${teamLogo(e.oppName, 'small')}${esc(e.oppAbbr ?? e.opp)}</td>
+          <td>${e.final ? `<b class="${e.result === 'W' ? 'pos' : e.result === 'L' ? 'neg' : ''}">${e.result}</b> ${esc(e.score)}` : `<span class="muted small">${esc(day(e.date))}</span>`}</td>
+          <td class="num">${esc(lineText(e.line))} ${mark(e.cover)}</td>
+          <td class="num">${e.total ?? '–'}${e.ou ? ` <span class="muted">${e.ou}</span>` : ''}</td>
+        </tr>`).join('')}</tbody>
+      </table>`;
+  const note = (text) => (text ? `<p class="small muted">${text}</p>` : '');
+  const sourcesNote = `<p class="small muted">Scores and lines come from ESPN (the closing line for finished games); games ESPN has no line for use the ${esc(data.book ?? 'sportsbook')} line saved here.
+      ✓ = covered the spread, O/U = went over or under the total. A season is a small sample, and the line already prices in most of what these numbers show.</p>`;
+
   if (researchMode === 'compare') {
     if (!teams.some((x) => x.name === compareA)) compareA = t.name;
     if (!teams.some((x) => x.name === compareB) || compareB === compareA) {
@@ -1338,21 +1399,27 @@ async function renderResearch(quiet = false) {
     }
     const a = teams.find((x) => x.name === compareA);
     const b = teams.find((x) => x.name === compareB);
+    const matchup = (off, def) => foldCard(`compare-${off === a ? 'ab' : 'ba'}`,
+      `${teamLogo(off.name, 'small')}${esc(off.short)} offense vs ${teamLogo(def.name, 'small')}${esc(def.short)} defense`,
+      a.advGames || b.advGames ? advTable(off, def, `${off.short} off`, `${def.short} def`) : '<p class="small muted">No box scores yet.</p>');
+    // One section of the Team page, with both teams side by side.
+    const pair = (id, title, text, body) => foldCard(`compare-${id}`, title, `${note(text)}<div class="pair">${[a, b].map((x) => `
+      <div class="pair-col"><div class="pair-name">${teamLogo(x.name)}<b>${esc(x.short)}</b></div>${body(x)}</div>`).join('')}</div>`);
     $('#research').innerHTML = `
       ${modeSwitch}
       <div class="team-pick">${teamPick('compare-a', a.name)}<span class="muted small">vs</span>${teamPick('compare-b', b.name)}</div>
-      <div class="card"><h3>${teamLogo(a.name, 'small')}${esc(a.short)} offense vs ${teamLogo(b.name, 'small')}${esc(b.short)} defense</h3>
-        ${a.advGames || b.advGames ? advTable(a, b, `${a.short} off`, `${b.short} def`) : '<p class="small muted">No box scores yet.</p>'}</div>
-      <div class="card"><h3>${teamLogo(b.name, 'small')}${esc(b.short)} offense vs ${teamLogo(a.name, 'small')}${esc(a.short)} defense</h3>
-        ${a.advGames || b.advGames ? advTable(b, a, `${b.short} off`, `${a.short} def`) : '<p class="small muted">No box scores yet.</p>'}</div>
-      <p class="small muted">Per game this season from ESPN's box scores. Ranks are out of 32 (1st = best). A season is a small sample.</p>`;
+      ${matchup(a, b)}
+      ${matchup(b, a)}
+      <p class="small muted">Per game this season from ESPN's box scores. Ranks are out of 32 (1st = best). A season is a small sample.</p>
+      ${pair('record', 'Record', '', recordBody)}
+      ${pair('injuries', 'Injuries', injuriesNote, injuriesBody)}
+      ${pair('stats', 'Offensive/Defensive Stats', 'Per game this season. Offense is what they do; defense is what they allow.', statsBody)}
+      ${pair('ats', 'Against the spread', '', atsBody)}
+      ${pair('sos', 'Strength of schedule', sosNote, sosBody)}
+      ${pair('log', 'Game log', '', logBody)}
+      ${sourcesNote}`;
     return;
   }
-
-  const kickTime = (iso) => new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-  const day = (iso) => new Date(iso).toLocaleDateString([], { weekday: 'short', month: 'numeric', day: 'numeric' });
-  const mark = (r) => ({ W: '<span class="mark win">✓</span>', L: '<span class="mark loss">✗</span>', P: '<span class="mark push">P</span>' })[r] ?? '';
-  const dots = t.last5.map((r) => `<span class="dot ${r === 'W' ? 'win' : r === 'L' ? 'loss' : 'push'}">${r}</span>`).join('');
 
   const html = `
     ${modeSwitch}
@@ -1362,67 +1429,13 @@ async function renderResearch(quiet = false) {
         ${next.line != null ? `<span class="small muted line-info">· Spread ${esc(lineText(next.line))}${next.total != null ? ` · Total ${next.total}` : ''}</span>` : ''}</div>
       <button type="button" class="link small" data-team="${esc(next.oppName)}" aria-label="See ${esc(next.opp)}"><span class="see-text">See ${teamLogo(next.oppName, 'small')}${esc(next.opp)} </span>→</button>
     </div>` : ''}
-
-    <div class="card"><h3>Record</h3>
-      <div class="statline">
-        <div><b>${wlt(t.record)}</b><span>overall</span></div>
-        <div><b>${wlt(t.home)}</b><span>home</span></div>
-        <div><b>${wlt(t.away)}</b><span>away</span></div>
-        ${t.streak ? `<div><b>${t.streak}</b><span>streak</span></div>` : ''}
-      </div>
-      ${dots ? `<div class="small muted last5">Last ${t.last5.length}: ${dots}</div>` : ''}
-      <div class="small muted">Points per game: <b>${t.ppg?.toFixed(1) ?? '–'}</b> scored · <b>${t.papg?.toFixed(1) ?? '–'}</b> allowed · <b class="${netClass(t.margin ?? 0)}">${signedPts(t.margin)}</b> margin</div>
-    </div>
-
-    <div class="card"><h3>Injuries</h3>
-      <p class="small muted">Roster position, depth-chart standing, and how long they've carried the tag. From ESPN, refreshed every few hours.</p>
-      ${injuryTable(t.injuries ?? [])}
-    </div>
-
-    <div class="card"><h3>Offensive/Defensive Stats</h3>
-      <p class="small muted">Per game this season${t.advGames ? `, from ${t.advGames} box score${t.advGames === 1 ? '' : 's'}` : ''}. Offense is what they do; defense is what they allow.</p>
-      ${t.advGames ? advTable(t, t, 'Offense', 'Defense') : '<p class="small muted">No box scores yet for their finished games.</p>'}
-      ${t.advGames ? `<div class="small muted">Turnover margin <b class="${netClass(t.turnoverMargin ?? 0)}">${signedPts(t.turnoverMargin)}</b>/gm${t.turnoverMarginRank ? ` (${ordinal(t.turnoverMarginRank)})` : ''}
-        · Time of possession <b>${mmss(t.possessionPerGame)}</b>/gm
-        · Penalties <b>${fmt1(t.penaltiesPerGame)}</b> for <b>${fmt1(t.penaltyYdsPerGame)}</b> yds/gm${t.penaltyYdsPerGameRank ? ` (${ordinal(t.penaltyYdsPerGameRank)} fewest)` : ''}</div>` : ''}
-    </div>
-
-    <div class="card"><h3>Against the spread</h3>
-      ${t.atsGames ? `<div class="statline">
-        <div><b>${wlt(t.ats)}</b><span>ATS${wlPct(t.ats)}</span></div>
-        <div><b>${wlt(t.atsFav)}</b><span>as favorite</span></div>
-        <div><b>${wlt(t.atsDog)}</b><span>as underdog</span></div>
-      </div>
-      <div class="small muted">Home ${wlt(t.atsHome)} · Away ${wlt(t.atsAway)} · Beats the spread by <b>${signedPts(t.coverAvg)}</b> pts a game on average</div>`
-      : '<p class="small muted">No lines on file for their games yet.</p>'}
-      <h4>Over / under</h4>
-      ${t.ou.w + t.ou.l + t.ou.t ? `<div class="small">Overs <b>${t.ou.w}</b> · Unders <b>${t.ou.l}</b>${t.ou.t ? ` · Pushes ${t.ou.t}` : ''}</div>
-        <div class="small muted">Their games average <b>${t.avgTotal.toFixed(1)}</b> points vs. a <b>${t.avgLineTotal.toFixed(1)}</b> line</div>`
-      : '<p class="small muted">No totals on file yet.</p>'}
-    </div>
-
-    <div class="card"><h3>Strength of schedule</h3>
-      <p class="small muted">Opponents' combined win % this season. 1st = hardest of 32.</p>
-      <div class="statline">
-        <div><b>${winPctText(t.sosPlayed)}</b><span>played${t.sosPlayedRank ? ` · ${ordinal(t.sosPlayedRank)}` : ''}</span></div>
-        <div><b>${winPctText(t.sosLeft)}</b><span>still to play${t.sosLeftRank ? ` · ${ordinal(t.sosLeftRank)}` : ''}</span></div>
-      </div>
-    </div>
-
-    <div class="card"><h3>Game log</h3>
-      <table class="slip log">
-        <thead><tr><th>Wk</th><th>Opp</th><th>Result</th><th class="num">Spread</th><th class="num">Total</th></tr></thead>
-        <tbody>${t.log.map((e) => `<tr class="${e.final ? '' : 'upcoming'}">
-          <td>${e.week}</td>
-          <td>${e.home ? '' : '@'}${teamLogo(e.oppName, 'small')}${esc(e.oppAbbr ?? e.opp)}</td>
-          <td>${e.final ? `<b class="${e.result === 'W' ? 'pos' : e.result === 'L' ? 'neg' : ''}">${e.result}</b> ${esc(e.score)}` : `<span class="muted small">${esc(day(e.date))}</span>`}</td>
-          <td class="num">${esc(lineText(e.line))} ${mark(e.cover)}</td>
-          <td class="num">${e.total ?? '–'}${e.ou ? ` <span class="muted">${e.ou}</span>` : ''}</td>
-        </tr>`).join('')}</tbody>
-      </table>
-    </div>
-    <p class="small muted">Scores and lines come from ESPN (the closing line for finished games); games ESPN has no line for use the ${esc(data.book ?? 'sportsbook')} line saved here.
-      ✓ = covered the spread, O/U = went over or under the total. A season is a small sample, and the line already prices in most of what these numbers show.</p>`;
+    ${foldCard('team-record', 'Record', recordBody(t))}
+    ${foldCard('team-injuries', 'Injuries', note(injuriesNote) + injuriesBody(t))}
+    ${foldCard('team-stats', 'Offensive/Defensive Stats', note(`Per game this season${t.advGames ? `, from ${t.advGames} box score${t.advGames === 1 ? '' : 's'}` : ''}. Offense is what they do; defense is what they allow.`) + statsBody(t))}
+    ${foldCard('team-ats', 'Against the spread', atsBody(t))}
+    ${foldCard('team-sos', 'Strength of schedule', note(sosNote) + sosBody(t))}
+    ${foldCard('team-log', 'Game log', logBody(t))}
+    ${sourcesNote}`;
   $('#research').innerHTML = html;
 }
 
@@ -1673,6 +1686,15 @@ $('#research').addEventListener('change', (e) => {
   }
 });
 $('#research').addEventListener('click', (e) => {
+  const head = e.target.closest('.fold-head');
+  if (head) {
+    const card = head.closest('.fold');
+    const shut = card.classList.toggle('folded');
+    if (shut) folded.add(card.dataset.fold);
+    else folded.delete(card.dataset.fold);
+    head.setAttribute('aria-expanded', String(!shut));
+    return;
+  }
   const mode = e.target.closest('#research-mode button')?.dataset.mode;
   if (mode) {
     researchMode = mode;

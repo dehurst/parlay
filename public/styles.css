@@ -154,6 +154,24 @@ ul.legs li { display: flex; justify-content: space-between; align-items: flex-st
   content: '▾'; position: absolute; right: 16px; top: 50%; transform: translateY(-50%);
   color: var(--muted); pointer-events: none; font-size: 16px;
 }
+/* Research cards that fold shut: tap the heading; the arrow points down while open, up while folded. */
+button.fold-head {
+  display: flex; width: 100%; align-items: center; justify-content: space-between; gap: 10px;
+  background: none; border: none; padding: 0; color: inherit; text-align: left; font: inherit;
+}
+.fold-arrow { color: var(--muted); font-size: 16px; transition: transform 0.15s; }
+.fold-head:hover .fold-arrow { color: var(--text); }
+.fold-body { margin-top: 10px; }
+.fold-body > :first-child { margin-top: 0; }
+.fold.folded .fold-body { display: none; }
+.fold.folded .fold-arrow { transform: rotate(180deg); }
+/* Compare: two teams side by side (stacked on phones). */
+.pair { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 24px; }
+.pair-col { min-width: 0; overflow-x: auto; }
+.pair table.slip td:last-child { white-space: nowrap; }
+.pair-name { display: flex; align-items: center; gap: 2px; padding-bottom: 6px; border-bottom: 1px solid var(--line); }
+@media (max-width: 600px) { .pair { grid-template-columns: 1fr; } }
+
 /* One line, the same height as the team dropdown above it. */
 .next-game {
   display: flex; justify-content: space-between; align-items: center; gap: 10px;
