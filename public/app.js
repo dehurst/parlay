@@ -1349,7 +1349,7 @@ async function renderResearch(quiet = false) {
     return;
   }
 
-  const when = (iso) => new Date(iso).toLocaleString([], { weekday: 'short', month: 'numeric', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+  const kickTime = (iso) => new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
   const day = (iso) => new Date(iso).toLocaleDateString([], { weekday: 'short', month: 'numeric', day: 'numeric' });
   const mark = (r) => ({ W: '<span class="mark win">✓</span>', L: '<span class="mark loss">✗</span>', P: '<span class="mark push">P</span>' })[r] ?? '';
   const dots = t.last5.map((r) => `<span class="dot ${r === 'W' ? 'win' : r === 'L' ? 'loss' : 'push'}">${r}</span>`).join('');
@@ -1358,10 +1358,9 @@ async function renderResearch(quiet = false) {
     ${modeSwitch}
     <label class="team-pick">${teamPick('research-team', t.name)}</label>
     ${next ? `<div class="card next-game">
-      <div><span class="muted small">Next game</span><br><b>${next.home ? 'vs' : '@'} ${teamLogo(next.oppName, 'lg')}${esc(next.oppName)}</b>
-        <div class="small muted">Week ${next.week} · ${esc(when(next.date))}</div>
-        ${next.line != null ? `<div class="small">Spread ${esc(lineText(next.line))}${next.total != null ? ` · Total ${next.total}` : ''}</div>` : ''}</div>
-      <button type="button" class="link small" data-team="${esc(next.oppName)}">See ${teamLogo(next.oppName, 'small')}${esc(next.opp)} →</button>
+      <div class="next-line"><span class="muted">Next game</span> <b>${next.home ? 'vs' : '@'} ${teamLogo(next.oppName)}${esc(next.opp)}</b> <span>${esc(kickTime(next.date))}</span>
+        ${next.line != null ? `<span class="small muted line-info">· Spread ${esc(lineText(next.line))}${next.total != null ? ` · Total ${next.total}` : ''}</span>` : ''}</div>
+      <button type="button" class="link small" data-team="${esc(next.oppName)}" aria-label="See ${esc(next.opp)}"><span class="see-text">See ${teamLogo(next.oppName, 'small')}${esc(next.opp)} </span>→</button>
     </div>` : ''}
 
     <div class="card"><h3>Record</h3>

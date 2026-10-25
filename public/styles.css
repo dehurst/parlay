@@ -154,7 +154,14 @@ ul.legs li { display: flex; justify-content: space-between; align-items: flex-st
   content: '▾'; position: absolute; right: 16px; top: 50%; transform: translateY(-50%);
   color: var(--muted); pointer-events: none; font-size: 16px;
 }
-.next-game { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+/* One line, the same height as the team dropdown above it. */
+.next-game {
+  display: flex; justify-content: space-between; align-items: center; gap: 10px;
+  min-height: 54px; padding: 8px 16px; box-sizing: border-box;
+}
+.next-line { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
+.next-line .team-logo { margin-right: 4px; }
+@media (max-width: 600px) { .next-line .line-info, .next-game .see-text { display: none; } }
 .next-game .link { color: var(--text); white-space: nowrap; }
 .last5 { margin: 8px 0 4px; display: flex; align-items: center; gap: 4px; }
 .dot { display: inline-flex; width: 20px; height: 20px; border-radius: 50%; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; color: #fff; }
