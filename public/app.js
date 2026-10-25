@@ -1380,7 +1380,7 @@ async function renderResearch(quiet = false) {
       ${injuryTable(t.injuries ?? [])}
     </div>
 
-    <div class="card"><h3>Offense vs defense</h3>
+    <div class="card"><h3>Offensive/Defensive Stats</h3>
       <p class="small muted">Per game this season${t.advGames ? `, from ${t.advGames} box score${t.advGames === 1 ? '' : 's'}` : ''}. Offense is what they do; defense is what they allow.</p>
       ${t.advGames ? advTable(t, t, 'Offense', 'Defense') : '<p class="small muted">No box scores yet for their finished games.</p>'}
       ${t.advGames ? `<div class="small muted">Turnover margin <b class="${netClass(t.turnoverMargin ?? 0)}">${signedPts(t.turnoverMargin)}</b>/gm${t.turnoverMarginRank ? ` (${ordinal(t.turnoverMarginRank)})` : ''}
