@@ -194,3 +194,9 @@ test('stats can be narrowed to one week', () => {
   assert.deepEqual(one.weeks.map((w) => w.key), ['2026-10-06']);
   assert.equal(computeStats(data, ['Daniel'], { week: '2026-09-29' }).weeks.length, 0);
 });
+
+test('a straight bet (one leg) grades and pays like a single bet', () => {
+  assert.equal(gradeParlay([{ grade: 'win', price: -110 }], 10).returned.toFixed(2), '19.09');
+  assert.equal(gradeParlay([{ grade: 'loss', price: -110 }], 10).status, 'lost');
+  assert.deepEqual(gradeParlay([{ grade: 'push', price: -110 }], 10), { status: 'push', returned: 10 });
+});

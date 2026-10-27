@@ -618,10 +618,11 @@ app.post('/api/custom', async (req, res, next) => {
     if (!(amount > 0) || amount > 10000) return res.status(400).json({ error: 'Enter how much you want on it ($1 to $10,000).' });
     const { win, gamesById } = await loadWeek();
     const keys = [...new Set(Array.isArray(req.body.keys) ? req.body.keys.map(String) : [])];
-    if (keys.length < 2) return res.status(400).json({ error: 'A parlay needs at least 2 legs.' });
+    // One bet is a straight bet; two or more is a parlay.
+    if (keys.length < 1) return res.status(400).json({ error: 'Pick at least one bet.' });
     const games = keys.map((k) => k.split('|')[0]);
     if (new Set(games).size < games.length) {
-      return res.status(400).json({ error: 'Custom parlays can’t have two bets from the same game (FanDuel prices those differently).' });
+      return res.status(400).json({ error: 'A parlay can’t have two bets from the same game (FanDuel prices those differently).' });
     }
     const legs = [];
     for (const key of keys) {
@@ -643,7 +644,7 @@ app.post('/api/custom', async (req, res, next) => {
     const priced = priceParlay(legs.map((l) => ({ ...l, fairProb: 0.5 })));
     weekStakes[id] = {
       id, custom: true, owner: name, number, createdAt: Date.now(),
-      name: `${name}'s Parlay ${number}`,
+      name: `${name}'s ${legs.length === 1 ? 'Bet' : 'Parlay'} ${number}`,
       // Made with Copy & edit from another parlay: that parlay's name.
       basedOn: typeof req.body.from === 'string' && req.body.from.trim() ? req.body.from.trim().slice(0, 80) : null,
       legs, decimal: priced.decimal, american: priced.american,

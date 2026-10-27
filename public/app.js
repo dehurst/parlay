@@ -468,7 +468,8 @@ function renderCalcBar(bar) {
   const games = new Set([...calcKeys].map((k) => k.split('|')[0]));
   const sameGame = games.size < calcKeys.size;
   const payout = calcStake * decimal;
-  const canPost = legs.length >= 2 && !sameGame;
+  // A single bet posts as a straight bet; 2+ from different games as a parlay.
+  const canPost = legs.length >= 1 && !sameGame;
   bar.innerHTML = `<span class="calc-sum">
       <b>${legs.length === 1 ? 'Straight bet' : `${legs.length}-leg parlay`} ${fmtOdds(toAmerican(decimal))}</b>
       <span class="small">$${esc(calcStake)} pays <b>${money(payout)}</b> (profit ${money(payout - calcStake)})</span>
@@ -478,7 +479,7 @@ function renderCalcBar(bar) {
     <span class="actions">
       <label class="stake-box">$<input id="calc-stake" type="number" inputmode="decimal" min="1" step="1" value="${esc(calcStake)}"></label>
       <button type="button" class="primary" id="calc-post" ${canPost ? '' : 'disabled'}
-        title="${canPost ? 'Post to the Parlays tab so others can join' : 'Needs 2+ legs from different games'}">Post</button>
+        title="${canPost ? 'Post to the Parlays tab so others can join' : 'A parlay needs its bets from different games'}">Post</button>
     </span>`;
 }
 
@@ -897,6 +898,9 @@ const betLine = (total, payout, when = '') =>
 const whoLine = (stakes) =>
   `<div>${Object.entries(stakes).map(([who, amt]) => `${esc(who)} ${money(amt)}`).join(' · ')}</div>`;
 
+// "Straight bet" for one leg, else "3-leg parlay" ("3-leg custom parlay").
+const betKind = (p, custom = false) => (p.legs.length === 1 ? 'Straight bet' : `${p.legs.length}-leg ${custom ? 'custom ' : ''}parlay`);
+
 // A parlay's name, with a ✎ to rename it when it's saved (custom, or with
 // money on it). While renaming, a small form takes its place.
 let renamingId = null;
@@ -920,7 +924,7 @@ function inPlayHtml(data) {
     return `<div class="card parlay ${p.custom ? 'custom' : ''}">
       <div class="head">
         <div>${p.placed ? '<span class="chip placed">✓ Placed</span>' : '<span class="chip pending">Not placed</span>'}
-          ${titleHtml(p, !isPast())}<div class="small muted">${p.legs.length}-leg ${p.custom ? 'custom ' : ''}parlay</div></div>
+          ${titleHtml(p, !isPast())}<div class="small muted">${betKind(p, p.custom)}</div></div>
         <div class="odds-col"><div class="odds">${fmtOdds(shownOdds(p))}</div>${copyButton(p)}</div>
       </div>
       <ul class="graded-legs">${p.legs.map((l) => `<li>${gradeMark(l.grade) || '<span class="mark">·</span>'}<span><b>${betLabel(l.label)}</b> <span class="muted">${fmtOdds(l.price)}</span>${legSub(l)}</span></li>`).join('')}</ul>
@@ -938,7 +942,7 @@ function settledHtml(data) {
     const back = p.status === 'won' ? `paid ${money(p.returned)} (${money(p.returned - p.total)} profit)` : p.status === 'push' ? 'refunded' : 'paid $0.00';
     return `<div class="card parlay done ${p.status}">
       <div class="head">
-        <div>${statusChip(p.status, p.returned, p.total)}${titleHtml(p, !isPast())}<div class="small muted">${p.legs.length}-leg parlay</div></div>
+        <div>${statusChip(p.status, p.returned, p.total)}${titleHtml(p, !isPast())}<div class="small muted">${betKind(p)}</div></div>
         <div class="odds-col"><div class="odds">${fmtOdds(shownOdds(p))}</div>${copyButton(p)}</div>
       </div>
       <ul class="graded-legs">${p.legs.map((l) => `<li>${gradeMark(l.grade)}<span><b>${betLabel(l.label)}</b> <span class="muted">${fmtOdds(l.price)}</span>${legSub(l)}</span></li>`).join('')}</ul>
@@ -956,7 +960,7 @@ function customHtml(data) {
     <div class="card parlay custom">
       <div class="head">
         <div>${likersOf(p).length >= majority() ? '<span class="badge">Group\'s pick</span>' : ''}
-          ${titleHtml(p)}<div class="small muted">${p.legs.length}-leg custom parlay${p.basedOn ? ` · based on ${esc(p.basedOn)}` : ''}</div></div>
+          ${titleHtml(p)}<div class="small muted">${betKind(p, true)}${p.basedOn ? ` · based on ${esc(p.basedOn)}` : ''}</div></div>
         <div class="odds-col"><div class="odds">${fmtOdds(shownOdds(p))}</div>${copyButton(p)}</div>
       </div>
       <ul class="legs">${p.legs.map((l) => `<li><span><b>${betLabel(l.label)}</b> <span class="muted">${fmtOdds(l.price)}</span>${legSub(l)}${lineMoved(l, data.book)}</span>${p.started ? '' : dislikeHtml(l)}</li>`).join('')}</ul>
@@ -1527,7 +1531,7 @@ async function renderSlip(quiet = false) {
         <td class="num">${money(amt)}</td><td class="num">${money(amt * (p.decimal - 1))}</td><td class="num">${money(amt * p.decimal)}</td></tr>`).join('');
     return `<div class="card parlay ${p.placed ? 'placed' : ''} ${p.status !== 'pending' ? `done ${p.status}` : ''}">
       <div class="head">
-        <div><span class="muted small">Bet ${i + 1}</span> ${p.placed ? '<span class="chip placed">✓ Placed</span>' : ''} ${statusChip(p.status, p.returned, p.total)} ${p.paidOut ? '<span class="chip paid">💵 Paid out</span>' : ''}${titleHtml(p, !past)}<div class="small muted">${p.legs.length}-leg parlay</div></div>
+        <div><span class="muted small">Bet ${i + 1}</span> ${p.placed ? '<span class="chip placed">✓ Placed</span>' : ''} ${statusChip(p.status, p.returned, p.total)} ${p.paidOut ? '<span class="chip paid">💵 Paid out</span>' : ''}${titleHtml(p, !past)}<div class="small muted">${betKind(p)}</div></div>
         <div class="odds-col"><div class="odds">${fmtOdds(shownOdds(p))}</div>${copyButton(p)}</div>
       </div>
       ${p.stillOption || p.placed || past ? '' : '<div class="lines">Picks changed since people bought in, so this parlay is no longer one of the current options. Double-check before placing it.</div>'}
