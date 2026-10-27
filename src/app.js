@@ -401,18 +401,6 @@ function pickable(key, gamesById, now = new Date()) {
   return valid && line && !hasStarted(game, now) ? line : null;
 }
 
-// A bet that can be logged as already placed: a real line we saved, on a game
-// that hasn't started or is still in progress (no final score, under ~3½
-// hours since kickoff), so nobody logs a bet after knowing how it ended.
-function loggable(key, gamesById, win, now = Date.now()) {
-  const [gameId, market, side] = String(key).split('|');
-  const game = gamesById.get(gameId);
-  const valid = isProp(market) ? validProp(market, side) : MARKETS[market]?.includes(side);
-  const line = lineFor(game, market, side);
-  if (!valid || !line || store.data.results[win.key]?.[gameId]) return null;
-  return now - new Date(game.commence).getTime() < 3.5 * 3600e3 ? line : null;
-}
-
 function checkPlayer(req, res) {
   // Logged in: always you. Without logins: the name the page sends.
   const name = req.player ?? req.body?.name;
@@ -626,24 +614,8 @@ app.post('/api/custom', async (req, res, next) => {
   try {
     const name = checkPlayer(req, res);
     if (!name) return;
-    // late: logging a bet already placed at the sportsbook (the game may be
-    // under way), with everyone's stakes at once. Saved as placed.
-    const late = req.body.late === true;
-    let stakes;
-    if (late) {
-      stakes = {};
-      for (const [who, value] of Object.entries(req.body.stakes ?? {})) {
-        if (!players.includes(who)) continue;
-        const amt = Math.round(Number(value || 0) * 100) / 100;
-        if (!Number.isFinite(amt) || amt < 0 || amt > 10000) return res.status(400).json({ error: 'Stakes go from $0 to $10,000.' });
-        if (amt > 0) stakes[who] = amt;
-      }
-      if (!Object.keys(stakes).length) return res.status(400).json({ error: 'Enter at least one person’s stake.' });
-    } else {
-      const amount = Math.round(Number(req.body.amount || 0) * 100) / 100;
-      if (!(amount > 0) || amount > 10000) return res.status(400).json({ error: 'Enter how much you want on it ($1 to $10,000).' });
-      stakes = { [name]: amount };
-    }
+    const amount = Math.round(Number(req.body.amount || 0) * 100) / 100;
+    if (!(amount > 0) || amount > 10000) return res.status(400).json({ error: 'Enter how much you want on it ($1 to $10,000).' });
     const { win, gamesById } = await loadWeek();
     const keys = [...new Set(Array.isArray(req.body.keys) ? req.body.keys.map(String) : [])];
     // One bet is a straight bet; two or more is a parlay.
@@ -654,12 +626,8 @@ app.post('/api/custom', async (req, res, next) => {
     }
     const legs = [];
     for (const key of keys) {
-      const line = late ? loggable(key, gamesById, win) : pickable(key, gamesById);
-      if (!line) {
-        return res.status(409).json({ error: late
-          ? 'One of those games is over (or has no saved line), so it can’t be logged.'
-          : 'One of those bets has started or lost its line. Refresh and try again.' });
-      }
+      const line = pickable(key, gamesById);
+      if (!line) return res.status(409).json({ error: 'One of those bets has started or lost its line. Refresh and try again.' });
       const [gameId, market, side] = key.split('|');
       const game = gamesById.get(gameId);
       legs.push({
@@ -680,8 +648,7 @@ app.post('/api/custom', async (req, res, next) => {
       // Made with Copy & edit from another parlay: that parlay's name.
       basedOn: typeof req.body.from === 'string' && req.body.from.trim() ? req.body.from.trim().slice(0, 80) : null,
       legs, decimal: priced.decimal, american: priced.american,
-      stakes,
-      ...(late ? { late: true, placed: { by: name, at: Date.now(), payout: null } } : {}),
+      stakes: { [name]: amount },
     };
     await save();
     res.json({ id, name: weekStakes[id].name });

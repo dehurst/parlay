@@ -28,16 +28,6 @@ let calcFrom = null;
 // Likes on parlays and dislikes on legs this week (from /api/parlays).
 let reactions = { parlays: {}, parlayDowns: {}, legs: {} };
 let calcStake = 10;
-// "Log a bet already placed": games in progress can be picked, and everyone's
-// stakes go in at once ({ player: dollars }). Saved as placed.
-let calcLate = false;
-const lateStakes = {};
-// Bets the builder can use: a line, and the game not started (or, when
-// logging a placed bet, still in progress).
-const usable = (key) => {
-  const g = gameOf(key);
-  return !!bookLine(key) && (!g?.started || (calcLate && !isFinal(g)));
-};
 
 
 async function api(path, opts = {}) {
@@ -293,8 +283,6 @@ function renderGames() {
   renderWho();
   $('#picks-mode').hidden = isPast();
   document.querySelectorAll('#picks-mode button').forEach((b) => b.classList.toggle('active', (b.dataset.mode === 'calc') === calc));
-  $('#late-toggle').hidden = !calc || isPast();
-  $('#calc-late').checked = calcLate;
   const locked = isLocked() && !calc;
   const allStarted = !openGames().length;
   const n = submittedPicks()?.length ?? 0;
@@ -302,8 +290,6 @@ function renderGames() {
     ? (n ? `Your ${n} pick${n === 1 ? '' : 's'} for ${week.label}, graded once each game finished.` : `You didn't submit picks for ${week.label}.`)
     : !calc && allStarted && hasSubmitted()
     ? `Every game this week has kicked off, so picks are locked. Next week's games show up Tuesday at 6 AM Eastern.`
-    : calc && calcLate
-    ? `Logging a bet you already placed: tap it (games in progress count, at the last ${week.book ?? 'sportsbook'} line saved here), enter everyone's stake below, and hit Log it. It's saved as placed; add the real payout on the Bet Slip.`
     : calc && calcFrom
     ? 'Swap or drop legs below, or tap any bet to add it. Post saves it as your own parlay; the original stays as is.'
     : calc
@@ -351,7 +337,7 @@ function renderGames() {
       // While editing, picks on games that have started can't change: show a lock.
       const lockedPick = !calc && isEditing() && g.started && mine.has(key) && !result;
       const mark = lockedPick ? '🔒' : { win: '✓', loss: '✗', push: 'P', right: '✓' }[result];
-      const disabled = locked || !line || (g.started && !(calc && calcLate && !isFinal(g)));
+      const disabled = locked || g.started || !line;
       // Friends' picks aren't shown here, so everyone picks on their own.
       const titles = { win: 'Your pick won', loss: 'Your pick lost', push: 'Push', right: 'This side won' };
       return `<button class="pick ${mine.has(key) ? (calc ? 'on calc' : 'on') : ''} ${result ? `graded ${result}` : ''}" data-key="${esc(key)}" ${disabled ? 'disabled' : ''}
@@ -472,7 +458,7 @@ const toAmerican = (d) => (d >= 2 ? Math.round((d - 1) * 100) : Math.round(-100 
 
 function renderCalcBar(bar) {
   // Drop bets whose game started or whose line disappeared.
-  for (const key of calcKeys) if (!usable(key)) calcKeys.delete(key);
+  for (const key of calcKeys) if (!bookLine(key) || gameOf(key)?.started) calcKeys.delete(key);
   const legs = [...calcKeys].map(bookLine);
   if (!legs.length) {
     bar.innerHTML = '<span class="muted">Tap bets to build a parlay</span>';
@@ -484,21 +470,6 @@ function renderCalcBar(bar) {
   const payout = calcStake * decimal;
   // A single bet posts as a straight bet; 2+ from different games as a parlay.
   const canPost = legs.length >= 1 && !sameGame;
-  if (calcLate) {
-    // Everyone's stake, then "Log it".
-    const total = Object.values(lateStakes).reduce((a, b) => a + (b || 0), 0);
-    bar.innerHTML = `<span class="calc-sum">
-        <b>${legs.length === 1 ? 'Straight bet' : `${legs.length}-leg parlay`} ${fmtOdds(toAmerican(decimal))}</b>
-        <span class="small late-sum">${money(total)} bet pays <b>${money(total * decimal)}</b></span>
-        ${sameGame ? '<span class="small warn-text">A parlay can’t have two bets from the same game.</span>' : ''}
-        <button type="button" class="link small" id="calc-clear">Clear</button>
-      </span>
-      <span class="actions late-actions">
-        ${week.players.map((p) => `<label class="stake-box small">${esc(p)} $<input class="late-stake" data-who="${esc(p)}" type="number" inputmode="decimal" min="0" step="1" value="${lateStakes[p] ?? ''}" placeholder="0"></label>`).join('')}
-        <button type="button" class="primary" id="calc-post" ${canPost ? '' : 'disabled'}>Log it</button>
-      </span>`;
-    return;
-  }
   bar.innerHTML = `<span class="calc-sum">
       <b>${legs.length === 1 ? 'Straight bet' : `${legs.length}-leg parlay`} ${fmtOdds(toAmerican(decimal))}</b>
       <span class="small">$${esc(calcStake)} pays <b>${money(payout)}</b> (profit ${money(payout - calcStake)})</span>
@@ -515,18 +486,13 @@ function renderCalcBar(bar) {
 // Post the calculator's parlay to the Parlays tab with your stake.
 async function postCustom() {
   try {
-    const late = calcLate;
-    const res = await api('/api/custom', { method: 'POST', body: { name: me, keys: [...calcKeys], amount: calcStake, from: calcFrom?.name, late, stakes: late ? lateStakes : undefined } });
+    const res = await api('/api/custom', { method: 'POST', body: { name: me, keys: [...calcKeys], amount: calcStake, from: calcFrom?.name } });
     calcKeys.clear();
     calcFrom = null;
     calc = false;
-    calcLate = false;
-    for (const k of Object.keys(lateStakes)) delete lateStakes[k];
-    tab = late ? 'slip' : 'parlays';
+    tab = 'parlays';
     render();
-    notice(late
-      ? `Logged ${res.name} as placed. Add the payout ${week.book ?? 'the sportsbook'} shows with Edit payout below.`
-      : `Posted ${res.name}. Others can join it on the Parlays tab.`);
+    notice(`Posted ${res.name}. Others can join it on the Parlays tab.`);
   } catch (err) {
     notice(err.message);
   }
@@ -590,7 +556,7 @@ function swapFor(key) {
 // swap (same team the other way) and Drop, each showing what the parlay
 // would become.
 function builderHtml() {
-  for (const key of calcKeys) if (!usable(key)) calcKeys.delete(key);
+  for (const key of calcKeys) if (!bookLine(key) || gameOf(key)?.started) calcKeys.delete(key);
   if (!calcKeys.size) return '';
   const keys = [...calcKeys].sort((a, b) => gameOf(a).commence.localeCompare(gameOf(b).commence));
   const result = (set) => {
@@ -1656,12 +1622,6 @@ $('#games').addEventListener('click', (e) => {
   const btn = e.target.closest('.pick');
   if (btn && !btn.disabled) (calc ? toggleCalc : toggle)(btn.dataset.key);
 });
-$('#calc-late').addEventListener('change', (e) => {
-  calcLate = e.target.checked;
-  // Start with your own stake filled in.
-  if (calcLate && !Object.values(lateStakes).some(Boolean)) lateStakes[me] = calcStake;
-  renderGames();
-});
 $('#tab-picks').addEventListener('click', (e) => {
   const mode = e.target.closest('.mode-switch button')?.dataset.mode;
   if (!mode) return;
@@ -1669,17 +1629,6 @@ $('#tab-picks').addEventListener('click', (e) => {
   renderGames();
 });
 $('#submit-bar').addEventListener('input', (e) => {
-  if (e.target.classList.contains('late-stake')) {
-    const v = Number(e.target.value);
-    lateStakes[e.target.dataset.who] = v > 0 ? Math.round(v * 100) / 100 : 0;
-    // Update the total without re-rendering the inputs (keeps the keyboard up).
-    const legs = [...calcKeys].map(bookLine);
-    const decimal = legs.reduce((d, l) => d * toDecimal(l.price), 1);
-    const total = Object.values(lateStakes).reduce((a, b) => a + (b || 0), 0);
-    const sum = document.querySelector('.late-sum');
-    if (sum) sum.innerHTML = `${money(total)} bet pays <b>${money(total * decimal)}</b>`;
-    return;
-  }
   if (e.target.id !== 'calc-stake') return;
   const v = Number(e.target.value);
   if (!(v > 0)) return;
