@@ -93,6 +93,18 @@ the plays most of you agree on and builds a few parlays out of them.
   been paid; until then the slip's summary shows **To pay out** with what each
   person is owed.
 
+- **NFL | CFB** (switch under the week): flips the whole site to college
+  football and back. College covers games with a Power 5 team (ACC, Big 12,
+  Big Ten, SEC, Pac-12, by ESPN's conference list) and works like the NFL side:
+  picks, Board, Parlays, Bet Slip, Bet Stats, Analysis, and **CFB Stats/Data**,
+  with its own picks, parlays, and history. Its weeks are numbered one ahead
+  of the NFL's (college Week 9 is NFL Week 8). Differences: no player props
+  (a credit per game adds up fast with ~35 games), no injury card (ESPN has
+  almost no college injury reports), and the extra manual refreshes and higher
+  credit limit fall on Saturdays. Teams are matched by full name, since
+  college nicknames repeat. Locally its data is in `data/cfb.json`
+  (`CFB_DATA_FILE`); hosted, in the Redis key `parlay:cfb`.
+
 ## Run it
 
 ```bash
@@ -157,7 +169,13 @@ kickoff; a check that finds nothing costs nothing.
 | Sun | 6-12 | ~30 | ~36-42 |
 | **Week** | **42-48** | **~62** | **~104-110** |
 
-That's roughly 450-470 a month in the worst case (a refresh only happens if
+College lines cost the same 3 credits a refresh, on the same 11 AM / 6 PM
+schedule, so they add up to about 180 a month. With both leagues on, that
+goes past the free 500 in a heavy month; NFL props pause first (they stop at
+75 credits left), which keeps lines for both working. A league's lines only
+refresh when someone opens that league, so a quiet week costs less.
+
+NFL alone is roughly 450-470 a month in the worst case (a refresh only happens if
 someone visits), under the free 500. `DAILY_CREDIT_LIMIT` and
 `SUNDAY_CREDIT_LIMIT` are a backstop for line refreshes only. Once every game
 of the week has kicked off, nothing refreshes until the next week. The Picks

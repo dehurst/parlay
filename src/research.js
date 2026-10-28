@@ -6,10 +6,10 @@
 // come from each finished game's box score (also free), offense from the
 // team's own line and defense from what their opponent did that game.
 
-const ESPN = 'https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard';
-const ESPN_SUMMARY = 'https://site.api.espn.com/apis/site/v2/sports/football/nfl/summary';
-const ESPN_CORE = 'https://sports.core.api.espn.com/v2/sports/football/leagues/nfl';
-export const REGULAR_SEASON_WEEKS = 18;
+import { sport, inSlate, espnSite, espnCore } from './sport.js';
+
+// Regular-season weeks: 18 in the NFL, 15 in college (ESPN's numbering).
+export const regularSeasonWeeks = () => sport().seasonWeeks;
 
 const num = (v) => (v === '' || v == null || !Number.isFinite(Number(v)) ? null : Number(v));
 // "7-13" -> [7, 13]; null if missing.
@@ -30,7 +30,7 @@ export function seasonYear(now = new Date()) {
 }
 
 export async function fetchSeasonWeek(season, week) {
-  const res = await fetch(`${ESPN}?seasontype=2&week=${week}&dates=${season}`, { signal: AbortSignal.timeout(8000) });
+  const res = await fetch(`${espnSite('scoreboard')}?seasontype=2&week=${week}&dates=${season}${sport().espnQuery}`, { signal: AbortSignal.timeout(8000) });
   if (!res.ok) throw new Error(`ESPN returned ${res.status}`);
   return res.json();
 }
@@ -63,9 +63,14 @@ export function parseSeasonWeek(board, week) {
     const h = side('home');
     const a = side('away');
     if (!h?.team || !a?.team) return null;
+    // College: only games with a Power 5 team.
+    if (!inSlate(h.team.conferenceId) && !inSlate(a.team.conferenceId)) return null;
     const status = comp.status?.type ?? ev.status?.type ?? {};
     const odds = comp.odds?.[0];
-    const team = (c) => ({ name: c.team.displayName, abbr: c.team.abbreviation, short: c.team.shortDisplayName ?? c.team.name, score: num(c.score), id: c.team.id ?? null });
+    const team = (c) => ({
+      name: c.team.displayName, abbr: c.team.abbreviation, short: c.team.shortDisplayName ?? c.team.name, score: num(c.score), id: c.team.id ?? null,
+      conf: c.team.conferenceId ?? null, logo: c.team.logo ?? null,
+    });
     return {
       week,
       date: ev.date,
@@ -107,7 +112,7 @@ export function parseGameTeamStats(summary) {
 }
 
 export async function fetchGameTeamStats(espnId) {
-  const res = await fetch(`${ESPN_SUMMARY}?event=${encodeURIComponent(espnId)}`, { signal: AbortSignal.timeout(8000) });
+  const res = await fetch(`${espnSite('summary')}?event=${encodeURIComponent(espnId)}`, { signal: AbortSignal.timeout(8000) });
   if (!res.ok) throw new Error(`ESPN box score returned ${res.status}`);
   return parseGameTeamStats(await res.json());
 }
@@ -145,10 +150,10 @@ export async function fetchGameLine(game) {
     if (!res.ok) throw new Error(`ESPN returned ${res.status}`);
     return res.json();
   };
-  const summary = await get(`${ESPN_SUMMARY}?event=${encodeURIComponent(game.espnId)}`);
+  const summary = await get(`${espnSite('summary')}?event=${encodeURIComponent(game.espnId)}`);
   const found = pick(summary.pickcenter) ?? pick(summary.odds);
   if (found) return found;
-  const odds = await get(`${ESPN_CORE}/events/${encodeURIComponent(game.espnId)}/competitions/${encodeURIComponent(game.espnId)}/odds`);
+  const odds = await get(`${espnCore()}/events/${encodeURIComponent(game.espnId)}/competitions/${encodeURIComponent(game.espnId)}/odds`);
   return pick(odds.items);
 }
 
@@ -174,7 +179,7 @@ export function buildTeams(games, fallbackLine = () => null, boxscores = {}) {
   const team = (t) => {
     if (!teams.has(t.name)) {
       teams.set(t.name, {
-        name: t.name, abbr: t.abbr, short: t.short,
+        name: t.name, abbr: t.abbr, short: t.short, conf: t.conf ?? null, logo: t.logo ?? null,
         record: rec(), home: rec(), away: rec(), pf: 0, pa: 0,
         ats: rec(), atsFav: rec(), atsDog: rec(), atsHome: rec(), atsAway: rec(), coverSum: 0,
         ou: rec(), totalSum: 0, lineTotalSum: 0, ouGames: 0,
@@ -251,7 +256,9 @@ export function buildTeams(games, fallbackLine = () => null, boxscores = {}) {
     const vals = list.map((o) => winPct.get(o.name)).filter((v) => v != null);
     return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
   };
-  const out = [...teams.values()].map((t) => {
+  // College lists (and ranks) only Power 5 teams; their other opponents
+  // still count toward strength of schedule above.
+  const out = [...teams.values()].filter((t) => inSlate(t.conf)).map((t) => {
     const played = t.log.filter((e) => e.result);
     const results = played.map((e) => e.result);
     let streak = '';
@@ -263,7 +270,7 @@ export function buildTeams(games, fallbackLine = () => null, boxscores = {}) {
     }
     const n = played.length;
     return {
-      name: t.name, abbr: t.abbr, short: t.short,
+      name: t.name, abbr: t.abbr, short: t.short, logo: t.logo,
       record: t.record, home: t.home, away: t.away,
       ppg: n ? t.pf / n : null, papg: n ? t.pa / n : null, margin: n ? (t.pf - t.pa) / n : null,
       last5: results.slice(-5), streak,

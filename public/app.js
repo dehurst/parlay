@@ -12,6 +12,9 @@ const storage = {
 };
 
 let me = storage.get('parlay.name');
+// Which league the site is showing: 'nfl' or 'cfb' (college, Power 5).
+// Each has its own weeks, picks, parlays, and stats.
+let league = storage.get('parlay.sport') === 'cfb' ? 'cfb' : 'nfl';
 let week = null;
 // The week on screen: null for this week, else a past week's key (YYYY-MM-DD).
 let viewKey = null;
@@ -31,12 +34,16 @@ let calcStake = 10;
 
 
 async function api(path, opts = {}) {
+  const sentFor = league;
   const res = await fetch(path, {
     ...opts,
-    headers: { 'content-type': 'application/json', 'x-group-code': storage.get('parlay.code') ?? '' },
+    headers: { 'content-type': 'application/json', 'x-group-code': storage.get('parlay.code') ?? '', 'x-sport': league },
     body: opts.body && JSON.stringify(opts.body),
   });
   const data = await res.json().catch(() => ({}));
+  // Switched leagues while this was loading: drop it, so the other league's
+  // data never lands on screen (the switch already loaded the new league).
+  if (sentFor !== league) return new Promise(() => {});
   if (res.status === 401 && data.login && !path.startsWith('/api/login')) {
     showLogin();
     throw new Error('Please log in.');
@@ -63,11 +70,12 @@ async function load(refresh = false) {
   if (viewKey) params.set('week', viewKey);
   try {
     week = await api(`/api/week?${params}`);
+    addTeams(week.teams ?? {});
   } catch (err) {
     if ($('#login').hidden) notice(err.message); // the login screen speaks for itself
     return;
   }
-  $('#week-nav').hidden = false;
+  $('#week-nav').hidden = $('#sport-switch').hidden = false;
   notice(week.authMissing
     ? 'Logins aren’t turned on yet: add LOGINS in Vercel’s settings (see the README). Until then anyone with the link can get in.'
     : week.warning);
@@ -87,7 +95,7 @@ async function load(refresh = false) {
   const live = week.book && !isPast();
   const details = [
     week.demo && 'Demo games',
-    live && (week.propsUpdated ? `Props from ${time(week.propsUpdated)}` : 'No props yet')
+    live && week.props && (week.propsUpdated ? `Props from ${time(week.propsUpdated)}` : 'No props yet')
       + (week.propsPaused ? ' (paused to save API credits)' : week.nextPropsAt ? `, ${next(week.nextPropsAt)}` : ''),
     week.creditsLeft != null && `${week.creditsLeft} API credits left this month`,
   ].filter(Boolean).map(esc).join(' · ');
@@ -104,6 +112,32 @@ async function load(refresh = false) {
   $('#join').hidden = true;
   $('#tabs').hidden = false;
   render();
+}
+
+// NFL | CFB switch under the week. Switching shows that league's current week.
+function renderLeague() {
+  document.querySelectorAll('#sport-switch button').forEach((b) => b.classList.toggle('active', b.dataset.sport === league));
+  $('#league-name').textContent = league.toUpperCase();
+}
+
+function switchLeague(next) {
+  if (next === league) return;
+  league = next;
+  storage.set('parlay.sport', league);
+  researchTeam = storage.get(teamStorageKey());
+  compareA = compareB = null;
+  viewKey = null;
+  statsScope = 'week';
+  calc = false;
+  calcKeys.clear();
+  calcFrom = null;
+  placingId = null;
+  renamingId = null;
+  notice(null);
+  renderLeague();
+  // Clear the last league's games while the new one loads.
+  document.querySelectorAll('main .tab > div:not(.mode-switch)').forEach((d) => (d.innerHTML = ''));
+  load();
 }
 
 // Header week switcher: ‹ older · pick any week · newer ›. Past weeks are
@@ -165,7 +199,7 @@ function showLogin() {
   $('#tabs').hidden = true;
   $('#submit-bar').hidden = true;
   $('#past-banner').hidden = true;
-  $('#week-nav').hidden = true;
+  $('#week-nav').hidden = $('#sport-switch').hidden = true;
   $('#who').innerHTML = '';
   document.querySelectorAll('.tab').forEach((t) => (t.hidden = true));
   setTimeout(() => $('#login-form [name=username]')?.focus(), 0);
@@ -661,13 +695,36 @@ const ABBR = {
   jets: 'NYJ', eagles: 'PHI', steelers: 'PIT', '49ers': 'SF', seahawks: 'SEA', buccaneers: 'TB',
   titans: 'TEN', commanders: 'WAS',
 };
-const abbr = (team) => ABBR[team.split(' ').pop().toLowerCase()] ?? team.split(' ').pop();
-// NFL.com's own club-logo CDN, keyed by the same abbreviations we already use.
-const logoUrl = (team) => `https://static.www.nfl.com/league/api/clubs/logos/${abbr(team)}.png`;
-const teamLogo = (team, cls = '') => (team ? `<img class="team-logo ${cls}" src="${logoUrl(team)}" alt="" loading="lazy">` : '');
+// College teams from the server (ESPN): { fullName: { short, abbr, logo } },
+// found by full name ("Ohio State Buckeyes") or school ("Ohio State").
+const collegeTeams = new Map();
+function addTeams(teams) {
+  for (const [name, t] of Object.entries(teams)) {
+    const info = { name, ...t };
+    collegeTeams.set(name, info);
+    if (t.short && !collegeTeams.has(t.short)) collegeTeams.set(t.short, info);
+  }
+}
+const college = (team) => collegeTeams.get(String(team));
+const abbr = (team) => (league === 'cfb'
+  ? college(team)?.abbr ?? team
+  : ABBR[team.split(' ').pop().toLowerCase()] ?? team.split(' ').pop());
+// NFL.com's own club-logo CDN, keyed by the same abbreviations we already use;
+// ESPN's logos for college.
+const logoUrl = (team) => (league === 'cfb' ? college(team)?.logo : `https://static.www.nfl.com/league/api/clubs/logos/${abbr(team)}.png`);
+const teamLogo = (team, cls = '') => (team && logoUrl(team) ? `<img class="team-logo ${cls}" src="${logoUrl(team)}" alt="" loading="lazy">` : '');
 const dayKey = (iso) => new Date(iso).toDateString();
-// The team a bet label names ("49ers ML", "Panthers +3"); null for totals and props.
-const labelTeam = (label) => { const w = String(label ?? '').split(' ')[0].toLowerCase(); return ABBR[w] ? w : null; };
+// The team a bet label names ("49ers ML", "Panthers +3", "Ohio State -7.5");
+// null for totals and props.
+const labelTeam = (label) => {
+  const text = String(label ?? '');
+  if (league === 'cfb') {
+    const m = text.match(/^(.+) (ML|[+-]?\d+(?:\.\d+)?)$/);
+    return m && college(m[1]) ? m[1] : null;
+  }
+  const w = text.split(' ')[0].toLowerCase();
+  return ABBR[w] ? w : null;
+};
 // A bet label with its team's logo in front.
 const betLabel = (label) => `${teamLogo(labelTeam(label), 'small')}${esc(label)}`;
 // "49ers @ Falcons", each team with its logo.
@@ -829,7 +886,7 @@ async function submit() {
 }
 
 // "San Francisco 49ers @ Atlanta Falcons" -> "49ers @ Falcons"
-const shortMatchup = (m) => String(m).split(' @ ').map((t) => t.split(' ').pop()).join(' @ ');
+const shortMatchup = (m) => String(m).split(' @ ').map((t) => (league === 'cfb' ? college(t)?.short ?? t : t.split(' ').pop())).join(' @ ');
 // A leg's matchup on its own small line under the bet.
 const legSub = (l, extra = '') => `<div class="small muted leg-sub">${matchupHtml(l.matchup)}${extra}</div>`;
 
@@ -1237,7 +1294,9 @@ async function renderAnalysis() {
 
 // ---- Research ----------------------------------------------------------------
 
-let researchTeam = storage.get('parlay.team');
+// The team you looked at last, per league.
+const teamStorageKey = () => (league === 'cfb' ? 'parlay.team.cfb' : 'parlay.team');
+let researchTeam = storage.get(teamStorageKey());
 let researchMode = 'team'; // 'team' (one team's full page) | 'compare' (two teams, head to head) | 'league' (rankings)
 let compareA = null;
 let compareB = null;
@@ -1321,6 +1380,7 @@ async function renderResearch(quiet = false) {
   const data = await api(`/api/research?team=${encodeURIComponent(researchTeam ?? '')}`).catch((err) => (notice(err.message), null));
   if (!data) return;
   const teams = data.teams;
+  addTeams(Object.fromEntries(teams.filter((x) => x.logo).map((x) => [x.name, { short: x.short, abbr: x.abbr, logo: x.logo }])));
   // Default: the team you looked at last, else one from this week's first game.
   if (!teams.some((t) => t.name === researchTeam)) {
     const first = week.games.find((g) => !g.started) ?? week.games[0];
@@ -1377,7 +1437,11 @@ async function renderResearch(quiet = false) {
       ${x.ou.w + x.ou.l + x.ou.t ? `<div class="small">Overs <b>${x.ou.w}</b> · Unders <b>${x.ou.l}</b>${x.ou.t ? ` · Pushes ${x.ou.t}` : ''}</div>
         <div class="small muted">Their games average <b>${x.avgTotal.toFixed(1)}</b> points vs. a <b>${x.avgLineTotal.toFixed(1)}</b> line</div>`
       : '<p class="small muted">No totals on file yet.</p>'}`;
-  const sosNote = 'Opponents\' combined win % this season. 1st = hardest of 32.';
+  const sosNote = `Opponents' combined win % this season. 1st = hardest of ${teams.length}.`;
+  // College: ESPN has no injury reports to speak of, so that card is left out.
+  const showInjuries = data.injuries !== false;
+  // College opponents outside the Power 5 have no page of their own.
+  const hasPage = (name) => teams.some((x) => x.name === name);
   const sosBody = (x) => `<div class="statline">
         <div><b>${winPctText(x.sosPlayed)}</b><span>played${x.sosPlayedRank ? ` · ${ordinal(x.sosPlayedRank)}` : ''}</span></div>
         <div><b>${winPctText(x.sosLeft)}</b><span>still to play${x.sosLeftRank ? ` · ${ordinal(x.sosLeftRank)}` : ''}</span></div>
@@ -1414,9 +1478,9 @@ async function renderResearch(quiet = false) {
       <div class="team-pick">${teamPick('compare-a', a.name)}<span class="muted small">vs</span>${teamPick('compare-b', b.name)}</div>
       ${matchup(a, b)}
       ${matchup(b, a)}
-      <p class="small muted">Per game this season from ESPN's box scores. Ranks are out of 32 (1st = best). A season is a small sample.</p>
+      <p class="small muted">Per game this season from ESPN's box scores. Ranks are out of ${teams.length} (1st = best). A season is a small sample.</p>
       ${pair('record', 'Record', '', recordBody)}
-      ${pair('injuries', 'Injuries', injuriesNote, injuriesBody)}
+      ${showInjuries ? pair('injuries', 'Injuries', injuriesNote, injuriesBody) : ''}
       ${pair('stats', 'Offensive/Defensive Stats', 'Per game this season. Offense is what they do; defense is what they allow.', statsBody)}
       ${pair('ats', 'Against the spread', '', atsBody)}
       ${pair('sos', 'Strength of schedule', sosNote, sosBody)}
@@ -1431,10 +1495,10 @@ async function renderResearch(quiet = false) {
     ${next ? `<div class="card next-game">
       <div class="next-line"><span class="muted">Next game</span> <b>${next.home ? 'vs' : '@'} ${teamLogo(next.oppName)}${esc(next.opp)}</b> <span>${esc(kickTime(next.date))}</span>
         ${next.line != null ? `<span class="small muted line-info">· Spread ${esc(lineText(next.line))}${next.total != null ? ` · Total ${next.total}` : ''}</span>` : ''}</div>
-      <button type="button" class="link small" data-team="${esc(next.oppName)}" aria-label="See ${esc(next.opp)}"><span class="see-text">See ${teamLogo(next.oppName, 'small')}${esc(next.opp)} </span>→</button>
+      ${hasPage(next.oppName) ? `<button type="button" class="link small" data-team="${esc(next.oppName)}" aria-label="See ${esc(next.opp)}"><span class="see-text">See ${teamLogo(next.oppName, 'small')}${esc(next.opp)} </span>→</button>` : ''}
     </div>` : ''}
     ${foldCard('team-record', 'Record', recordBody(t))}
-    ${foldCard('team-injuries', 'Injuries', note(injuriesNote) + injuriesBody(t))}
+    ${showInjuries ? foldCard('team-injuries', 'Injuries', note(injuriesNote) + injuriesBody(t)) : ''}
     ${foldCard('team-stats', 'Offensive/Defensive Stats', note(`Per game this season${t.advGames ? `, from ${t.advGames} box score${t.advGames === 1 ? '' : 's'}` : ''}. Offense is what they do; defense is what they allow.`) + statsBody(t))}
     ${foldCard('team-ats', 'Against the spread', atsBody(t))}
     ${foldCard('team-sos', 'Strength of schedule', note(sosNote) + sosBody(t))}
@@ -1678,7 +1742,7 @@ $('#stats').addEventListener('click', (e) => {
 $('#research').addEventListener('change', (e) => {
   if (e.target.id === 'research-team') {
     researchTeam = e.target.value;
-    storage.set('parlay.team', researchTeam);
+    storage.set(teamStorageKey(), researchTeam);
     renderResearch(true);
     window.scrollTo(0, 0);
   } else if (e.target.id === 'compare-a') {
@@ -1723,7 +1787,7 @@ $('#login-form').addEventListener('submit', async (e) => {
   try {
     await api('/api/login', { method: 'POST', body: { username: form.username.value, password: form.password.value } });
     form.password.value = '';
-    $('#week-nav').hidden = false;
+    $('#week-nav').hidden = $('#sport-switch').hidden = false;
     await load();
   } catch (err) {
     $('#login-error').textContent = err.message;
@@ -1894,7 +1958,7 @@ $('#who').addEventListener('click', (e) => {
   }
 });
 const limitText = () =>
-  `Lines update on their own at 11 AM and 6 PM Eastern, plus ${week.manualPerSunday} extra refreshes on Sundays, to stay under the free 500 API credits a month. Showing lines from ${new Date(week.linesUpdated).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}.`;
+  `Lines update on their own at 11 AM and 6 PM Eastern, plus ${week.manualPerSunday} extra refreshes on ${league === 'cfb' ? 'Saturdays' : 'Sundays'}, to stay under the free 500 API credits a month. Showing lines from ${new Date(week.linesUpdated).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}.`;
 
 $('#schedule-meta').addEventListener('click', async (e) => {
   const btn = e.target.closest('#refresh');
@@ -1912,4 +1976,10 @@ $('#schedule-meta').addEventListener('click', async (e) => {
   if (week?.limitHit) notice(limitText());
 });
 
+$('#sport-switch').addEventListener('click', (e) => {
+  const btn = e.target.closest('button[data-sport]');
+  if (btn) switchLeague(btn.dataset.sport);
+});
+
+renderLeague();
 load();

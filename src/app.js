@@ -14,9 +14,10 @@ import { computeStats } from './stats.js';
 import { createHash } from 'node:crypto';
 import { parseLogins, checkLogin, makeToken, readToken, cookieValue, sessionCookie, COOKIE } from './auth.js';
 import { analyzeWeek } from './analysis.js';
-import { seasonYear, fetchSeasonWeek, parseSeasonWeek, mergeWeek, fetchGameLine, buildTeams, fetchGameTeamStats, REGULAR_SEASON_WEEKS } from './research.js';
+import { seasonYear, fetchSeasonWeek, parseSeasonWeek, mergeWeek, fetchGameLine, buildTeams, fetchGameTeamStats, regularSeasonWeeks } from './research.js';
 import { fetchTeamRoster, fetchTeamDepthChart, teamInjuries, dropStaleHistory, weekOf } from './injuries.js';
 import { canSpend, spend, limitFor, easternDate, easternWeekday, LINES_COST, SCORES_COST } from './credits.js';
+import { sport, runInSport, inSlate, SPORTS } from './sport.js';
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 loadEnvFile(join(root, '.env'));
@@ -30,6 +31,7 @@ const {
   LOGINS = '', // "matt:password,daniel:password,..." (set in Vercel, never in the code)
   SESSION_SECRET = '',
   DATA_FILE = join(root, 'data', 'db.json'),
+  CFB_DATA_FILE = join(root, 'data', 'cfb.json'),
 } = process.env;
 
 const SCHEDULE_TTL = 30 * 60e3; // re-check the schedule every 30 min (it's free)
@@ -46,7 +48,7 @@ const MANUAL_REFRESH_GAP = 5 * 60e3; // so a double tap doesn't spend two refres
 // keep working through the end of the month.
 const PROPS_RESERVE = 75;
 const limits = { daily: Number(DAILY_CREDIT_LIMIT), sunday: Number(SUNDAY_CREDIT_LIMIT) };
-const creditLimit = () => limitFor(new Date(), limits);
+const creditLimit = () => limitFor(new Date(), limits, sport().bigDay);
 const BOOK_NAMES = { fanduel: 'FanDuel', draftkings: 'DraftKings', betmgm: 'BetMGM', williamhill_us: 'Caesars' };
 const bookName = BOOK_NAMES[BOOKMAKER] ?? BOOKMAKER;
 
@@ -64,7 +66,14 @@ const describe = (err) => `${err.message}${err.cause?.code ? ` (${err.cause.code
 const SCORES_RECHECK = 10 * 60e3;
 const GAME_LENGTH = 3 * 3600e3; // don't look for a final score until ~3h after kickoff
 
-let store;
+// One data document per league; `store` is the one for this request's league.
+const stores = {};
+const files = { nfl: DATA_FILE, cfb: CFB_DATA_FILE };
+const store = {
+  get data() { return stores[sport().id].data; },
+  load() { return (stores[sport().id] ??= createStore(process.env, files[sport().id], sport().storeKey)).load(); },
+  save(week) { return stores[sport().id].save(week); },
+};
 const save = () => store.save(weekWindow().key);
 
 const app = express();
@@ -91,6 +100,12 @@ app.post('/api/logout', (req, res) => {
   res.json({ ok: true });
 });
 
+// Every API request is for one league, set by the page's NFL/CFB switch.
+app.use('/api', (req, res, next) => {
+  const id = String(req.get('x-sport') ?? req.query.sport ?? '').toLowerCase();
+  runInSport(SPORTS[id] ? id : 'nfl', next);
+});
+
 // Everything else needs a login (once LOGINS is set). The session decides who
 // you are, so nobody can pick or bet as someone else.
 app.use('/api', (req, res, next) => {
@@ -104,7 +119,6 @@ app.use('/api', (req, res, next) => {
 // Load the latest data for every API request.
 app.use('/api', async (req, res, next) => {
   try {
-    store ??= createStore(process.env, DATA_FILE);
     await store.load();
     next();
   } catch (err) {
@@ -119,7 +133,27 @@ app.use('/api', (req, res, next) => {
 });
 
 // Schedule sources in order of preference. The Odds API's event list is free.
+// College goes to ESPN first: it knows each team's conference, so it can
+// narrow the slate to Power 5 games. If ESPN is down, The Odds API's list is
+// narrowed using the teams ESPN listed before.
 async function fetchSchedule(win, problems) {
+  if (sport().conferences) {
+    try {
+      return { games: await fetchEspnSchedule(win), source: 'ESPN' };
+    } catch (err) {
+      problems.push(`ESPN schedule failed: ${describe(err)}`);
+    }
+    const known = new Set(Object.entries(store.data.teams).filter(([, t]) => inSlate(t.conf)).map(([name]) => teamKey(name)));
+    if (ODDS_API_KEY && known.size) {
+      try {
+        const all = await fetchOddsApiSchedule(ODDS_API_KEY, win);
+        return { games: all.filter((g) => known.has(teamKey(g.home)) || known.has(teamKey(g.away))), source: 'The Odds API' };
+      } catch (err) {
+        problems.push(`The Odds API schedule failed: ${describe(err)}`);
+      }
+    }
+    return null;
+  }
   if (ODDS_API_KEY) {
     try {
       return { games: await fetchOddsApiSchedule(ODDS_API_KEY, win), source: 'The Odds API' };
@@ -154,7 +188,10 @@ async function loadWeek({ refreshLines = false, key = null } = {}) {
       // Team records come from ESPN; keep the last ones if it's unreachable.
       let records = cached?.records ?? {};
       try {
-        records = { ...records, ...(await fetchEspnRecords(games)) };
+        const espn = await fetchEspnRecords(games);
+        records = { ...records, ...espn.records };
+        // College logos and short names for the page.
+        if (sport().fullNames) store.data.teams = { ...store.data.teams, ...espn.teams };
       } catch (err) {
         console.error(`ESPN records failed: ${describe(err)}`);
       }
@@ -162,7 +199,7 @@ async function loadWeek({ refreshLines = false, key = null } = {}) {
     } else if (cached && !cached.demo) {
       cached.retryAt = Date.now() + RETRY_AFTER_ERROR;
     } else {
-      store.data.schedule[win.key] = { games: demoSchedule(win), source: 'demo', demo: true, retryAt: Date.now() + RETRY_AFTER_ERROR };
+      store.data.schedule[win.key] = { games: demoSchedule(win, sport().id), source: 'demo', demo: true, retryAt: Date.now() + RETRY_AFTER_ERROR };
     }
     for (const p of problems) console.error(p);
     await save();
@@ -185,6 +222,11 @@ async function loadWeek({ refreshLines = false, key = null } = {}) {
     if (wanted && !limitHit) {
       try {
         const fresh = await fetchBookLines(ODDS_API_KEY, BOOKMAKER, win);
+        // College: the feed has every FBS game; keep just this slate's.
+        if (sport().conferences) {
+          const slate = new Set(schedule.games.flatMap((g) => [teamKey(g.home), teamKey(g.away)]));
+          fresh.byMatchup = Object.fromEntries(Object.entries(fresh.byMatchup).filter(([k]) => k.split('@').some((t) => slate.has(t))));
+        }
         // Merge so games that already kicked off keep their last line.
         lines = { ...fresh, byMatchup: { ...lines?.byMatchup, ...fresh.byMatchup }, fetchedAt: Date.now() };
         store.data.lines[win.key] = lines;
@@ -202,19 +244,20 @@ async function loadWeek({ refreshLines = false, key = null } = {}) {
     }
   }
 
-  if (ODDS_API_KEY && !schedule.demo && anyUpcoming) await refreshProps(win, schedule, now);
+  if (ODDS_API_KEY && !schedule.demo && anyUpcoming && sport().props) await refreshProps(win, schedule, now);
 
   const { games, gamesById } = withLines(win, schedule, lines);
   let warning = problems.join(' ') || null;
   if (schedule.demo) {
-    warning = `Couldn't load the NFL schedule, so these are demo games. It retries every few minutes. ${warning ?? ''}`.trim();
+    warning = `Couldn't load the ${sport().label} schedule, so these are demo games. It retries every few minutes. ${warning ?? ''}`.trim();
   }
   return { win, games, gamesById, schedule, lines, warning, limitHit };
 }
 
-// Sunday's manual line refreshes left today (none on other days).
+// Game day's manual line refreshes left today (Sundays for the NFL, Saturdays
+// for college; none on other days).
 function manualLeft(now = new Date()) {
-  if (easternWeekday(now) !== 'Sun') return 0;
+  if (easternWeekday(now) !== sport().bigDay) return 0;
   return Math.max(0, SUNDAY_MANUAL_REFRESHES - (store.data.manualRefreshes?.[easternDate(now)] ?? 0));
 }
 
@@ -305,7 +348,7 @@ function withLines(win, schedule, lines) {
   const records = schedule.records ?? {};
   const games = schedule.games.map((g) => ({
     ...g,
-    lines: lines?.byMatchup[matchKey(g.away, g.home)] ?? null,
+    lines: gameLines(lines, g),
     homeRecord: records[teamKey(g.home)] ?? null,
     awayRecord: records[teamKey(g.away)] ?? null,
     // Player props (Thursday and Sunday), if the book has them.
@@ -314,6 +357,21 @@ function withLines(win, schedule, lines) {
     result: store.data.results[win.key]?.[g.id] ?? null,
   }));
   return { games, gamesById: new Map(games.map((g) => [g.id, g])) };
+}
+
+// The book's lines for a game. College names can differ a little between
+// ESPN and the book, so if both teams don't match, the one matchup where
+// either team does is close enough (a team plays once a week).
+function gameLines(lines, g) {
+  const byMatchup = lines?.byMatchup ?? {};
+  const exact = byMatchup[matchKey(g.away, g.home)];
+  if (exact || !sport().fullNames) return exact ?? null;
+  const [away, home] = [teamKey(g.away), teamKey(g.home)];
+  const near = Object.entries(byMatchup).filter(([k]) => {
+    const [a, h] = k.split('@');
+    return a === away || h === home;
+  });
+  return near.length === 1 ? near[0][1] : null;
 }
 
 // A past week, read-only: only what's saved, nothing fetched. Old weeks'
@@ -360,6 +418,11 @@ app.get('/api/week', async (req, res, next) => {
     res.json({
       key: win.key,
       label: weekLabel(win),
+      sport: sport().id,
+      // Player props: the NFL only (college would cost too many credits).
+      props: sport().props,
+      // College teams' short names, abbreviations, and logos, by full name.
+      teams: sport().fullNames ? store.data.teams : null,
       me, // who's logged in (or the name you picked, without logins)
       auth: authOn,
       authMissing: !authOn && !!process.env.VERCEL, // hosted with no LOGINS set
@@ -911,7 +974,7 @@ async function loadResearch(team = null, now = new Date()) {
   if (store.data.research?.season !== season) store.data.research = { season, weeks: {} };
   const r = store.data.research;
   const stale = [];
-  for (let n = 1; n <= REGULAR_SEASON_WEEKS; n++) {
+  for (let n = 1; n <= regularSeasonWeeks(); n++) {
     const w = r.weeks[n];
     // Weeks saved before game IDs were kept get fetched once more.
     if (w?.final && w.games.every((g) => g.espnId)) continue;
@@ -931,7 +994,7 @@ async function loadResearch(team = null, now = new Date()) {
   }
   const games = Object.values(r.weeks).flatMap((w) => w.games);
   await loadBoxScores(r, games);
-  await loadInjuries(r, games, now);
+  if (sport().injuries) await loadInjuries(r, games, now);
 
   // Finished games with no line: look up the closing line on ESPN's game
   // page and keep it for good. The team you're viewing goes first; up to
@@ -964,10 +1027,13 @@ async function loadResearch(team = null, now = new Date()) {
 
 // Team-level box score (yards, sacks, turnovers, downs, red zone,
 // possession, penalties) for every finished game, fetched once and kept
-// forever since a final box score doesn't change.
+// forever since a final box score doesn't change. At most BOX_SCORES a
+// visit (a college season is hundreds of games), newest first.
+const BOX_SCORES = 60;
 async function loadBoxScores(r, games) {
   r.boxscores ??= {};
-  const missing = games.filter((g) => g.final && g.espnId != null && !r.boxscores[g.espnId]);
+  const missing = games.filter((g) => g.final && g.espnId != null && !r.boxscores[g.espnId])
+    .sort((a, b) => b.date.localeCompare(a.date)).slice(0, BOX_SCORES);
   if (!missing.length) return;
   const fetched = await Promise.allSettled(missing.map((g) => fetchGameTeamStats(g.espnId)));
   let ok = 0;
@@ -1024,7 +1090,7 @@ app.get('/api/research', async (req, res, next) => {
     const teams = buildTeams(games, savedLine, store.data.research.boxscores);
     const injuries = store.data.research.injuries?.teams ?? {};
     for (const t of teams) t.injuries = injuries[t.abbr] ?? [];
-    res.json({ season: store.data.research.season, teams, book: ODDS_API_KEY ? bookName : null });
+    res.json({ season: store.data.research.season, teams, book: ODDS_API_KEY ? bookName : null, injuries: sport().injuries });
   } catch (err) {
     next(err);
   }

@@ -1,10 +1,9 @@
 import { makeGame } from './schedule.js';
 import { parseBoxScore } from './props.js';
+import { sport, espnSite } from './sport.js';
 
 // Final scores, keyed by our game IDs: { gameId: { homeScore, awayScore } }.
-const ESPN = 'https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard';
-const ESPN_SUMMARY = 'https://site.api.espn.com/apis/site/v2/sports/football/nfl/summary';
-const ODDS_SCORES = 'https://api.the-odds-api.com/v4/sports/americanfootball_nfl/scores';
+const oddsScores = () => `https://api.the-odds-api.com/v4/sports/${sport().oddsKey}/scores`;
 
 // ESPN's scoreboard dates are US Eastern days.
 export const easternDay = (iso) =>
@@ -32,7 +31,7 @@ export function parseEspnScores(board, weekKey) {
 // score isn't filled in yet, so it's tried again later instead of grading
 // every prop as a void.
 export async function fetchEspnPlayerStats(espnId) {
-  const res = await fetch(`${ESPN_SUMMARY}?event=${encodeURIComponent(espnId)}`, { signal: AbortSignal.timeout(8000) });
+  const res = await fetch(`${espnSite('summary')}?event=${encodeURIComponent(espnId)}`, { signal: AbortSignal.timeout(8000) });
   if (!res.ok) throw new Error(`ESPN box score returned ${res.status}`);
   const players = parseBoxScore(await res.json());
   return Object.keys(players).length >= 10 ? players : null;
@@ -42,7 +41,7 @@ export async function fetchEspnPlayerStats(espnId) {
 export async function fetchEspnScores(weekKey, games) {
   const days = [...new Set(games.map((g) => easternDay(g.commence)))];
   const boards = await Promise.all(days.map(async (day) => {
-    const res = await fetch(`${ESPN}?dates=${day}`, { signal: AbortSignal.timeout(8000) });
+    const res = await fetch(`${espnSite('scoreboard')}?dates=${day}${sport().espnQuery}`, { signal: AbortSignal.timeout(8000) });
     if (!res.ok) throw new Error(`ESPN scores returned ${res.status}`);
     return res.json();
   }));
@@ -51,7 +50,7 @@ export async function fetchEspnScores(weekKey, games) {
 
 // Backup source. Costs 2 API credits and only reaches back 3 days.
 export async function fetchOddsApiScores(apiKey, weekKey) {
-  const res = await fetch(`${ODDS_SCORES}?${new URLSearchParams({ apiKey, daysFrom: '3' })}`, {
+  const res = await fetch(`${oddsScores()}?${new URLSearchParams({ apiKey, daysFrom: '3' })}`, {
     signal: AbortSignal.timeout(10000),
   });
   if (!res.ok) throw new Error(`The Odds API scores returned ${res.status}`);

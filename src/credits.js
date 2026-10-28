@@ -13,9 +13,10 @@ export const easternDate = (now = new Date()) =>
 export const easternWeekday = (now = new Date()) =>
   new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', weekday: 'short' }).format(now);
 
-// Today's credit limit: the Sunday limit on Sundays (Eastern), else the daily one.
-export function limitFor(now, { daily, sunday }) {
-  return easternWeekday(now) === 'Sun' ? sunday : daily;
+// Today's credit limit: the Sunday limit on game day (Sundays for the NFL,
+// Saturdays for college, Eastern), else the daily one.
+export function limitFor(now, { daily, sunday }, bigDay = 'Sun') {
+  return easternWeekday(now) === bigDay ? sunday : daily;
 }
 
 export function creditsUsedToday(data, now = new Date()) {

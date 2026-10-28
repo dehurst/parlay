@@ -38,6 +38,8 @@ header { padding: 16px 0 8px; }
 .brand { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
 .me-chip { padding: 5px 12px; border-radius: 999px; font-size: 14px; font-weight: 600; }
 .week-nav { margin: 6px 0 0 -6px; }
+/* NFL | CFB switch under the week */
+.mode-switch.sport-switch { display: flex; width: fit-content; margin: 8px 0 0; }
 .back-now {
   margin-left: 8px; padding: 4px 12px; border-radius: 999px; font-size: 13px; font-weight: 600;
   background: #18233a; border-color: #3d5a99; color: var(--text); white-space: nowrap;

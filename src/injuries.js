@@ -12,20 +12,20 @@
 // straight from ESPN.
 
 import { weekWindow, weekLabel } from './week.js';
+import { espnSite } from './sport.js';
 
-const ESPN_TEAMS = 'https://site.api.espn.com/apis/site/v2/sports/football/nfl/teams';
 // ESPN's weekly injury-report tags, as opposed to roster-status ones (Injured
 // Reserve, Suspension) whose own date is meaningful.
 const WEEKLY_TAGS = ['Questionable', 'Doubtful', 'Out'];
 
 export async function fetchTeamRoster(teamId) {
-  const res = await fetch(`${ESPN_TEAMS}/${teamId}/roster`, { signal: AbortSignal.timeout(8000) });
+  const res = await fetch(`${espnSite('teams')}/${teamId}/roster`, { signal: AbortSignal.timeout(8000) });
   if (!res.ok) throw new Error(`ESPN roster returned ${res.status}`);
   return res.json();
 }
 
 export async function fetchTeamDepthChart(teamId) {
-  const res = await fetch(`${ESPN_TEAMS}/${teamId}/depthcharts`, { signal: AbortSignal.timeout(8000) });
+  const res = await fetch(`${espnSite('teams')}/${teamId}/depthcharts`, { signal: AbortSignal.timeout(8000) });
   if (!res.ok) throw new Error(`ESPN depth chart returned ${res.status}`);
   return res.json();
 }

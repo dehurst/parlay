@@ -20,6 +20,7 @@ export function normalize(data) {
   // { weekKey: { parlays: { parlayId: [player] }, parlayDowns: { parlayId: [player] }, legs: { betKey: [player] } } }
   data.reactions ??= {};
   data.creditsUsed ??= {}; // paid Odds API credits: { 'YYYY-MM-DD' (Eastern): n }
+  data.teams ??= {}; // college only, from ESPN: { fullName: { short, abbr, logo, conf } }
 
   delete data.players; // players are configured now (PLAYERS)
   delete data.votes; // replaced by stakes
@@ -114,11 +115,12 @@ export class RedisStore {
 }
 
 // Upstash's Vercel integration sets KV_REST_API_*; a direct Upstash database
-// gives UPSTASH_REDIS_REST_*. Either works.
-export function createStore(env, file) {
+// gives UPSTASH_REDIS_REST_*. Either works. Each league (NFL, college) has
+// its own document: its own file, or its own Redis key.
+export function createStore(env, file, key) {
   const url = env.UPSTASH_REDIS_REST_URL || env.KV_REST_API_URL;
   const token = env.UPSTASH_REDIS_REST_TOKEN || env.KV_REST_API_TOKEN;
-  if (url && token) return new RedisStore({ url, token });
+  if (url && token) return new RedisStore({ url, token, key });
   if (env.VERCEL) {
     throw new Error('No database connected. In Vercel, add Upstash Redis to this project (Storage tab), then redeploy.');
   }

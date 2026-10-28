@@ -1,13 +1,14 @@
 import { makeGame, matchKey } from './schedule.js';
+import { sport } from './sport.js';
 
 // The Odds API (https://the-odds-api.com). The events list is free; odds cost
 // one credit per market per bookmaker group, so h2h+spreads+totals = 3 credits.
-const BASE = 'https://api.the-odds-api.com/v4/sports/americanfootball_nfl';
+const base = () => `https://api.the-odds-api.com/v4/sports/${sport().oddsKey}`;
 
 const isoNoMs = (d) => d.toISOString().replace(/\.\d{3}Z$/, 'Z');
 
 async function get(path, params) {
-  const res = await fetch(`${BASE}/${path}?${new URLSearchParams(params)}`, {
+  const res = await fetch(`${base()}/${path}?${new URLSearchParams(params)}`, {
     signal: AbortSignal.timeout(10000),
   });
   if (!res.ok) {

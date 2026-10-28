@@ -19,6 +19,10 @@
       <button id="week-next" class="week-arrow" type="button" aria-label="Next week">›</button>
       <button id="back-to-now" class="back-now" type="button" hidden></button>
     </span>
+    <div id="sport-switch" class="mode-switch sport-switch" role="tablist" aria-label="League">
+      <button type="button" data-sport="nfl">NFL</button>
+      <button type="button" data-sport="cfb">CFB</button>
+    </div>
   </header>
 
   <div id="notice" class="notice" hidden></div>
@@ -50,7 +54,7 @@
     <button data-tab="slip">Bet Slip</button>
     <button data-tab="stats">Bet Stats</button>
     <button data-tab="analysis">Analysis</button>
-    <button data-tab="research">NFL Stats/Data</button>
+    <button data-tab="research"><span id="league-name">NFL</span> Stats/Data</button>
   </nav>
 
   <main>

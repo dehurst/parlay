@@ -1,6 +1,8 @@
 // An NFL "week" here runs Tuesday 6:00 AM Eastern -> the next Tuesday 6:00 AM
 // Eastern, so Thursday, Sunday, and Monday games all land in the same week.
 // The week's key is the Tuesday's date (YYYY-MM-DD).
+import { sport } from './sport.js';
+
 const DAY = 24 * 60 * 60 * 1000;
 const FLIP_HOUR = 6; // 6 AM Eastern
 
@@ -41,11 +43,12 @@ export function weekWindow(now = new Date()) {
 
 // Week 1 of the regular season starts the Tuesday before the opening Thursday.
 // SEASON_START can override it (YYYY-MM-DD, a Tuesday). Weeks are counted by
-// their Tuesday dates, so the exact flip hour doesn't matter here.
+// their Tuesday dates, so the exact flip hour doesn't matter here. College
+// starts a week earlier, so its numbers run one ahead of the NFL's.
 export function weekLabel(window, seasonStart = process.env.SEASON_START) {
   const tuesday = new Date(`${window.key}T12:00:00Z`);
   const start = seasonStart ? new Date(`${seasonStart}T12:00:00Z`) : defaultSeasonStart(tuesday);
-  const n = Math.round((tuesday - start) / (7 * DAY)) + 1;
+  const n = Math.round((tuesday - start) / (7 * DAY)) + 1 + sport().weekOffset;
   return n >= 1 && n <= 22 ? `Week ${n}` : `Week of ${window.key}`;
 }
 
