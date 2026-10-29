@@ -246,6 +246,18 @@ html { touch-action: manipulation; -webkit-text-size-adjust: 100%; }
 .tabs button { border: none; background: none; border-bottom: 2px solid transparent; border-radius: 0; color: var(--muted); padding: 10px 12px; }
 .tabs button.active { color: var(--text); border-bottom-color: var(--accent); }
 
+/* Phones: the tabs become a grid of buttons (four, then three), all visible
+   and easy to tap, instead of a row that runs off the screen. */
+@media (max-width: 600px) {
+  .tabs { flex-wrap: wrap; gap: 6px; overflow: visible; border-bottom: none; padding-bottom: 2px; }
+  .tabs button {
+    flex: 1 1 calc(25% - 6px); min-height: 40px; padding: 8px 4px; font-size: 14px;
+    border: 1px solid var(--line); border-radius: 8px; background: var(--card); color: var(--muted);
+  }
+  .tabs button.active { color: var(--text); border-color: var(--accent); background: rgba(47, 191, 113, .15); font-weight: 600; }
+  .tab-long { display: none; } /* "NFL Stats/Data" -> "NFL Data" */
+}
+
 .game-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-bottom: 10px; }
 .game-grid {
   display: grid; grid-template-columns: 1fr repeat(3, minmax(0, 1fr));
@@ -319,7 +331,6 @@ table.slip th, table.slip td { text-align: left; padding: 6px 4px; border-top: 1
 table.slip thead th { color: var(--muted); font-weight: 500; font-size: 12px; border-top: none; }
 table.slip .num { text-align: right; font-variant-numeric: tabular-nums; }
 table.slip tfoot th { font-weight: 700; }
-@media (max-width: 420px) { .tabs button { padding: 10px 8px; } }
 .parlay.group-pick { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
 .badge {
   display: inline-block; margin-bottom: 6px; padding: 2px 8px; border-radius: 999px;
@@ -364,9 +375,6 @@ table.slip td .team-logo { margin-bottom: -1px; }
 @media (max-width: 420px) {
   h1 { font-size: 19px; }
   .week-nav select { font-size: 16px; padding: 4px 2px; }
-  /* Six tabs fit across a phone. */
-  .tabs { gap: 0; justify-content: space-between; }
-  .tabs button { padding: 10px 3px; font-size: 13px; }
   .week-arrow { width: 28px; height: 28px; }
 }
 
