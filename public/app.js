@@ -501,19 +501,22 @@ function renderCalcBar(bar) {
   const decimal = legs.reduce((d, l) => d * toDecimal(l.price), 1);
   const games = new Set([...calcKeys].map((k) => k.split('|')[0]));
   const sameGame = games.size < calcKeys.size;
+  // Same-game legs are allowed (say Over + Packers -3), except the spread and
+  // moneyline from one game together, which FanDuel won't take.
+  const conflict = [...games].some((id) => [...calcKeys].some((k) => k.startsWith(`${id}|spread|`)) && [...calcKeys].some((k) => k.startsWith(`${id}|ml|`)));
   const payout = calcStake * decimal;
-  // A single bet posts as a straight bet; 2+ from different games as a parlay.
-  const canPost = legs.length >= 1 && !sameGame;
+  const canPost = legs.length >= 1 && !conflict;
   bar.innerHTML = `<span class="calc-sum">
       <b>${legs.length === 1 ? 'Straight bet' : `${legs.length}-leg parlay`} ${fmtOdds(toAmerican(decimal))}</b>
       <span class="small">$${esc(calcStake)} pays <b>${money(payout)}</b> (profit ${money(payout - calcStake)})</span>
-      ${sameGame ? '<span class="small warn-text">Same-game legs: FanDuel will pay a different amount, so this can’t be posted.</span>' : ''}
+      ${conflict ? '<span class="small warn-text">Can’t combine the spread and moneyline from the same game.</span>'
+        : sameGame ? '<span class="small warn-text">Same-game parlay: FanDuel prices these together, so its payout will differ. Enter its payout when you mark it placed.</span>' : ''}
       <button type="button" class="link small" id="calc-clear">Clear</button>
     </span>
     <span class="actions">
       <label class="stake-box">$<input id="calc-stake" type="number" inputmode="decimal" min="1" step="1" value="${esc(calcStake)}"></label>
       <button type="button" class="primary" id="calc-post" ${canPost ? '' : 'disabled'}
-        title="${canPost ? 'Post to the Parlays tab so others can join' : 'A parlay needs its bets from different games'}">Post</button>
+        title="${canPost ? 'Post to the Parlays tab so others can join' : 'Can’t combine the spread and moneyline from the same game'}">Post</button>
     </span>`;
 }
 
@@ -1017,7 +1020,7 @@ function customHtml(data) {
     <div class="card parlay custom">
       <div class="head">
         <div>${likersOf(p).length >= majority() ? '<span class="badge">Group\'s pick</span>' : ''}
-          ${titleHtml(p)}<div class="small muted">${betKind(p, true)}${p.basedOn ? ` · based on ${esc(p.basedOn)}` : ''}</div></div>
+          ${titleHtml(p)}<div class="small muted">${betKind(p, true)}${p.sameGame ? ' · same-game' : ''}${p.basedOn ? ` · based on ${esc(p.basedOn)}` : ''}</div></div>
         <div class="odds-col"><div class="odds">${fmtOdds(shownOdds(p))}</div>${copyButton(p)}</div>
       </div>
       <ul class="legs">${p.legs.map((l) => `<li><span><b>${betLabel(l.label)}</b> <span class="muted">${fmtOdds(l.price)}</span>${legSub(l)}${lineMoved(l, data.book)}</span>${p.started ? '' : dislikeHtml(l)}</li>`).join('')}</ul>
@@ -1598,6 +1601,7 @@ async function renderSlip(quiet = false) {
         <div><span class="muted small">Bet ${i + 1}</span> ${p.placed ? '<span class="chip placed">✓ Placed</span>' : ''} ${statusChip(p.status, p.returned, p.total)} ${p.paidOut ? '<span class="chip paid">💵 Paid out</span>' : ''}${titleHtml(p, !past)}<div class="small muted">${betKind(p)}</div></div>
         <div class="odds-col"><div class="odds">${fmtOdds(shownOdds(p))}</div>${copyButton(p)}</div>
       </div>
+      ${p.sameGame && !p.placed?.payout && !past ? `<div class="lines">Same-game parlay: ${esc(data.book ?? 'the sportsbook')} prices these together, so the real payout will differ from this estimate. Enter it when you mark it placed.</div>` : ''}
       ${p.stillOption || p.placed || past ? '' : '<div class="lines">Picks changed since people bought in, so this parlay is no longer one of the current options. Double-check before placing it.</div>'}
       <ul class="graded-legs">${legs}</ul>
       <table class="slip">

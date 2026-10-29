@@ -25,8 +25,10 @@ the plays most of you agree on and builds a few parlays out of them.
   The Bet Slip does the same for settled parlays.
 - **Build a parlay** (switch at the top of the Picks tab): tap any bets to
   see what a one-off parlay would pay at FanDuel's current lines for any
-  stake. Nothing in it is saved or shared, and it warns when two legs come
-  from the same game (FanDuel prices those as a Same Game Parlay).
+  stake. Nothing in it is saved or shared until you Post. Legs from the same
+  game are fine (say the Over plus Packers -6.5), except the spread and
+  moneyline together; FanDuel prices those as a Same Game Parlay, so the app
+  flags that its payout will differ and to enter FanDuel's when placing it.
 - **Group Board**: every submitted bet ranked by how many of you took it,
   plus who still needs to submit. It flags bets where FanDuel's line has
   moved since.
@@ -73,8 +75,9 @@ the plays most of you agree on and builds a few parlays out of them.
 - **Custom parlays** (Parlays tab, **+ Build your own**): pick any bets in the
   Build a parlay view, set your stake, and **Post**. It shows up as "Daniel's
   Parlay 1" (then 2, ...) for the others to join with their own stakes, and
-  flows into the Bet Slip and Stats like the group parlays. Needs 2+ legs from
-  different games, and closes to new money once any of its games starts. If
+  flows into the Bet Slip and Stats like the group parlays. One bet posts as a
+  straight bet; same-game legs follow the rule above. It closes to new money
+  once any of its games starts. If
   everyone pulls out, it disappears. Every parlay card (here and on the Bet
   Slip) has a **Copy** button that copies its legs, one per line, then the odds,
   what $10 pays, and the total bet and payout if anyone is in.

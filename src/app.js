@@ -7,7 +7,7 @@ import { weekWindow, weekLabel, lastSlot, nextSlot } from './week.js';
 import { fetchEspnSchedule, fetchEspnRecords, demoSchedule, hasStarted, matchKey, teamKey } from './schedule.js';
 import { fetchOddsApiSchedule, fetchBookLines, fetchEventIds, fetchEventProps } from './oddsapi.js';
 import { isProp, validProp, propLine, parseProps, parseBoxScore, PROP_MARKETS } from './props.js';
-import { tally, buildParlays, priceParlay, selectionLabel, MARKETS } from './parlay.js';
+import { tally, buildParlays, priceParlay, selectionLabel, MARKETS, sameGameProblem, isSameGame } from './parlay.js';
 import { gradeLeg, gradeParlay, actualDecimal } from './grading.js';
 import { fetchEspnScores, fetchOddsApiScores, fetchEspnPlayerStats } from './results.js';
 import { computeStats } from './stats.js';
@@ -683,10 +683,9 @@ app.post('/api/custom', async (req, res, next) => {
     const keys = [...new Set(Array.isArray(req.body.keys) ? req.body.keys.map(String) : [])];
     // One bet is a straight bet; two or more is a parlay.
     if (keys.length < 1) return res.status(400).json({ error: 'Pick at least one bet.' });
-    const games = keys.map((k) => k.split('|')[0]);
-    if (new Set(games).size < games.length) {
-      return res.status(400).json({ error: 'A parlay can’t have two bets from the same game (FanDuel prices those differently).' });
-    }
+    // Same-game legs are fine (a total plus a side), except spread + moneyline.
+    const problem = sameGameProblem(keys);
+    if (problem) return res.status(400).json({ error: problem });
     const legs = [];
     for (const key of keys) {
       const line = pickable(key, gamesById);
@@ -708,6 +707,8 @@ app.post('/api/custom', async (req, res, next) => {
     weekStakes[id] = {
       id, custom: true, owner: name, number, createdAt: Date.now(),
       name: `${name}'s ${legs.length === 1 ? 'Bet' : 'Parlay'} ${number}`,
+      // FanDuel prices same-game parlays together, so its payout will differ.
+      ...(isSameGame(keys) ? { sameGame: true } : {}),
       // Made with Copy & edit from another parlay: that parlay's name.
       basedOn: typeof req.body.from === 'string' && req.body.from.trim() ? req.body.from.trim().slice(0, 80) : null,
       legs, decimal: priced.decimal, american: priced.american,

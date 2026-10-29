@@ -67,6 +67,25 @@ export function tally(picksByUser, gamesById) {
   return tallied.sort((a, b) => b.pickers.length - a.pickers.length || b.fairProb - a.fairProb);
 }
 
+// Same-game legs: FanDuel allows a total (or props) with a spread or
+// moneyline from the same game, but not the spread and moneyline together.
+// Returns an error message, or null when the combination is allowed.
+export function sameGameProblem(keys) {
+  const markets = new Map();
+  for (const key of keys) {
+    const [gameId, market] = String(key).split('|');
+    if (!markets.has(gameId)) markets.set(gameId, new Set());
+    markets.get(gameId).add(market);
+  }
+  for (const m of markets.values()) {
+    if (m.has('spread') && m.has('ml')) return 'A parlay can’t have the spread and the moneyline from the same game.';
+  }
+  return null;
+}
+
+// True when two or more legs come from the same game (a same-game parlay).
+export const isSameGame = (keys) => new Set(keys.map((k) => String(k).split('|')[0])).size < keys.length;
+
 // Combine legs into one parlay with price, payout, and a rough edge estimate.
 export function priceParlay(legs, stake = 10) {
   const decimal = legs.reduce((d, l) => d * americanToDecimal(l.price), 1);

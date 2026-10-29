@@ -199,3 +199,13 @@ test('demo schedules are dropped on restart so real sources get retried', async 
   await store.load();
   assert.deepEqual(Object.keys(store.data.schedule), ['b']);
 });
+
+test('same-game parlays: a total with a side is fine, spread + moneyline is not', async () => {
+  const { sameGameProblem, isSameGame } = await import('../src/parlay.js');
+  assert.equal(sameGameProblem(['g1|total|over', 'g1|spread|home']), null);
+  assert.equal(sameGameProblem(['g1|total|under', 'g1|ml|away', 'g2|spread|home']), null);
+  assert.equal(sameGameProblem(['g1|td:Josh Jacobs|yes', 'g1|spread|home']), null);
+  assert.match(sameGameProblem(['g1|spread|home', 'g1|ml|home']), /spread and the moneyline/);
+  assert.equal(isSameGame(['g1|total|over', 'g1|spread|home']), true);
+  assert.equal(isSameGame(['g1|total|over', 'g2|spread|home']), false);
+});
