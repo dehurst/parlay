@@ -1409,14 +1409,17 @@ function historyText(h) {
   return [h.recent != null ? `${text} · ${h.recent}% of snaps the last 3 games` : text, weeks && `Snaps by week: ${weeks}`].filter(Boolean).join('\n');
 }
 
-// Each week's share of snaps as a tiny bar (a dot where he didn't play).
+// Each week's share of snaps as a tiny bar: bright at half the snaps or more,
+// dim under half, a dot where he didn't play.
 const snapBars = (timeline) => (timeline?.length
-  ? `<span class="heat-weeks" aria-hidden="true">${timeline.map((t) => (t.pct == null ? '<i class="none"></i>' : `<i style="height:${Math.max(8, t.pct)}%"></i>`)).join('')}</span>`
+  ? `<span class="heat-weeks" aria-hidden="true">${timeline.map((t) => (t.pct == null ? '<i class="none"></i>'
+    : `<i class="${t.pct >= 50 ? 'hi' : 'lo'}" style="height:${Math.max(8, t.pct)}%"></i>`)).join('')}</span>`
   : '');
 
 function heatSquare(s) {
   const level = s.name ? Math.min(s.rank, 3) : 0;
   const tip = [`${s.pos}: ${s.name ?? 'nobody healthy'}`, HEAT_LEVELS[level] + (s.rank > 3 ? ` (#${s.rank} on the depth chart)` : '')];
+  if (s.rookie) tip.push('Rookie');
   if (s.status) tip.push(s.status);
   for (const p of s.skipped) tip.push(`${p.name} is ${p.status}`);
   const history = historyText(s.history);
@@ -1427,6 +1430,7 @@ function heatSquare(s) {
     <span class="heat-name">${esc(s.name ? shortName(s.name) : '—')}</span>
     ${tag ? `<span class="heat-how how-${s.history.tag}">${tag}</span>` : ''}
     ${snapBars(s.history?.timeline)}
+    ${s.rookie ? '<span class="rookie" title="Rookie">R</span>' : ''}
     ${s.status === 'Questionable' ? '<span class="heat-tag">Q</span>' : ''}
   </div>`;
 }
@@ -1481,7 +1485,8 @@ async function renderHeatmap() {
       <span class="heat-key"><span class="heat-how how-back">Back</span> starting again after missing games</span>
       <span class="heat-key"><span class="heat-how how-part">Part-time</span> under half the snaps</span>
       <span class="heat-key">No tag: starter every game since Week 1</span>
-      <span class="heat-key"><span class="heat-weeks"><i style="height:90%"></i><i style="height:60%"></i><i class="none"></i><i style="height:100%"></i></span> snaps each week (dot: didn't play)</span>
+      <span class="heat-key"><span class="heat-weeks"><i class="hi" style="height:90%"></i><i class="lo" style="height:35%"></i><i class="none"></i><i class="hi" style="height:100%"></i></span> snaps each week: <b class="snap-hi">50%+</b> · <b class="snap-lo">under 50%</b> · dot: didn't play</span>
+      <span class="heat-key"><span class="rookie in-key">R</span> rookie</span>
     </div>`;
   box.innerHTML = head + '<p class="muted">Loading depth charts…</p>';
   const data = await api(withWeek(`/api/heatmap?game=${encodeURIComponent(heatGame)}`)).catch((err) => (notice(err.message), null));

@@ -100,8 +100,11 @@ export async function teamHeatmap(name, now = Date.now()) {
   const athletes = roster.status === 'fulfilled' ? (roster.value.athletes ?? []).flatMap((g) => g.items ?? [g]) : null;
   const injuries = new Map((athletes ?? []).filter((a) => a.injuries?.length).map((a) => [a.displayName, a.injuries[0].status]));
   const names = athletes?.map((a) => a.displayName) ?? null;
+  // Rookies: ESPN lists them with 0 years in the league.
+  const rookies = new Set((athletes ?? []).filter((a) => a.experience?.years === 0).map((a) => a.displayName));
   for (const side of Object.values(sides)) {
     const slots = Object.values(side).flat();
+    for (const slot of slots) slot.rookie = rookies.has(slot.name);
     const starters = slots.map((s) => s.name).filter(Boolean);
     const opts = { injuries, roster: names, starters };
     // Each job lost goes to one replacement: whoever took over first.

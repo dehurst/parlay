@@ -550,3 +550,33 @@ h3.section.first { margin-top: 4px; }
 .heat-weeks i { display: block; width: 4px; background: currentColor; opacity: .75; border-radius: 1px 1px 0 0; }
 .heat-weeks i.none { width: 3px; height: 3px; border-radius: 50%; opacity: .35; }
 .heat-key .heat-weeks { margin-top: 0; color: var(--text); }
+/* Snap bars: bright cyan at half the snaps or more, dim slate under half.
+   Both read on the green, yellow, and red squares. */
+.heat-weeks i.hi { background: #7ee8fa; opacity: 1; }
+.heat-weeks i.lo { background: #8b98a9; opacity: .6; }
+.snap-hi { color: #7ee8fa; }
+.snap-lo { color: #8b98a9; }
+
+/* Rookies: a holographic "R" in the square's bottom-left corner. */
+.rookie {
+  position: absolute; left: 4px; bottom: 4px; width: 16px; height: 16px; border-radius: 50%;
+  display: grid; place-items: center; overflow: hidden;
+  font-size: 9px; font-weight: 900; line-height: 1; color: #1d1236;
+  background: linear-gradient(120deg, #ff9ad5, #a5f3fc, #c4b5fd, #fde68a, #86efac, #ff9ad5);
+  background-size: 300% 300%;
+  border: 1px solid rgba(255, 255, 255, .85);
+  box-shadow: 0 0 6px rgba(196, 181, 253, .7);
+  animation: holo 3.5s linear infinite;
+}
+/* A white sheen that sweeps across, like light catching foil. */
+.rookie::after {
+  content: ''; position: absolute; inset: -40%;
+  background: linear-gradient(115deg, transparent 40%, rgba(255, 255, 255, .85) 50%, transparent 60%);
+  animation: holo-sheen 2.8s ease-in-out infinite;
+}
+.rookie.in-key { position: relative; left: 0; bottom: 0; }
+@keyframes holo { 0% { background-position: 0% 50%; } 100% { background-position: 300% 50%; } }
+@keyframes holo-sheen { 0%, 55% { transform: translateX(-60%); } 100% { transform: translateX(60%); } }
+@media (prefers-reduced-motion: reduce) {
+  .rookie, .rookie::after { animation: none; }
+}
