@@ -86,7 +86,8 @@ export const timelineOf = (team, p) => team.weeks.map((week) => ({ week, pct: p?
 //   back   - a regular earlier, then out or benched, and starting again
 //   fillin - took over for a regular who's hurt (or is listed ahead and sidelined)
 //   earned - took over from a regular who's healthy and still on the team
-//   new    - took over with nobody obvious losing the job (a trade, a new role)
+//   trade  - played for another team earlier this season
+//   new    - took over with nobody obvious losing the job (a new role)
 //   part   - listed as a starter, but playing well under half the snaps
 // `since` is the week the current run as a regular started, and `timeline`
 // each week's share. `teams` is every team's snaps and `code` this one's;
@@ -105,7 +106,7 @@ export function starterHistory(teams, code, slot, { injuries = new Map(), roster
   if (ahead) return { tag: 'fillin', replaced: ahead.name, replacedStatus: ahead.status, recent: me ? pctOf(avg(me, recent)) : null, timeline: timelineOf(team, me) };
   // Played for someone else this season: traded or signed since.
   const from = () => Object.entries(teams).find(([c, t]) => c !== code && findPlayer(t, slot.name))?.[0] ?? null;
-  if (!me) return from() ? { tag: 'new', from: from() } : null;
+  if (!me) return from() ? { tag: 'trade', from: from() } : null;
 
   const regular = (p, w) => (p.pct[w] ?? 0) >= bar(p);
   // His last 3 games played; the middle one, so one odd game doesn't decide it.
@@ -139,7 +140,7 @@ export function starterHistory(teams, code, slot, { injuries = new Map(), roster
     while (gapStart > 0 && !regular(me, weeks[gapStart - 1])) gapStart--;
     return { tag: 'back', since, missed: weeks.slice(gapStart, start), ...base };
   }
-  if (before.every((w) => me.pct[w] == null) && from()) return { tag: 'new', since, from: from(), ...base };
+  if (before.every((w) => me.pct[w] == null) && from()) return { tag: 'trade', since, from: from(), ...base };
 
   // A regular for the first time from `since`: whose job was it? Someone at
   // his position who was a regular the game before and isn't now.

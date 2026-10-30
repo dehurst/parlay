@@ -1391,7 +1391,7 @@ const HEAT_UNITS = [['line', 'Offensive line', 'Defensive line'], ['pass', 'Rece
 const HEAT_LEVELS = ['Nobody healthy', 'Starter', 'Backup', '3rd string or deeper'];
 
 // How the player got the job, from every week's snap counts this season.
-const HEAT_TAGS = { fillin: 'Fill-in', earned: 'Earned ↑', new: 'New', back: 'Back', part: 'Part-time' };
+const HEAT_TAGS = { fillin: 'Fill-in', earned: 'Earned ↑', trade: 'Trade', new: 'New', back: 'Back', part: 'Part-time' };
 const weekList = (weeks) => (weeks.length > 1 ? `Weeks ${weeks[0]}–${weeks[weeks.length - 1]}` : `Week ${weeks[0]}`);
 function historyText(h) {
   if (!h) return null;
@@ -1402,7 +1402,8 @@ function historyText(h) {
     back: h.missed?.length ? `Back as a starter: out or limited ${weekList(h.missed)}` : 'Back as a starter',
     fillin: `Filling in for ${who(h.replaced, h.replacedStatus)}${since}`,
     earned: `Took the job from ${h.replaced}${since}. He's healthy${h.replacedRecent != null ? ` and down to ${h.replacedRecent}% of snaps` : ''}`,
-    new: h.from ? `New: played for ${h.from} earlier this season` : h.replacedGone ? `Took over for ${h.replaced}${since}. He's no longer on the team` : `New starter${since}`,
+    trade: `Traded in: played for ${h.from} earlier this season`,
+    new: h.replacedGone ? `Took over for ${h.replaced}${since}. He's no longer on the team` : `New starter${since}`,
     part: 'Listed as a starter, but playing well under half the snaps',
   }[h.tag];
   const weeks = h.timeline?.map((t) => `Wk ${t.week}: ${t.pct == null ? 'did not play' : `${t.pct}%`}`).join(', ');
@@ -1443,7 +1444,7 @@ function heatSummary(side) {
   const deep = slots.filter((s) => s.rank > 2 || !s.name).length;
   const depth = !backups && !deep ? 'All starters'
     : [backups && `${backups} backup${backups === 1 ? '' : 's'}`, deep && `${deep} 3rd string or deeper`].filter(Boolean).join(' · ') + ' in';
-  const how = [['fillin', 'fill-in'], ['earned', 'earned'], ['new', 'new'], ['back', 'back'], ['part', 'part-time']]
+  const how = [['fillin', 'fill-in'], ['earned', 'earned'], ['trade', 'trade'], ['new', 'new'], ['back', 'back'], ['part', 'part-time']]
     .map(([tag, label]) => [slots.filter((s) => s.history?.tag === tag).length, label])
     .filter(([n]) => n).map(([n, label]) => `${n} ${label}`).join(', ');
   return how ? `${depth} (${how})` : depth;
@@ -1465,6 +1466,9 @@ function heatMatchup(g, offHome, data) {
   </div>`;
 }
 
+// A key term; its definition shows on hover, or on tap on phones.
+const heatTerm = (html, tip) => `<span class="heat-key heat-term" tabindex="0" data-tip="${esc(tip)}">${html}</span>`;
+
 async function renderHeatmap() {
   const box = $('#heatmap');
   const games = [...week.games].sort((a, b) => a.commence.localeCompare(b.commence));
@@ -1477,16 +1481,17 @@ async function renderHeatmap() {
   const kick = (x) => new Date(x.commence).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' });
   const head = `<p class="small muted">Beta: who lines up for each team, from ESPN's current depth charts. Hurt players (Out, Doubtful, IR, suspended) are skipped, so a backup filling in shows up yellow. Tags and the little bars show how a starter got the job, from every week's snap counts this season (nflverse, updated weekly). Hover or long-press a square for details.</p>
     <label class="heat-pick">Game <select id="heat-game">${games.map((x) => `<option value="${esc(x.id)}" ${x.id === heatGame ? 'selected' : ''}>${esc(shortMatchup(`${x.away} @ ${x.home}`))} · ${esc(kick(x))}</option>`).join('')}</select></label>
-    <div class="heat-legend">${[1, 2, 3].map((l) => `<span class="heat-key heat-${l}">${HEAT_LEVELS[l]}</span>`).join('')}<span class="heat-key"><span class="heat-tag">Q</span> Questionable</span></div>
+    <div class="heat-legend">${[1, 2, 3].map((l) => `<span class="heat-key heat-${l}">${HEAT_LEVELS[l]}</span>`).join('')}${heatTerm('<span class="heat-tag">Q</span> Questionable', 'Listed as questionable for this game')}</div>
     <div class="heat-legend">
-      <span class="heat-key"><span class="heat-how how-fillin">Fill-in</span> for a hurt starter</span>
-      <span class="heat-key"><span class="heat-how how-earned">Earned ↑</span> passed a healthy starter</span>
-      <span class="heat-key"><span class="heat-how how-new">New</span> new starter or traded in</span>
-      <span class="heat-key"><span class="heat-how how-back">Back</span> starting again after missing games</span>
-      <span class="heat-key"><span class="heat-how how-part">Part-time</span> under half the snaps</span>
-      <span class="heat-key">No tag: starter every game since Week 1</span>
-      <span class="heat-key"><span class="heat-weeks"><i class="hi" style="height:90%"></i><i class="lo" style="height:35%"></i><i class="none"></i><i class="hi" style="height:100%"></i></span> snaps each week: <b class="snap-hi">50%+</b> · <b class="snap-lo">under 50%</b> · dot: didn't play</span>
-      <span class="heat-key"><span class="rookie in-key">R</span> rookie</span>
+      ${heatTerm('<span class="heat-how how-fillin">Fill-in</span>', 'Filling in for a starter who is hurt')}
+      ${heatTerm('<span class="heat-how how-earned">Earned ↑</span>', 'Passed a healthy starter on the depth chart')}
+      ${heatTerm('<span class="heat-how how-trade">Trade</span>', 'Traded in: played for another team earlier this season')}
+      ${heatTerm('<span class="heat-how how-new">New</span>', 'A new starter, with nobody obvious losing the job (a new role, or the old starter left the team)')}
+      ${heatTerm('<span class="heat-how how-back">Back</span>', 'Starting again after missing games')}
+      ${heatTerm('<span class="heat-how how-part">Part-time</span>', 'Listed as a starter, but playing under half the snaps')}
+      ${heatTerm('<span class="heat-how how-none">No tag</span>', 'Starter every game since Week 1')}
+      ${heatTerm('<span class="heat-weeks"><i class="hi" style="height:90%"></i><i class="lo" style="height:35%"></i><i class="none"></i><i class="hi" style="height:100%"></i></span> Snaps', 'One bar per game: bright = 50% of snaps or more, dim = under 50%, dot = didn’t play')}
+      ${heatTerm('<span class="rookie in-key">R</span> Rookie', 'First season in the NFL')}
     </div>`;
   box.innerHTML = head + '<p class="muted">Loading depth charts…</p>';
   const data = await api(withWeek(`/api/heatmap?game=${encodeURIComponent(heatGame)}`)).catch((err) => (notice(err.message), null));

@@ -542,6 +542,8 @@ h3.section.first { margin-top: 4px; }
 .how-fillin { color: #8cc8ff; }
 .how-earned { color: #d4a8ff; }
 .how-new { color: #c9d1d9; }
+.how-trade { color: #ff9ecb; }
+.how-none { color: var(--muted); border: 1px dashed currentColor; background: none; }
 .heat-key .heat-how { margin-top: 0; }
 .how-back { color: #9be9a8; }
 .how-part { color: #f0b46a; }
@@ -556,6 +558,20 @@ h3.section.first { margin-top: 4px; }
 .heat-weeks i.lo { background: #8b98a9; opacity: .6; }
 .snap-hi { color: #7ee8fa; }
 .snap-lo { color: #8b98a9; }
+/* Key terms: the definition pops up above the term on hover or tap. */
+.heat-term { position: relative; cursor: help; color: var(--text); outline: none; }
+.heat-term .heat-how { font-size: 10px; line-height: 18px; padding: 0 7px; }
+.heat-term[data-tip]:hover::after, .heat-term[data-tip]:focus::after {
+  content: attr(data-tip); position: absolute; left: 0; bottom: calc(100% + 6px); z-index: 20; width: max-content; max-width: 240px;
+  padding: 6px 9px; border-radius: 6px; background: #0d1117; border: 1px solid var(--line); color: var(--text);
+  font-size: 12px; font-weight: 400; line-height: 1.35; text-transform: none; letter-spacing: 0; box-shadow: 0 4px 14px rgba(0, 0, 0, .5);
+}
+/* Phones: the definition spans the key's row, so it never runs off screen. */
+@media (max-width: 600px) {
+  .heat-legend { position: relative; }
+  .heat-term { position: static; }
+  .heat-term[data-tip]:hover::after, .heat-term[data-tip]:focus::after { left: 0; right: 0; width: auto; max-width: none; }
+}
 
 /* Rookies: a holographic "R" in the square's bottom-left corner. */
 .rookie {

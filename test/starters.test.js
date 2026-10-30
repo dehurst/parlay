@@ -76,8 +76,8 @@ test('listed behind a sidelined player counts as a fill-in', () => {
   assert.equal(h.replacedStatus, 'Out');
 });
 
-test('a player who was on another team this season is new', () => {
-  assert.deepEqual(hist('Moved Guard'), { tag: 'new', from: 'MIA' });
+test('a player who was on another team this season is a trade', () => {
+  assert.deepEqual(hist('Moved Guard'), { tag: 'trade', from: 'MIA' });
 });
 
 test('unknown players and teams give no tag', () => {
