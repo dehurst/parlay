@@ -314,55 +314,90 @@ function lockIcon(closed) {
     <span class="sparkle s1">✦</span><span class="sparkle s2">✦</span><span class="sparkle s3">✦</span>`;
 }
 
-// The sound of a padlock snapping shut (or a softer click opening), made on
-// the fly so there's no audio file to load.
+// The sound of a padlock snapping shut (or a heavy bolt sliding back to
+// open), made on the fly so there's no audio file to load.
 let audio = null;
 function lockSound(closing) {
   try {
     audio ??= new (window.AudioContext || window.webkitAudioContext)();
-    const ctx = audio;
-    const t = ctx.currentTime + 0.01;
-    // A metal click: a quick burst of noise through a band filter.
-    const click = (at, freq, gain, len) => {
-      const buf = ctx.createBuffer(1, Math.ceil(ctx.sampleRate * len), ctx.sampleRate);
-      const d = buf.getChannelData(0);
-      for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / d.length) ** 4;
-      const src = ctx.createBufferSource();
-      src.buffer = buf;
-      const f = ctx.createBiquadFilter();
-      f.type = 'bandpass';
-      f.frequency.value = freq;
-      f.Q.value = 2.5;
-      const g = ctx.createGain();
-      g.gain.value = gain;
-      src.connect(f).connect(g).connect(ctx.destination);
-      src.start(at);
-    };
-    // A short ringing tone (the steel) or a low thump (the body).
-    const tone = (at, from, to, gain, len) => {
-      const o = ctx.createOscillator();
-      o.frequency.setValueAtTime(from, at);
-      o.frequency.exponentialRampToValueAtTime(to, at + len);
-      const g = ctx.createGain();
-      g.gain.setValueAtTime(gain, at);
-      g.gain.exponentialRampToValueAtTime(0.0001, at + len);
-      o.connect(g).connect(ctx.destination);
-      o.start(at);
-      o.stop(at + len);
-    };
-    if (closing) {
-      click(t, 2200, 0.35, 0.025); // shackle sliding in
-      click(t + 0.065, 4200, 1.1, 0.04); // the snap
-      click(t + 0.068, 1500, 0.9, 0.05);
-      tone(t + 0.065, 190, 90, 0.35, 0.09); // thump
-      tone(t + 0.066, 3150, 3100, 0.05, 0.16); // ring
-      tone(t + 0.066, 4730, 4700, 0.03, 0.12);
-    } else {
-      click(t, 2600, 0.45, 0.03);
-      tone(t, 2400, 2300, 0.025, 0.08);
-    }
+    playLockSound(audio, closing);
   } catch {
     // No sound support: the lock still works.
+  }
+}
+
+function playLockSound(ctx, closing) {
+  const t = ctx.currentTime + 0.01;
+  // The snap plays as is. The bolt goes through a limiter, plus a short echo
+  // like a concrete cell block.
+  const out = ctx.createDynamicsCompressor();
+  out.threshold.value = -12;
+  out.ratio.value = 8;
+  const master = ctx.createGain();
+  master.gain.value = 0.6; // the limiter adds gain of its own; this keeps it from distorting
+  out.connect(master).connect(ctx.destination);
+  const hall = ctx.createConvolver();
+  const tail = Math.ceil(ctx.sampleRate * 2.2);
+  const echo = ctx.createBuffer(2, tail, ctx.sampleRate);
+  for (let c = 0; c < 2; c++) {
+    const d = echo.getChannelData(c);
+    for (let i = 0; i < tail; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / tail) ** 3;
+  }
+  hall.buffer = echo;
+  const wet = ctx.createGain();
+  wet.gain.value = 0.15;
+  hall.connect(wet).connect(out);
+  const bus = ctx.createGain();
+  if (closing) bus.connect(ctx.destination);
+  else {
+    bus.connect(out);
+    bus.connect(hall);
+  }
+
+  // A burst of filtered noise: dies away, or (swell) builds up to its end.
+  const noise = (at, len, type, freq, q, gain, swell = false) => {
+    const buf = ctx.createBuffer(1, Math.ceil(ctx.sampleRate * len), ctx.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < d.length; i++) {
+      const x = i / d.length;
+      d[i] = (Math.random() * 2 - 1) * (swell ? x * x : (1 - x) ** 4);
+    }
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    const f = ctx.createBiquadFilter();
+    f.type = type;
+    f.frequency.value = freq;
+    f.Q.value = q;
+    const g = ctx.createGain();
+    g.gain.value = gain;
+    src.connect(f).connect(g).connect(bus);
+    src.start(at);
+  };
+  // A tone that slides and fades: the low boom, or the iron ringing.
+  const tone = (at, from, to, gain, len, type = 'sine') => {
+    const o = ctx.createOscillator();
+    o.type = type;
+    o.frequency.setValueAtTime(from, at);
+    o.frequency.exponentialRampToValueAtTime(to, at + len);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(gain, at);
+    g.gain.exponentialRampToValueAtTime(0.0001, at + len);
+    o.connect(g).connect(bus);
+    o.start(at);
+    o.stop(at + len);
+  };
+
+  if (closing) {
+    noise(t, 0.025, 'bandpass', 2200, 2.5, 0.35); // shackle sliding in
+    noise(t + 0.065, 0.04, 'bandpass', 4200, 2.5, 1.1); // the snap
+    noise(t + 0.068, 0.05, 'bandpass', 1500, 2.5, 0.9);
+    tone(t + 0.065, 190, 90, 0.35, 0.09); // thump
+    tone(t + 0.066, 3150, 3100, 0.05, 0.16); // ring
+    tone(t + 0.066, 4730, 4700, 0.03, 0.12);
+  } else {
+    noise(t, 0.22, 'bandpass', 650, 2, 0.4, true); // a heavy bolt sliding back
+    noise(t + 0.22, 0.06, 'bandpass', 1300, 3, 0.45);
+    tone(t + 0.22, 110, 70, 0.35, 0.16);
   }
 }
 
