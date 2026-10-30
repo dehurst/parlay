@@ -1417,9 +1417,14 @@ const snapBars = (timeline) => (timeline?.length
     : `<i class="${t.pct >= 50 ? 'hi' : 'lo'}" style="height:${Math.max(8, t.pct)}%"></i>`)).join('')}</span>`
   : '');
 
+// Green, yellow, or red. ESPN often moves a backup to the top of the depth
+// chart once the starter goes on IR, so anyone filling in for a hurt starter
+// counts as a backup (yellow) even when listed first.
+const heatLevel = (s) => (!s.name ? 0 : s.history?.tag === 'fillin' ? Math.max(Math.min(s.rank, 3), 2) : Math.min(s.rank, 3));
+
 function heatSquare(s) {
-  const level = s.name ? Math.min(s.rank, 3) : 0;
-  const tip = [`${s.pos}: ${s.name ?? 'nobody healthy'}`, HEAT_LEVELS[level] + (s.rank > 3 ? ` (#${s.rank} on the depth chart)` : '')];
+  const level = heatLevel(s);
+  const tip = [`${s.pos}: ${s.name ?? 'nobody healthy'}`, HEAT_LEVELS[level] + (s.rank > 3 ? ` (#${s.rank} on the depth chart)` : s.rank === 1 && level === 2 ? ' (listed first, filling in)' : '')];
   if (s.rookie) tip.push('Rookie');
   if (s.status) tip.push(s.status);
   for (const p of s.skipped) tip.push(`${p.name} is ${p.status}`);
@@ -1440,8 +1445,8 @@ function heatSquare(s) {
 // got there.
 function heatSummary(side) {
   const slots = Object.values(side).flat();
-  const backups = slots.filter((s) => s.rank === 2).length;
-  const deep = slots.filter((s) => s.rank > 2 || !s.name).length;
+  const backups = slots.filter((s) => heatLevel(s) === 2).length;
+  const deep = slots.filter((s) => heatLevel(s) !== 1 && heatLevel(s) !== 2).length;
   const depth = !backups && !deep ? 'All starters'
     : [backups && `${backups} backup${backups === 1 ? '' : 's'}`, deep && `${deep} 3rd string or deeper`].filter(Boolean).join(' · ') + ' in';
   const how = [['fillin', 'fill-in'], ['earned', 'earned'], ['trade', 'trade'], ['new', 'new'], ['back', 'back'], ['part', 'part-time']]
