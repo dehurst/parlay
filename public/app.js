@@ -118,6 +118,9 @@ async function load(refresh = false) {
 function renderLeague() {
   document.querySelectorAll('#sport-switch button').forEach((b) => b.classList.toggle('active', b.dataset.sport === league));
   $('#league-name').textContent = league.toUpperCase();
+  // The heat map is NFL only for now.
+  $('#tabs [data-tab="heatmap"]').hidden = league !== 'nfl';
+  if (league !== 'nfl' && tab === 'heatmap') tab = 'picks';
 }
 
 function switchLeague(next) {
@@ -415,6 +418,7 @@ function render() {
   if (tab === 'stats') renderStats();
   if (tab === 'analysis') renderAnalysis();
   if (tab === 'research') renderResearch();
+  if (tab === 'heatmap') renderHeatmap();
 }
 
 // Grade a bet against a final score: 'win' | 'loss' | 'push' (same rules as
@@ -1377,6 +1381,71 @@ async function renderStats() {
     + `<h3 class="section">${byWeek ? 'Picks and parlays' : 'Week by week'}</h3>` + weeks;
 }
 
+// ---- Heat map (beta) ---------------------------------------------------------
+// One game's matchups from the depth charts: each team's offense against the
+// other's defense, unit by unit. Each square is who would line up there, in
+// green for a starter, yellow for a backup, red for third string or deeper.
+
+let heatGame = null; // the game shown
+const HEAT_UNITS = [['line', 'Offensive line', 'Defensive line'], ['pass', 'Receivers', 'Secondary'], ['back', 'Backfield', 'Linebackers']];
+const HEAT_LEVELS = ['Nobody healthy', 'Starter', 'Backup', '3rd string or deeper'];
+
+function heatSquare(s) {
+  const level = s.name ? Math.min(s.rank, 3) : 0;
+  const tip = [`${s.pos}: ${s.name ?? 'nobody healthy'}`, HEAT_LEVELS[level] + (s.rank > 3 ? ` (#${s.rank} on the depth chart)` : '')];
+  if (s.status) tip.push(s.status);
+  for (const p of s.skipped) tip.push(`${p.name} is ${p.status}`);
+  return `<div class="heat-sq heat-${level}" title="${esc(tip.join('\n'))}">
+    <span class="heat-pos">${esc(s.pos)}</span>
+    <span class="heat-name">${esc(s.name ? shortName(s.name) : '—')}</span>
+    ${s.status === 'Questionable' ? '<span class="heat-tag">Q</span>' : ''}
+  </div>`;
+}
+
+// How many spots a side is filling below its starters.
+function heatSummary(side) {
+  const slots = Object.values(side).flat();
+  const backups = slots.filter((s) => s.rank === 2).length;
+  const deep = slots.filter((s) => s.rank > 2 || !s.name).length;
+  if (!backups && !deep) return 'All starters';
+  return [backups && `${backups} backup${backups === 1 ? '' : 's'}`, deep && `${deep} 3rd string or deeper`].filter(Boolean).join(' · ') + ' in';
+}
+
+function heatMatchup(g, offHome, data) {
+  const [off, def] = offHome ? [data.home.offense, data.away.defense] : [data.away.offense, data.home.defense];
+  const [offTeam, defTeam] = offHome ? [g.home, g.away] : [g.away, g.home];
+  const [offShort, defShort] = offHome ? [g.homeShort, g.awayShort] : [g.awayShort, g.homeShort];
+  const units = HEAT_UNITS.map(([id, oLabel, dLabel]) => `<div class="heat-unit">
+      <div class="heat-side"><div class="heat-label">${oLabel}</div><div class="heat-row">${off[id].map(heatSquare).join('')}</div></div>
+      <div class="heat-vs">vs</div>
+      <div class="heat-side"><div class="heat-label">${dLabel}</div><div class="heat-row">${def[id].map(heatSquare).join('')}</div></div>
+    </div>`).join('');
+  return `<div class="card heat-card">
+    <h3 class="heat-title">${teamLogo(offTeam, 'small')}${esc(offShort)} offense <span class="muted">vs</span> ${teamLogo(defTeam, 'small')}${esc(defShort)} defense</h3>
+    <div class="small muted">${esc(offShort)}: ${heatSummary(off)} · ${esc(defShort)}: ${heatSummary(def)}</div>
+    ${units}
+  </div>`;
+}
+
+async function renderHeatmap() {
+  const box = $('#heatmap');
+  const games = [...week.games].sort((a, b) => a.commence.localeCompare(b.commence));
+  if (!games.length) {
+    box.innerHTML = '<div class="card muted">No games on the schedule this week.</div>';
+    return;
+  }
+  if (!games.some((g) => g.id === heatGame)) heatGame = (games.find((g) => !g.started) ?? games[0]).id;
+  const g = games.find((x) => x.id === heatGame);
+  const kick = (x) => new Date(x.commence).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' });
+  const head = `<p class="small muted">Beta: who lines up for each team, from ESPN's current depth charts. Hurt players (Out, Doubtful, IR, suspended) are skipped, so a backup filling in shows up yellow. Hover or long-press a square for details.</p>
+    <label class="heat-pick">Game <select id="heat-game">${games.map((x) => `<option value="${esc(x.id)}" ${x.id === heatGame ? 'selected' : ''}>${esc(shortMatchup(`${x.away} @ ${x.home}`))} · ${esc(kick(x))}</option>`).join('')}</select></label>
+    <div class="heat-legend">${[1, 2, 3].map((l) => `<span class="heat-key heat-${l}">${HEAT_LEVELS[l]}</span>`).join('')}<span class="heat-key"><span class="heat-tag">Q</span> Questionable</span></div>`;
+  box.innerHTML = head + '<p class="muted">Loading depth charts…</p>';
+  const data = await api(withWeek(`/api/heatmap?game=${encodeURIComponent(heatGame)}`)).catch((err) => (notice(err.message), null));
+  if (!data || tab !== 'heatmap' || g.id !== heatGame) return;
+  box.innerHTML = head + heatMatchup(g, false, data) + heatMatchup(g, true, data);
+}
+
 // ---- Analysis ----------------------------------------------------------------
 
 const chanceText = (p) => (p == null ? '?' : `${Math.round(p * 100)}%`);
@@ -1911,6 +1980,11 @@ $('#week-next').addEventListener('click', () => {
   if (i > 0) goWeek(week.weeks[i - 1].key);
 });
 $('#week-select').addEventListener('change', (e) => goWeek(e.target.value));
+$('#heatmap').addEventListener('change', (e) => {
+  if (e.target.id !== 'heat-game') return;
+  heatGame = e.target.value;
+  renderHeatmap();
+});
 $('#back-to-now').addEventListener('click', () => goWeek(null));
 $('#stats').addEventListener('click', (e) => {
   const scope = e.target.closest('[data-scope]')?.dataset.scope;

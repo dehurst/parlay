@@ -16,6 +16,7 @@ import { parseLogins, checkLogin, makeToken, readToken, cookieValue, sessionCook
 import { analyzeWeek } from './analysis.js';
 import { seasonYear, fetchSeasonWeek, parseSeasonWeek, mergeWeek, fetchGameLine, buildTeams, fetchGameTeamStats, regularSeasonWeeks } from './research.js';
 import { fetchTeamRoster, fetchTeamDepthChart, teamInjuries, dropStaleHistory, weekOf } from './injuries.js';
+import { teamHeatmap } from './heatmap.js';
 import { canSpend, spend, limitFor, easternDate, easternWeekday, LINES_COST, SCORES_COST } from './credits.js';
 import { sport, runInSport, inSlate, SPORTS } from './sport.js';
 
@@ -1097,6 +1098,22 @@ function savedLine(game) {
   if (!lines) return null;
   return { homeLine: lines.spread?.home?.point ?? null, total: lines.total?.over?.point ?? null };
 }
+
+// Heat map (beta): both teams' offense and defense for one game, from ESPN's
+// current depth charts. NFL only for now.
+app.get('/api/heatmap', async (req, res, next) => {
+  try {
+    if (sport().id !== 'nfl') return res.status(400).json({ error: 'The heat map is NFL only for now.' });
+    const { gamesById } = await loadWeek({ key: requestedWeek(req) });
+    const game = gamesById.get(String(req.query.game ?? ''));
+    if (!game) return res.status(404).json({ error: 'That game isn’t on this week’s schedule.' });
+    const [away, home] = await Promise.all([teamHeatmap(game.away), teamHeatmap(game.home)]);
+    if (!away || !home) return res.status(503).json({ error: 'Couldn’t get depth charts from ESPN. Try again in a few minutes.' });
+    res.json({ away, home });
+  } catch (err) {
+    next(err);
+  }
+});
 
 app.get('/api/research', async (req, res, next) => {
   try {
