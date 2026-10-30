@@ -5,7 +5,8 @@
 
 import { espnSite } from './sport.js';
 import { teamKey } from './schedule.js';
-import { fetchTeamDepthChart } from './injuries.js';
+import { fetchTeamDepthChart, fetchTeamRoster } from './injuries.js';
+import { seasonSnaps, teamCode, starterHistory } from './starters.js';
 
 // Tags that keep a player off the field; Questionable players still count.
 const SIDELINED = ['Out', 'Doubtful', 'Injured Reserve', 'Suspension'];
@@ -89,7 +90,27 @@ export async function teamHeatmap(name, now = Date.now()) {
   if (!id) return null;
   const cached = charts.get(id);
   if (cached && now - cached.at < CHART_TTL) return cached.sides;
-  const sides = teamSides(await fetchTeamDepthChart(id));
+  // The roster (for injuries, IR included) and snap counts only add the
+  // "how they got the job" tags, so the heat map still works without them.
+  const [chart, roster, snaps] = await Promise.allSettled([fetchTeamDepthChart(id), fetchTeamRoster(id), seasonSnaps(new Date(now))]);
+  if (chart.status === 'rejected') throw chart.reason;
+  const sides = teamSides(chart.value);
+  const teams = snaps.status === 'fulfilled' ? snaps.value : null;
+  if (snaps.status === 'rejected') console.error(`Snap counts failed: ${snaps.reason?.message ?? snaps.reason}`);
+  const athletes = roster.status === 'fulfilled' ? (roster.value.athletes ?? []).flatMap((g) => g.items ?? [g]) : null;
+  const injuries = new Map((athletes ?? []).filter((a) => a.injuries?.length).map((a) => [a.displayName, a.injuries[0].status]));
+  const names = athletes?.map((a) => a.displayName) ?? null;
+  for (const side of Object.values(sides)) {
+    const slots = Object.values(side).flat();
+    const starters = slots.map((s) => s.name).filter(Boolean);
+    const opts = { injuries, roster: names, starters };
+    // Each job lost goes to one replacement: whoever took over first.
+    const first = new Map(slots.map((s) => [s, starterHistory(teams, teamCode(name), s, opts)?.since ?? Infinity]));
+    const taken = new Set();
+    for (const slot of [...slots].sort((a, b) => first.get(a) - first.get(b))) {
+      slot.history = starterHistory(teams, teamCode(name), slot, { ...opts, taken });
+    }
+  }
   charts.set(id, { at: now, sides });
   return sides;
 }

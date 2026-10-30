@@ -1390,25 +1390,59 @@ let heatGame = null; // the game shown
 const HEAT_UNITS = [['line', 'Offensive line', 'Defensive line'], ['pass', 'Receivers', 'Secondary'], ['back', 'Backfield', 'Linebackers']];
 const HEAT_LEVELS = ['Nobody healthy', 'Starter', 'Backup', '3rd string or deeper'];
 
+// How the player got the job, from every week's snap counts this season.
+const HEAT_TAGS = { fillin: 'Fill-in', earned: 'Earned ↑', new: 'New', back: 'Back', part: 'Part-time' };
+const weekList = (weeks) => (weeks.length > 1 ? `Weeks ${weeks[0]}–${weeks[weeks.length - 1]}` : `Week ${weeks[0]}`);
+function historyText(h) {
+  if (!h) return null;
+  const who = (name, status) => `${name}${status ? ` (${status})` : ''}`;
+  const since = h.since ? ` since Week ${h.since}` : '';
+  const text = {
+    week1: `Starter every game since Week ${h.since}`,
+    back: h.missed?.length ? `Back as a starter: out or limited ${weekList(h.missed)}` : 'Back as a starter',
+    fillin: `Filling in for ${who(h.replaced, h.replacedStatus)}${since}`,
+    earned: `Took the job from ${h.replaced}${since}. He's healthy${h.replacedRecent != null ? ` and down to ${h.replacedRecent}% of snaps` : ''}`,
+    new: h.from ? `New: played for ${h.from} earlier this season` : h.replacedGone ? `Took over for ${h.replaced}${since}. He's no longer on the team` : `New starter${since}`,
+    part: 'Listed as a starter, but playing well under half the snaps',
+  }[h.tag];
+  const weeks = h.timeline?.map((t) => `Wk ${t.week}: ${t.pct == null ? 'did not play' : `${t.pct}%`}`).join(', ');
+  return [h.recent != null ? `${text} · ${h.recent}% of snaps the last 3 games` : text, weeks && `Snaps by week: ${weeks}`].filter(Boolean).join('\n');
+}
+
+// Each week's share of snaps as a tiny bar (a dot where he didn't play).
+const snapBars = (timeline) => (timeline?.length
+  ? `<span class="heat-weeks" aria-hidden="true">${timeline.map((t) => (t.pct == null ? '<i class="none"></i>' : `<i style="height:${Math.max(8, t.pct)}%"></i>`)).join('')}</span>`
+  : '');
+
 function heatSquare(s) {
   const level = s.name ? Math.min(s.rank, 3) : 0;
   const tip = [`${s.pos}: ${s.name ?? 'nobody healthy'}`, HEAT_LEVELS[level] + (s.rank > 3 ? ` (#${s.rank} on the depth chart)` : '')];
   if (s.status) tip.push(s.status);
   for (const p of s.skipped) tip.push(`${p.name} is ${p.status}`);
+  const history = historyText(s.history);
+  if (history) tip.push(history);
+  const tag = HEAT_TAGS[s.history?.tag];
   return `<div class="heat-sq heat-${level}" title="${esc(tip.join('\n'))}">
     <span class="heat-pos">${esc(s.pos)}</span>
     <span class="heat-name">${esc(s.name ? shortName(s.name) : '—')}</span>
+    ${tag ? `<span class="heat-how how-${s.history.tag}">${tag}</span>` : ''}
+    ${snapBars(s.history?.timeline)}
     ${s.status === 'Questionable' ? '<span class="heat-tag">Q</span>' : ''}
   </div>`;
 }
 
-// How many spots a side is filling below its starters.
+// How many spots a side is filling below its starters, and how its starters
+// got there.
 function heatSummary(side) {
   const slots = Object.values(side).flat();
   const backups = slots.filter((s) => s.rank === 2).length;
   const deep = slots.filter((s) => s.rank > 2 || !s.name).length;
-  if (!backups && !deep) return 'All starters';
-  return [backups && `${backups} backup${backups === 1 ? '' : 's'}`, deep && `${deep} 3rd string or deeper`].filter(Boolean).join(' · ') + ' in';
+  const depth = !backups && !deep ? 'All starters'
+    : [backups && `${backups} backup${backups === 1 ? '' : 's'}`, deep && `${deep} 3rd string or deeper`].filter(Boolean).join(' · ') + ' in';
+  const how = [['fillin', 'fill-in'], ['earned', 'earned'], ['new', 'new'], ['back', 'back'], ['part', 'part-time']]
+    .map(([tag, label]) => [slots.filter((s) => s.history?.tag === tag).length, label])
+    .filter(([n]) => n).map(([n, label]) => `${n} ${label}`).join(', ');
+  return how ? `${depth} (${how})` : depth;
 }
 
 function heatMatchup(g, offHome, data) {
@@ -1437,9 +1471,18 @@ async function renderHeatmap() {
   if (!games.some((g) => g.id === heatGame)) heatGame = (games.find((g) => !g.started) ?? games[0]).id;
   const g = games.find((x) => x.id === heatGame);
   const kick = (x) => new Date(x.commence).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' });
-  const head = `<p class="small muted">Beta: who lines up for each team, from ESPN's current depth charts. Hurt players (Out, Doubtful, IR, suspended) are skipped, so a backup filling in shows up yellow. Hover or long-press a square for details.</p>
+  const head = `<p class="small muted">Beta: who lines up for each team, from ESPN's current depth charts. Hurt players (Out, Doubtful, IR, suspended) are skipped, so a backup filling in shows up yellow. Tags and the little bars show how a starter got the job, from every week's snap counts this season (nflverse, updated weekly). Hover or long-press a square for details.</p>
     <label class="heat-pick">Game <select id="heat-game">${games.map((x) => `<option value="${esc(x.id)}" ${x.id === heatGame ? 'selected' : ''}>${esc(shortMatchup(`${x.away} @ ${x.home}`))} · ${esc(kick(x))}</option>`).join('')}</select></label>
-    <div class="heat-legend">${[1, 2, 3].map((l) => `<span class="heat-key heat-${l}">${HEAT_LEVELS[l]}</span>`).join('')}<span class="heat-key"><span class="heat-tag">Q</span> Questionable</span></div>`;
+    <div class="heat-legend">${[1, 2, 3].map((l) => `<span class="heat-key heat-${l}">${HEAT_LEVELS[l]}</span>`).join('')}<span class="heat-key"><span class="heat-tag">Q</span> Questionable</span></div>
+    <div class="heat-legend">
+      <span class="heat-key"><span class="heat-how how-fillin">Fill-in</span> for a hurt starter</span>
+      <span class="heat-key"><span class="heat-how how-earned">Earned ↑</span> passed a healthy starter</span>
+      <span class="heat-key"><span class="heat-how how-new">New</span> new starter or traded in</span>
+      <span class="heat-key"><span class="heat-how how-back">Back</span> starting again after missing games</span>
+      <span class="heat-key"><span class="heat-how how-part">Part-time</span> under half the snaps</span>
+      <span class="heat-key">No tag: starter every game since Week 1</span>
+      <span class="heat-key"><span class="heat-weeks"><i style="height:90%"></i><i style="height:60%"></i><i class="none"></i><i style="height:100%"></i></span> snaps each week (dot: didn't play)</span>
+    </div>`;
   box.innerHTML = head + '<p class="muted">Loading depth charts…</p>';
   const data = await api(withWeek(`/api/heatmap?game=${encodeURIComponent(heatGame)}`)).catch((err) => (notice(err.message), null));
   if (!data || tab !== 'heatmap' || g.id !== heatGame) return;

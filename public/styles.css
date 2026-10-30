@@ -533,3 +533,20 @@ h3.section.first { margin-top: 4px; }
   /* Keeps the tab narrow enough to share a row: "(beta)" goes under "Heat map". */
   .tabs .beta { display: block; font-size: 10px; line-height: 1; }
 }
+
+/* How a heat map starter got the job. */
+.heat-how {
+  margin-top: 3px; padding: 0 5px; border-radius: 4px; font-size: 9px; font-weight: 800; line-height: 14px;
+  text-transform: uppercase; letter-spacing: .03em; background: rgba(15, 20, 25, .75);
+}
+.how-fillin { color: #8cc8ff; }
+.how-earned { color: #d4a8ff; }
+.how-new { color: #c9d1d9; }
+.heat-key .heat-how { margin-top: 0; }
+.how-back { color: #9be9a8; }
+.how-part { color: #f0b46a; }
+/* Snaps each week: one bar per game, full height = every snap. */
+.heat-weeks { display: inline-flex; align-items: flex-end; gap: 1px; height: 12px; margin-top: 4px; }
+.heat-weeks i { display: block; width: 4px; background: currentColor; opacity: .75; border-radius: 1px 1px 0 0; }
+.heat-weeks i.none { width: 3px; height: 3px; border-radius: 50%; opacity: .35; }
+.heat-key .heat-weeks { margin-top: 0; color: var(--text); }
