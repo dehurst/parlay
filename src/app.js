@@ -444,6 +444,8 @@ app.get('/api/week', async (req, res, next) => {
       picks: submitted(win),
       // Your own unsubmitted selections (null if you have none); nobody else sees these.
       draft: (!past && me && store.data.drafts[win.key]?.[me]) || null,
+      // Which of those you've marked as locks (picks you're sure of).
+      draftLocks: (!past && me && store.data.draftLocks[win.key]?.[me]) || [],
       nextRefreshAt: live && lines ? lines.fetchedAt + MANUAL_REFRESH_GAP : null,
       // Manual refreshes: Sundays only.
       manualLeft: live ? manualLeft(now) : 0,
@@ -474,9 +476,9 @@ function checkPlayer(req, res) {
   return name;
 }
 
-// Save your unsubmitted selections (just the bet keys; lines are set on submit).
-// After submitting, a draft means you're editing; submitted picks still count
-// until you resubmit.
+// Save your unsubmitted selections (just the bet keys; lines are set on submit)
+// and which of them are locks. After submitting, a draft means you're editing;
+// submitted picks still count until you resubmit.
 app.put('/api/draft', async (req, res, next) => {
   try {
     const name = checkPlayer(req, res);
@@ -487,8 +489,12 @@ app.put('/api/draft', async (req, res, next) => {
     const byMarket = new Map(keys.map((k) => [k.split('|').slice(0, 2).join('|'), k]));
     const drafts = (store.data.drafts[win.key] ??= {});
     drafts[name] = [...byMarket.values()];
+    // Locks: the ones sent, or the ones you had, as long as they're still selected.
+    const locks = (store.data.draftLocks[win.key] ??= {});
+    const wanted = new Set(req.body.locks ?? locks[name] ?? []);
+    locks[name] = drafts[name].filter((k) => wanted.has(k));
     await save();
-    res.json({ draft: drafts[name] });
+    res.json({ draft: drafts[name], locks: locks[name] });
   } catch (err) {
     next(err);
   }
@@ -555,6 +561,7 @@ app.delete('/api/draft', async (req, res, next) => {
     if (!name) return;
     const { win } = await loadWeek();
     if (store.data.drafts[win.key]) delete store.data.drafts[win.key][name];
+    if (store.data.draftLocks[win.key]) delete store.data.draftLocks[win.key][name];
     await save();
     res.json({ draft: null });
   } catch (err) {
@@ -578,21 +585,28 @@ app.post('/api/submit', async (req, res, next) => {
     };
 
     const draft = store.data.drafts[win.key]?.[name] ?? [];
+    const locks = new Set(store.data.draftLocks[win.key]?.[name] ?? []);
     const picks = before.filter((p) => started(p.key));
     const dropped = [];
     for (const key of draft) {
       if (picks.some((p) => p.key === key)) continue;
       const kept = before.find((p) => p.key === key);
       const line = pickable(key, gamesById, now);
-      if (kept && line) picks.push(kept);
-      else if (line) picks.push({ key, point: line.point, price: line.price });
-      else dropped.push(key);
+      // Kept bets stay at the line you got; locking or unlocking doesn't change it.
+      const pick = kept && line ? { key, point: kept.point, price: kept.price } : line ? { key, point: line.point, price: line.price } : null;
+      if (!pick) {
+        dropped.push(key);
+        continue;
+      }
+      if (locks.has(key)) pick.locked = true;
+      picks.push(pick);
     }
     if (!picks.length) {
       return res.status(400).json({ error: dropped.length ? 'Those games already started.' : 'Pick at least one bet first.' });
     }
     weekPicks[name] = picks;
     delete store.data.drafts[win.key][name];
+    if (store.data.draftLocks[win.key]) delete store.data.draftLocks[win.key][name];
     await save();
     res.json({ picks: submitted(win), dropped: dropped.length });
   } catch (err) {
@@ -1113,6 +1127,7 @@ app.delete('/api/picks', async (req, res, next) => {
     if (kept.length) weekPicks[name] = kept;
     else delete weekPicks[name];
     if (store.data.drafts[win.key]) delete store.data.drafts[win.key][name];
+    if (store.data.draftLocks[win.key]) delete store.data.draftLocks[win.key][name];
     await save();
     res.json({ picks: submitted(win), kept: kept.length });
   } catch (err) {

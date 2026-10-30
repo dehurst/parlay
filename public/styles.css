@@ -458,3 +458,41 @@ h3.section.first { margin-top: 4px; }
 .owed { margin-top: 8px; color: var(--warn); }
 /* Keep payout actions readable on grayed (settled) cards. */
 .parlay.done .place-row { opacity: 1; }
+
+/* Locks: a padlock in the corner of each of your picks. Open (faint) until you
+   tap it; then gold, shining, with a few sparkles, and the pick gets a gold ring. */
+.pick .lock-toggle {
+  position: absolute; right: 2px; bottom: 2px; width: 22px; height: 22px;
+  display: grid; place-items: center; border-radius: 6px; line-height: 0;
+}
+.pick .lock-toggle[data-lock] { cursor: pointer; }
+.pick .lock-toggle .lock-svg { width: 15px; height: 15px; overflow: visible; }
+.pick .lock-toggle.open { color: var(--accent-ink); opacity: .5; transition: opacity .15s, transform .15s; }
+.pick .lock-toggle.open:hover { opacity: .9; transform: scale(1.12); }
+.pick .lock-toggle.closed .lock-svg { width: 17px; height: 17px; filter: drop-shadow(0 0 3px rgba(255, 205, 70, .75)); }
+.pick.sure { box-shadow: 0 0 0 2px #f2c14b, 0 0 14px rgba(242, 193, 75, .45); }
+.pick.sure.graded { box-shadow: 0 0 0 2px #f2c14b; }
+.lock-toggle .sparkle {
+  position: absolute; color: #fff6c9; font-size: 8px; line-height: 1; pointer-events: none;
+  text-shadow: 0 0 4px #ffd75a; opacity: 0; animation: twinkle 2.4s ease-in-out infinite;
+}
+.lock-toggle .sparkle.s1 { top: -4px; left: -3px; }
+.lock-toggle .sparkle.s2 { top: 1px; right: -5px; font-size: 6px; animation-delay: .8s; }
+.lock-toggle .sparkle.s3 { bottom: -3px; left: 1px; font-size: 6px; animation-delay: 1.6s; }
+@keyframes twinkle {
+  0%, 100% { opacity: 0; transform: scale(.3) rotate(0deg); }
+  15% { opacity: 1; transform: scale(1.1) rotate(45deg); }
+  30% { opacity: 0; transform: scale(.3) rotate(90deg); }
+}
+/* The moment it locks: the shackle drops in and the lock pops. */
+.lock-toggle.snap .lock-svg { animation: lock-pop .35s ease-out; }
+.lock-toggle.snap .shackle { transform-box: fill-box; animation: shackle-drop .12s ease-in; }
+.lock-toggle.snap .sparkle { animation: burst .6s ease-out, twinkle 2.4s ease-in-out .6s infinite; }
+@keyframes lock-pop { 0% { transform: scale(.7); } 55% { transform: scale(1.35); } 100% { transform: scale(1); } }
+@keyframes shackle-drop { from { transform: translateY(-3px); } to { transform: translateY(0); } }
+@keyframes burst { 0% { opacity: 0; transform: scale(.2); } 40% { opacity: 1; transform: scale(1.6); } 100% { opacity: 0; transform: scale(.4); } }
+@media (prefers-reduced-motion: reduce) {
+  .lock-toggle .sparkle, .lock-toggle.snap .lock-svg, .lock-toggle.snap .shackle { animation: none; }
+}
+.mini-lock { display: inline-block; width: 13px; height: 13px; margin-left: 3px; vertical-align: -1px; }
+.mini-lock svg { width: 100%; height: 100%; display: block; }

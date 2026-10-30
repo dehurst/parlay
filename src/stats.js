@@ -18,6 +18,8 @@ export function computeStats(data, players, { week = null } = {}) {
     picks: record(),
     byMarket: { spread: record(), total: record(), ml: record(), props: record() },
     flatNet: 0, // profit if they'd bet $10 on every pick
+    locks: record(), // picks they marked as locks (sure things)
+    lockNet: 0, // $10 on every lock
     staked: 0, // settled parlay money only
     returned: 0,
     inPlay: 0, // money on parlays not decided yet
@@ -46,7 +48,11 @@ export function computeStats(data, players, { week = null } = {}) {
         person.picks[g]++;
         person.byMarket[marketType(p.key.split('|')[1])][g]++;
         person.flatNet += singleProfit(p.price, g);
-        return { label: label(p.key, p.point), price: p.price, grade: g };
+        if (p.locked) {
+          person.locks[g]++;
+          person.lockNet += singleProfit(p.price, g);
+        }
+        return { label: label(p.key, p.point), price: p.price, grade: g, locked: !!p.locked };
       });
     }
 

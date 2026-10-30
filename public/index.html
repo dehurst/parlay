@@ -8,6 +8,23 @@
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
+  <!-- Gold for lock icons, with a shine that sweeps across. -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+    <defs>
+      <linearGradient id="gold" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0" stop-color="#fff4b8"/>
+        <stop offset=".3" stop-color="#f7cd4a"/>
+        <stop offset=".65" stop-color="#d99a1e"/>
+        <stop offset="1" stop-color="#8f5c00"/>
+      </linearGradient>
+      <linearGradient id="gold-shine" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="10" y2="10">
+        <stop offset="0" stop-color="#fff" stop-opacity="0"/>
+        <stop offset=".5" stop-color="#fff" stop-opacity=".9"/>
+        <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+        <animateTransform attributeName="gradientTransform" type="translate" values="-24 -24; 30 30; 30 30" keyTimes="0; .45; 1" dur="2.6s" repeatCount="indefinite"/>
+      </linearGradient>
+    </defs>
+  </svg>
   <header>
     <div class="brand">
       <h1>Parlay Builder</h1>

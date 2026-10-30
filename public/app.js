@@ -185,6 +185,7 @@ async function clearPicks() {
     const res = await api('/api/picks', { method: 'DELETE', body: { name: me } });
     week.picks = res.picks;
     week.draft = null;
+    week.draftLocks = [];
     notice(res.kept ? `Kept ${res.kept} pick${res.kept === 1 ? '' : 's'} on games that already started.` : null);
   } catch (err) {
     notice(err.message);
@@ -280,6 +281,91 @@ const allScorers = new Set();
 const TOP_SCORERS = 8;
 const sameLine = (a, b) => a && b && a.point === b.point && a.price === b.price;
 
+// ---- Locks -------------------------------------------------------------------
+// A lock is a pick you're sure of. It doesn't change the bet; it's tracked so
+// Bet Stats can show how everyone does on the picks they were certain about.
+
+// Your locks on screen: what you're editing (plus started picks you'd locked),
+// else what you submitted.
+function myLocks() {
+  const picks = submittedPicks() ?? [];
+  if (isLocked() || isPast()) return new Set(picks.filter((p) => p.locked).map((p) => p.key));
+  const started = picks.filter((p) => p.locked && gameOf(p.key)?.started).map((p) => p.key);
+  return new Set([...(week.draftLocks ?? []), ...started]);
+}
+const isLockedBy = (who, key) => !!week.picks[who]?.find((p) => p.key === key)?.locked;
+let justLocked = null; // the lock that just snapped shut, to animate it once
+
+// A padlock: closed and gold (shining, with sparkles) or open and plain.
+function lockIcon(closed) {
+  const shackle = closed ? 'M7.5 11V8a4.5 4.5 0 0 1 9 0v3' : 'M7.5 11V8a4.5 4.5 0 0 1 8.7-1.6';
+  const body = '<rect x="4.5" y="10.5" width="15" height="11" rx="2.5"/>';
+  if (!closed) {
+    return `<svg class="lock-svg" viewBox="0 0 24 24" aria-hidden="true">
+      <path d="${shackle}" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>
+      <g fill="none" stroke="currentColor" stroke-width="2">${body}</g></svg>`;
+  }
+  return `<svg class="lock-svg" viewBox="0 0 24 24" aria-hidden="true">
+      <path class="shackle" d="${shackle}" fill="none" stroke="url(#gold)" stroke-width="2.6" stroke-linecap="round"/>
+      <g fill="url(#gold)" stroke="#7a4d00" stroke-width=".6">${body}</g>
+      <g fill="url(#gold-shine)">${body}</g>
+      <circle cx="12" cy="15.2" r="1.5" fill="#6b4300"/><rect x="11.35" y="15.5" width="1.3" height="3" rx=".65" fill="#6b4300"/>
+    </svg>
+    <span class="sparkle s1">✦</span><span class="sparkle s2">✦</span><span class="sparkle s3">✦</span>`;
+}
+
+// The sound of a padlock snapping shut (or a softer click opening), made on
+// the fly so there's no audio file to load.
+let audio = null;
+function lockSound(closing) {
+  try {
+    audio ??= new (window.AudioContext || window.webkitAudioContext)();
+    const ctx = audio;
+    const t = ctx.currentTime + 0.01;
+    // A metal click: a quick burst of noise through a band filter.
+    const click = (at, freq, gain, len) => {
+      const buf = ctx.createBuffer(1, Math.ceil(ctx.sampleRate * len), ctx.sampleRate);
+      const d = buf.getChannelData(0);
+      for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / d.length) ** 4;
+      const src = ctx.createBufferSource();
+      src.buffer = buf;
+      const f = ctx.createBiquadFilter();
+      f.type = 'bandpass';
+      f.frequency.value = freq;
+      f.Q.value = 2.5;
+      const g = ctx.createGain();
+      g.gain.value = gain;
+      src.connect(f).connect(g).connect(ctx.destination);
+      src.start(at);
+    };
+    // A short ringing tone (the steel) or a low thump (the body).
+    const tone = (at, from, to, gain, len) => {
+      const o = ctx.createOscillator();
+      o.frequency.setValueAtTime(from, at);
+      o.frequency.exponentialRampToValueAtTime(to, at + len);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(gain, at);
+      g.gain.exponentialRampToValueAtTime(0.0001, at + len);
+      o.connect(g).connect(ctx.destination);
+      o.start(at);
+      o.stop(at + len);
+    };
+    if (closing) {
+      click(t, 2200, 0.35, 0.025); // shackle sliding in
+      click(t + 0.065, 4200, 1.1, 0.04); // the snap
+      click(t + 0.068, 1500, 0.9, 0.05);
+      tone(t + 0.065, 190, 90, 0.35, 0.09); // thump
+      tone(t + 0.066, 3150, 3100, 0.05, 0.16); // ring
+      tone(t + 0.066, 4730, 4700, 0.03, 0.12);
+    } else {
+      click(t, 2600, 0.45, 0.03);
+      tone(t, 2400, 2300, 0.025, 0.08);
+    }
+  } catch {
+    // No sound support: the lock still works.
+  }
+}
+
 // ---- Rendering -----------------------------------------------------------
 
 function render() {
@@ -344,6 +430,7 @@ function renderGames() {
   const mine = calc ? calcKeys : new Set(locked ? submittedPicks().map((p) => p.key) : [...(week.draft ?? []), ...startedPicks]);
   // Bets you already submitted show the line you got, not today's line.
   const savedLine = calc ? new Map() : new Map((submittedPicks() ?? []).filter((p) => mine.has(p.key)).map((p) => [p.key, p]));
+  const locks = calc ? new Set() : myLocks();
 
   // Games that have kicked off go to a grayed-out section at the bottom.
   const gameCard = (g) => {
@@ -374,11 +461,21 @@ function renderGames() {
       const disabled = locked || g.started || !line;
       // Friends' picks aren't shown here, so everyone picks on their own.
       const titles = { win: 'Your pick won', loss: 'Your pick lost', push: 'Push', right: 'This side won' };
-      return `<button class="pick ${mine.has(key) ? (calc ? 'on calc' : 'on') : ''} ${result ? `graded ${result}` : ''}" data-key="${esc(key)}" ${disabled ? 'disabled' : ''}
+      // Your picks get a padlock: tap it to make the pick a lock (you're sure
+      // of it). It can change until kickoff, while you can edit picks.
+      const sure = !calc && mine.has(key) && locks.has(key);
+      const canLock = !calc && mine.has(key) && !disabled;
+      const lockHtml = sure || canLock
+        ? `<span class="lock-toggle ${sure ? 'closed' : 'open'} ${sure && justLocked === key ? 'snap' : ''}" ${canLock ? `role="button" tabindex="0" data-lock="${esc(key)}"` : ''}
+            title="${sure ? (canLock ? 'Locked pick. Tap to unlock' : 'Locked pick') : 'Tap to make this a locked pick'}"
+            aria-label="${sure ? 'Locked pick' : 'Make this a locked pick'}">${lockIcon(sure)}</span>`
+        : '';
+      return `<button class="pick ${mine.has(key) ? (calc ? 'on calc' : 'on') : ''} ${sure ? 'sure' : ''} ${result ? `graded ${result}` : ''}" data-key="${esc(key)}" ${disabled ? 'disabled' : ''}
         ${result ? `title="${titles[result]}"` : lockedPick ? 'title="Game started, so this pick is locked"' : line ? '' : 'title="No line yet"'}>
         <span class="line">${esc(label)}</span>
         <span class="price">${line ? fmtOdds(line.price) : 'N/A'}</span>
         ${mark ? `<span class="mark-badge">${mark}</span>` : ''}
+        ${lockHtml}
       </button>`;
     };
     const cell = (market, side) => {
@@ -455,6 +552,7 @@ function renderGames() {
   $('#games').innerHTML = (calc ? builderHtml() : '') + current.map(gameCard).join('')
     + (current.length ? '' : '<div class="card muted">Every game this week is over.</div>')
     + (finished.length ? `<h3 class="section">Completed games</h3>${finished.map(gameCard).join('')}` : '');
+  justLocked = null; // the snap plays once
   renderSubmitBar();
 }
 
@@ -840,8 +938,9 @@ async function copyPicks(btn) {
 
 async function startEditing() {
   const keys = submittedPicks().map((p) => p.key);
+  const locks = submittedPicks().filter((p) => p.locked).map((p) => p.key);
   try {
-    week.draft = (await api('/api/draft', { method: 'PUT', body: { name: me, keys } })).draft;
+    ({ draft: week.draft, locks: week.draftLocks } = await api('/api/draft', { method: 'PUT', body: { name: me, keys, locks } }));
   } catch (err) {
     notice(err.message);
   }
@@ -851,6 +950,7 @@ async function startEditing() {
 async function cancelEditing() {
   try {
     week.draft = (await api('/api/draft', { method: 'DELETE', body: { name: me } })).draft;
+    week.draftLocks = [];
   } catch (err) {
     notice(err.message);
   }
@@ -867,9 +967,28 @@ async function toggle(key) {
     draft.add(key);
   }
   week.draft = [...draft];
+  // A pick you drop takes its lock with it.
+  week.draftLocks = (week.draftLocks ?? []).filter((k) => draft.has(k));
   renderGames(); // feels instant; the server confirms below
+  await saveDraft();
+}
+
+// Lock or unlock one of your picks.
+async function toggleLock(key) {
+  const locks = new Set(week.draftLocks ?? []);
+  const closing = !locks.has(key);
+  if (closing) locks.add(key);
+  else locks.delete(key);
+  week.draftLocks = [...locks];
+  justLocked = closing ? key : null;
+  lockSound(closing);
+  renderGames();
+  await saveDraft();
+}
+
+async function saveDraft() {
   try {
-    week.draft = (await api('/api/draft', { method: 'PUT', body: { name: me, keys: week.draft } })).draft;
+    ({ draft: week.draft, locks: week.draftLocks } = await api('/api/draft', { method: 'PUT', body: { name: me, keys: week.draft, locks: week.draftLocks } }));
   } catch (err) {
     notice(err.message);
   }
@@ -881,6 +1000,7 @@ async function submit() {
     const res = await api('/api/submit', { method: 'POST', body: { name: me } });
     week.picks = res.picks;
     week.draft = null;
+    week.draftLocks = [];
     if (res.dropped) notice(`${res.dropped} pick${res.dropped === 1 ? ' was' : 's were'} left out because the game already started.`);
   } catch (err) {
     notice(err.message);
@@ -919,7 +1039,7 @@ async function renderBoard() {
     <div class="board-row">
       <div style="flex:1">
         <div><b>${betLabel(s.label)}</b> <span class="muted">${fmtOdds(s.price)}</span></div>
-        <div class="small muted">${matchupHtml(s.matchup)} · ${s.pickers.map(esc).join(', ')}</div>
+        <div class="small muted">${matchupHtml(s.matchup)} · ${s.pickers.map((p) => `${esc(p)}${isLockedBy(p, s.key) ? miniLock : ''}`).join(', ')}</div>
         ${lineMoved(s, data.book)}
         ${s.lines.length > 1 ? `<div class="lines">Submitted at different lines: ${s.lines.map((l) =>
           `${l.point === null ? '' : `${s.market === 'spread' ? fmtPoint(l.point) : l.point} `}${fmtOdds(l.price)} (${l.users.map(esc).join(', ')})`).join(' · ')}</div>` : ''}
@@ -1116,6 +1236,9 @@ function statusChip(status, returned, total) {
 // " · Props 2-1" once anyone has a graded prop (older stats have none).
 const propsRec = (r) => (r && r.win + r.loss + r.push ? ` · Props ${recordText(r)}` : '');
 
+// A small gold padlock for marking locks in lists.
+const miniLock = '<span class="mini-lock" title="Locked pick"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7.5 11V8a4.5 4.5 0 0 1 9 0v3" fill="none" stroke="url(#gold)" stroke-width="2.6" stroke-linecap="round"/><rect x="4.5" y="10.5" width="15" height="11" rx="2.5" fill="url(#gold)"/></svg></span>';
+
 function recordText(r) {
   const decided = r.win + r.loss;
   const pctText = decided ? ` (${Math.round((r.win / decided) * 100)}%)` : '';
@@ -1184,6 +1307,21 @@ async function renderStats() {
       </tfoot>
     </table></div>`;
 
+  // Locks: the picks people were sure of, and how those went.
+  const lockers = data.players.filter((p) => p.locks.win + p.locks.loss + p.locks.push + p.locks.pending);
+  const allLocks = addUp((p) => p.locks);
+  const allLockNet = data.players.reduce((t, p) => t + p.lockNet, 0);
+  const locksCard = `<div class="card"><h3>${miniLock} Locked picks</h3>
+    <p class="small muted">Picks marked as locks: the ones you were sure of. Same grading as above.</p>
+    ${lockers.length ? `<table class="slip">
+      <thead><tr><th>Who</th><th class="num">W</th><th class="num">L</th><th class="num">P</th><th class="num">$10 a lock</th></tr></thead>
+      <tbody>${[...lockers].sort((a, b) => winPct(b.locks) - winPct(a.locks) || b.locks.win - a.locks.win).map((p) => `<tr>
+        <td>${esc(p.name)}<div class="small muted">${recordText(p.locks)}${p.locks.pending ? ` · ${p.locks.pending} still to play` : ''}</div></td>
+        ${wlp(p.locks)}<td class="num ${netClass(p.lockNet)}">${signed(p.lockNet)}</td></tr>`).join('')}</tbody>
+      <tfoot><tr><th>All of us</th>${wlp(allLocks)}<th class="num ${netClass(allLockNet)}">${signed(allLockNet)}</th></tr></tfoot>
+    </table>` : '<p class="small muted">No locks yet. Tap the padlock on a pick you\'re sure of.</p>'}
+  </div>`;
+
   const weeks = data.weeks.map((w, i) => {
     const parlays = w.parlays.map((p) => `<div class="hist-parlay">
         <div class="head"><b>${esc(p.name)} ${fmtOdds(p.american)}</b> ${statusChip(p.status, p.returned, p.total) || '<span class="chip pending">Live</span>'}</div>
@@ -1191,7 +1329,7 @@ async function renderStats() {
         <div class="small muted">${Object.entries(p.stakes).map(([who, amt]) => `${esc(who)} ${money(amt)}`).join(' · ')} · ${money(p.total)} total</div>
       </div>`).join('') || '<p class="small muted">No parlays placed.</p>';
     const picks = Object.entries(w.picks).map(([who, rows]) => `<div class="hist-picks"><b>${esc(who)}</b>
-        <ul>${rows.map((r) => `<li>${gradeMark(r.grade)}${betLabel(r.label)} <span class="muted">${fmtOdds(r.price)}</span></li>`).join('')}</ul></div>`).join('');
+        <ul>${rows.map((r) => `<li>${gradeMark(r.grade)}${betLabel(r.label)} <span class="muted">${fmtOdds(r.price)}</span>${r.locked ? miniLock : ''}</li>`).join('')}</ul></div>`).join('');
     return `<details class="card week" ${i === 0 ? 'open' : ''}>
       <summary><b>${esc(w.label)}</b> <span class="muted small">${w.parlays.length} parlay${w.parlays.length === 1 ? '' : 's'}</span>
         <span class="num ${netClass(w.net)}">${w.parlays.some((p) => p.status !== 'pending') ? signed(w.net) : ''}</span></summary>
@@ -1200,7 +1338,7 @@ async function renderStats() {
     </details>`;
   }).join('');
 
-  $('#stats').innerHTML = scope + parlayCard + money_ + picksCard
+  $('#stats').innerHTML = scope + parlayCard + money_ + picksCard + locksCard
     + `<h3 class="section">${byWeek ? 'Picks and parlays' : 'Week by week'}</h3>` + weeks;
 }
 
@@ -1687,6 +1825,8 @@ $('#games').addEventListener('click', (e) => {
     calcKeys.add(swap.dataset.swapTo);
     return renderGames();
   }
+  const lock = e.target.closest('[data-lock]');
+  if (lock) return toggleLock(lock.dataset.lock);
   const btn = e.target.closest('.pick');
   if (btn && !btn.disabled) (calc ? toggleCalc : toggle)(btn.dataset.key);
 });

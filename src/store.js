@@ -6,8 +6,9 @@ import { dirname } from 'node:path';
 
 // Fill in missing sections and drop data from older versions.
 export function normalize(data) {
-  data.picks ??= {}; // submitted: { weekKey: { player: [{ key, point, price }] } }
+  data.picks ??= {}; // submitted: { weekKey: { player: [{ key, point, price, locked? }] } }
   data.drafts ??= {}; // unsubmitted: { weekKey: { player: [key] } }
+  data.draftLocks ??= {}; // which unsubmitted selections are locks: { weekKey: { player: [key] } }
   data.schedule ??= {}; // { weekKey: { games, source, retryAt, demo? } }
   data.lines ??= {}; // { weekKey: { byMatchup, fetchedAt, remaining } }
   data.props ??= {};
