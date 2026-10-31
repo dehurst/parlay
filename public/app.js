@@ -1407,7 +1407,8 @@ function historyText(h) {
     part: 'Listed as a starter, but playing well under half the snaps',
   }[h.tag];
   const weeks = h.timeline?.map((t) => `Wk ${t.week}: ${t.pct == null ? 'did not play' : `${t.pct}%`}`).join(', ');
-  return [h.recent != null ? `${text} · ${h.recent}% of snaps the last 3 games` : text, weeks && `Snaps by week: ${weeks}`].filter(Boolean).join('\n');
+  const recent = h.recent != null ? `${h.recent}% of snaps the last 3 games` : null;
+  return [text && recent ? `${text} · ${recent}` : text ?? recent, weeks && `Snaps by week: ${weeks}`].filter(Boolean).join('\n');
 }
 
 // Each week's share of snaps as a tiny bar: bright at half the snaps or more,
@@ -1425,6 +1426,7 @@ const heatLevel = (s) => (!s.name ? 0 : s.history?.tag === 'fillin' ? Math.max(M
 function heatSquare(s) {
   const level = heatLevel(s);
   const tip = [`${s.pos}: ${s.name ?? 'nobody healthy'}`, HEAT_LEVELS[level] + (s.rank > 3 ? ` (#${s.rank} on the depth chart)` : s.rank === 1 && level === 2 ? ' (listed first, filling in)' : '')];
+  if (s.extra) tip.push(`${s.extra.nth} by snaps this season: ${s.extra.season}%`);
   if (s.rookie) tip.push('Rookie');
   if (s.status) tip.push(s.status);
   for (const p of s.skipped) tip.push(`${p.name} is ${p.status}`);
@@ -1444,7 +1446,8 @@ function heatSquare(s) {
 // How many spots a side is filling below its starters, and how its starters
 // got there.
 function heatSummary(side) {
-  const slots = Object.values(side).flat();
+  // The RB2, TE2 and WR4 squares are backups by design, so they aren't counted.
+  const slots = Object.values(side).flat().filter((s) => !s.extra);
   const backups = slots.filter((s) => heatLevel(s) === 2).length;
   const deep = slots.filter((s) => heatLevel(s) !== 1 && heatLevel(s) !== 2).length;
   const depth = !backups && !deep ? 'All starters'

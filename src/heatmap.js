@@ -6,7 +6,7 @@
 import { espnSite } from './sport.js';
 import { teamKey } from './schedule.js';
 import { fetchTeamDepthChart, fetchTeamRoster } from './injuries.js';
-import { seasonSnaps, teamCode, starterHistory } from './starters.js';
+import { seasonSnaps, teamCode, starterHistory, nextUp } from './starters.js';
 
 // Tags that keep a player off the field; Questionable players still count.
 const SIDELINED = ['Out', 'Doubtful', 'Injured Reserve', 'Suspension'];
@@ -16,8 +16,8 @@ const SIDELINED = ['Out', 'Doubtful', 'Injured Reserve', 'Suspension'];
 // ESPN's slot ids vary with the formation (4-3 vs 3-4), so unknown ones go last.
 export const UNITS = [
   { id: 'line', offense: 'Offensive line', defense: 'Defensive line', o: ['lt', 'lg', 'c', 'rg', 'rt'], d: ['rde', 'rdt', 'nt', 'ldt', 'lde', 'de', 'dt'] },
-  { id: 'pass', offense: 'Receivers', defense: 'Secondary', o: ['wr1', 'wr2', 'wr3', 'te', 'te2'], d: ['lcb', 'rcb', 'nb', 'ss', 'fs', 'cb', 's'] },
-  { id: 'back', offense: 'Backfield', defense: 'Linebackers', o: ['qb', 'rb', 'fb'], d: ['wlb', 'lilb', 'mlb', 'rilb', 'slb', 'olb', 'ilb', 'lb'] },
+  { id: 'pass', offense: 'Receivers', defense: 'Secondary', o: ['wr1', 'wr2', 'wr3', 'wr4', 'te', 'te2'], d: ['lcb', 'rcb', 'nb', 'ss', 'fs', 'cb', 's'] },
+  { id: 'back', offense: 'Backfield', defense: 'Linebackers', o: ['qb', 'rb', 'rb2'], d: ['wlb', 'lilb', 'mlb', 'rilb', 'slb', 'olb', 'ilb', 'lb'] },
 ];
 const DEFENSE = /(de|dt|nt|lb|cb|nb|ss|fs|^s)$/;
 
@@ -43,7 +43,8 @@ export function teamSides(depthChart) {
   const offense = groups.find((g) => g.positions?.qb);
   const defense = groups.find((g) => g !== offense && Object.keys(g.positions ?? {}).some((k) => DEFENSE.test(k)));
   const side = (group, key) => {
-    const slots = Object.entries(group?.positions ?? {});
+    // No fullbacks: the RB2 square (from snap counts) takes that spot.
+    const slots = Object.entries(group?.positions ?? {}).filter(([id]) => id !== 'fb');
     const out = {};
     const used = new Set();
     for (const unit of UNITS) {
@@ -61,10 +62,37 @@ export function teamSides(depthChart) {
 }
 
 const rankOf = (order, id) => (order.includes(id) ? order.indexOf(id) : order.length);
+// Squares the depth chart doesn't have, filled from this season's snap counts:
+// the healthy RB and TE with the most snaps after the starter, and a 4th WR.
+const EXTRAS = [
+  { slot: 'rb2', unit: 'back', pos: 'RB', from: ['RB', 'HB'], chart: ['rb'], nth: '2nd RB' },
+  { slot: 'wr4', unit: 'pass', pos: 'WR', from: ['WR'], chart: ['wr1', 'wr2', 'wr3'], nth: '4th WR' },
+  { slot: 'te2', unit: 'pass', pos: 'TE', from: ['TE'], chart: ['te'], nth: '2nd TE' },
+];
+
+export function addExtras(offense, depthChart, teams, code, opts) {
+  const group = (depthChart?.depthchart ?? []).find((g) => g.positions?.qb);
+  const all = () => Object.values(offense).flat();
+  for (const x of EXTRAS) {
+    if (!offense[x.unit]) continue;
+    const exclude = all().flatMap((s) => [s.name, ...s.skipped.map((p) => p.name)]).filter(Boolean);
+    const pick = nextUp(teams, code, x.from, { ...opts, exclude });
+    if (!pick) continue;
+    // How deep the depth chart has him at that position (3rd string if not listed).
+    const ranks = x.chart.map((id) => (group?.positions?.[id]?.athletes ?? []).findIndex((a) => a.displayName === pick.name)).filter((i) => i >= 0);
+    offense[x.unit].push({
+      slot: x.slot, pos: x.pos, name: pick.name, rank: ranks.length ? Math.max(Math.min(...ranks) + 1, 2) : 3, status: pick.status,
+      skipped: pick.skipped, extra: { nth: x.nth, season: pick.season }, history: { timeline: pick.timeline, recent: pick.recent },
+    });
+    const order = UNITS.find((u) => u.id === x.unit).o;
+    offense[x.unit].sort((a, b) => rankOf(order, a.slot) - rankOf(order, b.slot));
+  }
+}
+
 // Slots not in the lists above (other formations), by their name.
 function unitFor(id) {
   if (/(de|dt|nt)$|^(lt|lg|c|rg|rt)$/.test(id)) return 'line';
-  if (/lb$|^(qb|rb|fb|hb)\d*$/.test(id)) return 'back';
+  if (/lb$|^(qb|rb|hb)\d*$/.test(id)) return 'back';
   if (/(cb|nb|ss|fs|^s)$|^(wr|te)\d*$/.test(id)) return 'pass';
   return null;
 }
@@ -113,6 +141,10 @@ export async function teamHeatmap(name, now = Date.now()) {
     for (const slot of [...slots].sort((a, b) => first.get(a) - first.get(b))) {
       slot.history = starterHistory(teams, teamCode(name), slot, { ...opts, taken });
     }
+  }
+  if (teams) {
+    addExtras(sides.offense, chart.value, teams, teamCode(name), { injuries, roster: names });
+    for (const slot of Object.values(sides.offense).flat()) slot.rookie = rookies.has(slot.name);
   }
   charts.set(id, { at: now, sides });
   return sides;

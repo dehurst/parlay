@@ -43,7 +43,7 @@ export const shortKey = (name) => {
   return parts.length < 2 ? parts.join('') : `${parts[0][0]}${parts.slice(1).join('')}`;
 };
 
-// The snap counts CSV -> { teamCode: { weeks: [game weeks, in order], players: [{ name, group, pct: { week: share } }] } }.
+// The snap counts CSV -> { teamCode: { weeks: [game weeks, in order], players: [{ name, pos, group, pct: { week: share } }] } }.
 export function parseSnaps(csv) {
   const [header, ...rows] = csv.trim().split(/\r?\n/);
   const col = Object.fromEntries(header.split(',').map((h, i) => [h, i]));
@@ -57,7 +57,7 @@ export function parseSnaps(csv) {
     // By player id: the listed name can change mid-season ("DeAundre" -> "Dee").
     const id = r[col.pfr_player_id] || r[col.player];
     let p = team.byName.get(id);
-    if (!p) team.byName.set(id, (p = { name: r[col.player], names: new Set(), group: GROUPS[r[col.position]] ?? null, pct: {} }));
+    if (!p) team.byName.set(id, (p = { name: r[col.player], names: new Set(), pos: r[col.position], group: GROUPS[r[col.position]] ?? null, pct: {} }));
     p.names.add(r[col.player]);
     p.pct[week] = Math.max(Number(r[col.offense_pct]) || 0, Number(r[col.defense_pct]) || 0);
   }
@@ -160,6 +160,32 @@ export function starterHistory(teams, code, slot, { injuries = new Map(), roster
   // usually means hurt, so call that a fill-in; gone from the team, neither.
   if (!onTeam) return { tag: 'new', ...out, replacedGone: true };
   return { tag: out.replacedRecent > 0 ? 'earned' : 'fillin', ...out };
+}
+
+// The healthy player at a position who has played the most snaps this season
+// (missed games count as 0), leaving out `exclude` (names already on the
+// heat map). For the RB2, TE2 and WR4 squares. Sidelined players ahead of him
+// come back as `skipped`; anyone no longer on the roster is left out.
+export function nextUp(teams, code, positions, { exclude = [], injuries = new Map(), roster = null } = {}) {
+  const team = teams?.[code];
+  if (!team?.weeks.length) return null;
+  const known = (p, names) => names.some((n) => [...p.names].some((m) => sameName(n, m)));
+  const ranked = team.players.filter((p) => positions.includes(p.pos) && !known(p, exclude))
+    .map((p) => ({ p, share: avg(p, team.weeks) })).sort((a, b) => b.share - a.share);
+  const skipped = [];
+  for (const { p, share } of ranked) {
+    const listed = roster?.find((n) => known(p, [n]));
+    if (roster && !listed) continue;
+    const name = listed ?? p.name;
+    const status = [...injuries].find(([n]) => sameName(n, name))?.[1] ?? null;
+    if (SIDELINED.includes(status)) {
+      skipped.push({ name, status });
+      continue;
+    }
+    const played = team.weeks.filter((w) => p.pct[w] != null).slice(-3);
+    return { name, status, skipped, season: pctOf(share), recent: played.length ? pctOf(avg(p, played)) : null, timeline: timelineOf(team, p) };
+  }
+  return null;
 }
 
 // This season's snap counts, kept in memory for a few hours (they update once

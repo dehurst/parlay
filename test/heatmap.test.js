@@ -27,7 +27,7 @@ test('slots group into units that face each other, in lineup order', () => {
   const chart = { depthchart: [
     { name: 'Base 3-4 D', positions: { lde: slot('LDE', athlete('a')), nt: slot('NT', athlete('b')), rde: slot('RDE', athlete('c')), wlb: slot('WLB', athlete('d')), lcb: slot('LCB', athlete('e')), fs: slot('FS', athlete('f')) } },
     { name: 'Special Teams', positions: { pk: slot('PK', athlete('k')) } },
-    { name: '3WR 1TE', positions: { wr1: slot('WR', athlete('w')), lt: slot('LT', athlete('t')), c: slot('C', athlete('x')), qb: slot('QB', athlete('q')), te: slot('TE', athlete('y')) } },
+    { name: '3WR 1TE', positions: { wr1: slot('WR', athlete('w')), lt: slot('LT', athlete('t')), c: slot('C', athlete('x')), qb: slot('QB', athlete('q')), te: slot('TE', athlete('y')), fb: slot('FB', athlete('z')) } },
   ] };
   const { offense, defense } = teamSides(chart);
   assert.deepEqual(offense.line.map((s) => s.slot), ['lt', 'c']);

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseSnaps, findPlayer, starterHistory, teamCode } from '../src/starters.js';
+import { parseSnaps, findPlayer, starterHistory, teamCode, nextUp } from '../src/starters.js';
 
 const HEAD = 'game_id,pfr_game_id,season,game_type,week,player,pfr_player_id,position,team,opponent,offense_snaps,offense_pct,defense_snaps,defense_pct,st_snaps,st_pct';
 // [week, name, id, pos, team, off%, def%]
@@ -108,4 +108,21 @@ test('each lost job goes to only one replacement', () => {
   assert.ok(taken.has('Old Corner'));
   const again = starterHistory(teams, 'BUF', { name: 'Rookie Corner', skipped: [] }, { roster: ['Old Corner'], taken });
   assert.equal(again.tag, 'new');
+});
+
+test('the next man up is the healthy player with the most snaps all season', () => {
+  const t = parseSnaps(csv([
+    [1, 'Lead Back', 'lb', 'RB', 'DEN', 0.7, 0], [2, 'Lead Back', 'lb', 'RB', 'DEN', 0.7, 0],
+    [1, 'Hurt Back', 'hb', 'RB', 'DEN', 0.5, 0], [2, 'Hurt Back', 'hb', 'RB', 'DEN', 0.5, 0],
+    [1, 'Cut Back', 'cb', 'RB', 'DEN', 0.45, 0], [2, 'Cut Back', 'cb', 'RB', 'DEN', 0.45, 0],
+    [1, 'Third Back', 'tb', 'RB', 'DEN', 0.2, 0], [2, 'Third Back', 'tb', 'RB', 'DEN', 0.4, 0],
+    [1, 'Full Back', 'fb', 'FB', 'DEN', 0.9, 0], [2, 'Full Back', 'fb', 'FB', 'DEN', 0.9, 0],
+  ]));
+  const pick = nextUp(t, 'DEN', ['RB'], {
+    exclude: ['Lead Back'], injuries: new Map([['Hurt Back', 'Out']]), roster: ['Lead Back', 'Hurt Back', 'Third Back', 'Full Back'],
+  });
+  assert.equal(pick.name, 'Third Back');
+  assert.equal(pick.season, 30);
+  assert.deepEqual(pick.skipped, [{ name: 'Hurt Back', status: 'Out' }]);
+  assert.equal(nextUp(t, 'KC', ['RB']), null);
 });
