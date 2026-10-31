@@ -1398,8 +1398,8 @@ function historyText(h) {
   const who = (name, status) => `${name}${status ? ` (${status})` : ''}`;
   const since = h.since ? ` since Week ${h.since}` : '';
   const text = {
-    week1: `Starter every game since Week ${h.since}`,
-    back: h.missed?.length ? `Back as a starter: out or limited ${weekList(h.missed)}` : 'Back as a starter',
+    week1: h.missed?.length ? `Starter again since Week ${h.since} (missed ${weekList(h.missed)})` : `Starter every game since Week ${h.since}`,
+    back: h.missed?.length ? `Back this week after missing ${weekList(h.missed)}` : 'Back this week',
     fillin: `Filling in for ${who(h.replaced, h.replacedStatus)}${since}`,
     earned: `Took the job from ${h.replaced}${since}. He's healthy${h.replacedRecent != null ? ` and down to ${h.replacedRecent}% of snaps` : ''}`,
     trade: `Traded in: played for ${h.from} earlier this season`,
@@ -1432,8 +1432,10 @@ function heatSquare(s) {
   for (const p of s.skipped) tip.push(`${p.name} is ${p.status}`);
   const history = historyText(s.history);
   if (history) tip.push(history);
-  const tag = HEAT_TAGS[s.history?.tag];
-  return `<div class="heat-sq heat-${level}" title="${esc(tip.join('\n'))}">
+  // Back this week shows as a glowing border instead of a tag.
+  const back = s.history?.tag === 'back';
+  const tag = back ? null : HEAT_TAGS[s.history?.tag];
+  return `<div class="heat-sq heat-${level}${back ? ' is-back' : ''}" title="${esc(tip.join('\n'))}">
     <span class="heat-pos">${esc(s.pos)}</span>
     <span class="heat-name">${esc(s.name ? shortName(s.name) : '—')}</span>
     ${tag ? `<span class="heat-how how-${s.history.tag}">${tag}</span>` : ''}
@@ -1495,9 +1497,9 @@ async function renderHeatmap() {
       ${heatTerm('<span class="heat-how how-earned">Earned ↑</span>', 'Passed a healthy starter on the depth chart')}
       ${heatTerm('<span class="heat-how how-trade">Trade</span>', 'Traded in: played for another team earlier this season')}
       ${heatTerm('<span class="heat-how how-new">New</span>', 'A new starter, with nobody obvious losing the job (a new role, or the old starter left the team)')}
-      ${heatTerm('<span class="heat-how how-back">Back</span>', 'Starting again after missing games')}
+      ${heatTerm('<span class="heat-back-key is-back"></span> Back', 'Glowing border: returning this week after missing the last game')}
       ${heatTerm('<span class="heat-how how-part">Part-time</span>', 'Listed as a starter, but playing under half the snaps')}
-      ${heatTerm('<span class="heat-how how-none">No tag</span>', 'Starter every game since Week 1')}
+      ${heatTerm('<span class="heat-how how-none">No tag</span>', 'A regular starter: every game since Week 1, or back for a while from an earlier absence')}
       ${heatTerm('<span class="heat-weeks"><i class="hi" style="height:90%"></i><i class="lo" style="height:35%"></i><i class="none"></i><i class="hi" style="height:100%"></i></span> Snaps', 'One bar per game: bright = 50% of snaps or more, dim = under 50%, dot = didn’t play')}
       ${heatTerm('<span class="rookie in-key">R</span> Rookie', 'First season in the NFL')}
     </div>`;

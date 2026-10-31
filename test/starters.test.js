@@ -39,9 +39,9 @@ test('a starter in every game since Week 1, with each week’s snaps', () => {
   assert.deepEqual(h.timeline, [{ week: 1, pct: 100 }, { week: 2, pct: 100 }, { week: 3, pct: 100 }, { week: 4, pct: 100 }]);
 });
 
-test('a starter who missed games and came back', () => {
+test('a starter who missed games and has played since is a regular again, not back', () => {
   const h = hist('Tight End');
-  assert.equal(h.tag, 'back');
+  assert.equal(h.tag, 'week1');
   assert.equal(h.since, 4);
   assert.deepEqual(h.missed, [2, 3]);
   assert.equal(h.timeline[1].pct, null);
@@ -90,15 +90,16 @@ test('team codes come from nicknames', () => {
   assert.equal(teamCode('San Francisco 49ers'), 'SF');
 });
 
-test('a starter just back from missing games is back, even on light snaps', () => {
+test('back means returning this week: he sat out the team’s last game', () => {
   const t = parseSnaps(csv([
-    [1, 'Star Back', 'sb', 'RB', 'PHI', 0.71, 0], [2, 'Star Back', 'sb', 'RB', 'PHI', 0.72, 0],
-    [3, 'Star Back', 'sb', 'RB', 'PHI', 0.07, 0], [6, 'Star Back', 'sb', 'RB', 'PHI', 0.15, 0],
-    [4, 'Other', 'o', 'QB', 'PHI', 1, 0], [5, 'Other', 'o', 'QB', 'PHI', 1, 0],
+    [1, 'Star Back', 'sb', 'RB', 'PHI', 0.71, 0], [2, 'Star Back', 'sb', 'RB', 'PHI', 0.72, 0], [3, 'Star Back', 'sb', 'RB', 'PHI', 0.07, 0],
+    [1, 'Late Back', 'lb', 'WR', 'PHI', 0.9, 0], [2, 'Late Back', 'lb', 'WR', 'PHI', 0.9, 0], [5, 'Late Back', 'lb', 'WR', 'PHI', 0.9, 0],
+    [4, 'Other', 'o', 'QB', 'PHI', 1, 0], [5, 'Other', 'o', 'QB', 'PHI', 1, 0], [6, 'Other', 'o', 'QB', 'PHI', 1, 0],
   ]));
   const h = starterHistory(t, 'PHI', { name: 'Star Back', skipped: [] });
   assert.equal(h.tag, 'back');
-  assert.deepEqual(h.missed, [3, 4, 5, 6]);
+  assert.deepEqual(h.missed, [4, 5, 6]);
+  assert.deepEqual(starterHistory(t, 'PHI', { name: 'Late Back', skipped: [] }).missed, [6]);
 });
 
 test('each lost job goes to only one replacement', () => {

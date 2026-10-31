@@ -82,8 +82,9 @@ const pctOf = (x) => Math.round(x * 100);
 export const timelineOf = (team, p) => team.weeks.map((week) => ({ week, pct: p?.pct[week] == null ? null : pctOf(p.pct[week]) }));
 
 // How the player in one heat map square got there, from every week's snaps:
-//   week1  - a regular in every game since Week 1
-//   back   - a regular earlier, then out or benched, and starting again
+//   week1  - a regular starter: every game since Week 1, or since coming
+//            back from an earlier absence (`missed` lists it)
+//   back   - returning this week: didn't play in the team's last game
 //   fillin - took over for a regular who's hurt (or is listed ahead and sidelined)
 //   earned - took over from a regular who's healthy and still on the team
 //   trade  - played for another team earlier this season
@@ -116,8 +117,13 @@ export function starterHistory(teams, code, slot, { injuries = new Map(), roster
   let last = weeks.length - 1;
   while (last >= 0 && !regular(me, weeks[last])) last--;
   const latest = weeks[weeks.length - 1];
-  // A regular earlier who missed games lately: coming back, maybe eased in.
-  if (last >= 0 && !regular(me, latest) && recent.some((w) => me.pct[w] == null)) return { tag: 'back', missed: weeks.slice(last + 1), ...base };
+  // Sat out the team's last game but starting now: returning this week,
+  // however long he was out.
+  if (me.pct[latest] == null) {
+    let out = weeks.length - 1;
+    while (out > 0 && me.pct[weeks[out - 1]] == null) out--;
+    return { tag: 'back', missed: weeks.slice(out), ...base };
+  }
   // Part-time: well under half the snaps in a typical recent game, and not a
   // regular in the latest one either (that's someone just taking over).
   if (last < 0 || (played.length && typical < bar(me) && !regular(me, latest))) return { tag: 'part', ...base };
@@ -132,13 +138,14 @@ export function starterHistory(teams, code, slot, { injuries = new Map(), roster
   const since = weeks[start];
   const after = weeks.slice(last + 1); // games since that run, not as a regular
   if (start === 0 && after.length < GAP) return { tag: 'week1', since, ...base };
-  // A regular earlier, then out or benched: back in the lineup (or about to be).
-  if (start === 0) return { tag: 'back', missed: after, ...base };
+  // A regular earlier, but on light snaps the last couple of games.
+  if (start === 0) return { tag: 'part', ...base };
   const before = weeks.slice(0, start);
+  // A regular earlier, then out or benched, and starting again for a while now.
   if (before.some((w) => regular(me, w))) {
     let gapStart = start;
     while (gapStart > 0 && !regular(me, weeks[gapStart - 1])) gapStart--;
-    return { tag: 'back', since, missed: weeks.slice(gapStart, start), ...base };
+    return { tag: 'week1', since, missed: weeks.slice(gapStart, start), ...base };
   }
   if (before.every((w) => me.pct[w] == null) && from()) return { tag: 'trade', since, from: from(), ...base };
 

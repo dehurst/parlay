@@ -596,3 +596,28 @@ h3.section.first { margin-top: 4px; }
 @media (prefers-reduced-motion: reduce) {
   .rookie, .rookie::after { animation: none; }
 }
+
+/* Back this week: a brighter border with a glint that runs around it, and a
+   soft pulse, in place of a "Back" tag. */
+@property --back-angle { syntax: '<angle>'; inherits: false; initial-value: 0deg; }
+.heat-sq.is-back { border-width: 2px; animation: back-pulse 2.4s ease-in-out infinite; }
+.heat-sq.heat-1.is-back { border-color: #5dffa5; --glow: rgba(93, 255, 165, .55); }
+.heat-sq.heat-2.is-back { border-color: #ffe25c; --glow: rgba(255, 226, 92, .5); }
+.heat-sq.heat-3.is-back { border-color: #ff7a7f; --glow: rgba(255, 122, 127, .5); }
+.is-back::before {
+  content: ''; position: absolute; inset: -2px; padding: 2px; border-radius: inherit; pointer-events: none;
+  background: conic-gradient(from var(--back-angle), transparent 0 72%, rgba(255, 255, 255, .95) 86%, transparent 100%);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+  animation: back-spin 3s linear infinite;
+}
+@keyframes back-spin { to { --back-angle: 360deg; } }
+@keyframes back-pulse { 0%, 100% { box-shadow: 0 0 4px var(--glow); } 50% { box-shadow: 0 0 12px 2px var(--glow); } }
+.heat-back-key {
+  position: relative; display: inline-block; width: 22px; height: 15px; border: 2px solid #5dffa5; border-radius: 4px;
+  background: rgba(47, 191, 113, .28); --glow: rgba(93, 255, 165, .55); animation: back-pulse 2.4s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .is-back, .is-back::before { animation: none; }
+  .is-back { box-shadow: 0 0 8px var(--glow); }
+}
