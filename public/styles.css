@@ -664,27 +664,27 @@ h3.section.first { margin-top: 4px; }
   .rookie, .rookie::after { animation: none; }
 }
 
-/* Back this week: a brighter border with a glint that runs around it, and a
-   soft pulse, in place of a "Back" tag. */
-@property --back-angle { syntax: '<angle>'; inherits: false; initial-value: 0deg; }
-.heat-sq.is-back { border-width: 2px; animation: back-pulse 2.4s ease-in-out infinite; }
-.heat-sq.heat-1.is-back { border-color: #5dffa5; --glow: rgba(93, 255, 165, .55); }
-.heat-sq.heat-2.is-back { border-color: #ffe25c; --glow: rgba(255, 226, 92, .5); }
-.heat-sq.heat-3.is-back { border-color: #ff7a7f; --glow: rgba(255, 122, 127, .5); }
-.is-back::before {
-  content: ''; position: absolute; inset: -2px; padding: 2px; border-radius: inherit; pointer-events: none;
-  background: conic-gradient(from var(--back-angle), transparent 0 72%, rgba(255, 255, 255, .95) 86%, transparent 100%);
-  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor;
-  mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
-  animation: back-spin 3s linear infinite;
+/* Back this week: two circling arrows in a mint badge in the square's
+   top-left corner. A ring pulses out from it and the arrows turn now and
+   then, so it catches the eye. */
+.back-badge {
+  position: absolute; left: 4px; top: 4px; width: 16px; height: 16px; border-radius: 50%;
+  display: grid; place-items: center; color: #04240f;
+  background: radial-gradient(circle at 35% 30%, #d4ffe6, #5dffa5 55%, #22c97a);
+  border: 1px solid rgba(255, 255, 255, .85);
+  animation: back-glow 2s ease-in-out infinite;
 }
-@keyframes back-spin { to { --back-angle: 360deg; } }
+.back-badge svg { width: 11px; height: 11px; fill: none; stroke: currentColor; stroke-width: 3.2; stroke-linecap: round; stroke-linejoin: round; animation: back-turn 4s ease-in-out infinite; }
+.back-badge::after {
+  content: ''; position: absolute; inset: -1px; border-radius: 50%; border: 2px solid #5dffa5; pointer-events: none;
+  animation: back-ring 2s ease-out infinite;
+}
+.back-badge.in-key { position: relative; left: 0; top: 0; flex: none; }
+@keyframes back-glow { 0%, 100% { box-shadow: 0 0 3px rgba(93, 255, 165, .5); } 50% { box-shadow: 0 0 10px 2px rgba(93, 255, 165, .9); } }
+@keyframes back-ring { 0% { transform: scale(1); opacity: .9; } 100% { transform: scale(2.1); opacity: 0; } }
+@keyframes back-turn { 0%, 70% { transform: rotate(0); } 100% { transform: rotate(360deg); } }
 @keyframes back-pulse { 0%, 100% { box-shadow: 0 0 4px var(--glow); } 50% { box-shadow: 0 0 12px 2px var(--glow); } }
-.heat-back-key {
-  position: relative; display: inline-block; width: 22px; height: 15px; border: 2px solid #5dffa5; border-radius: 4px;
-  background: rgba(47, 191, 113, .28); --glow: rgba(93, 255, 165, .55); animation: back-pulse 2.4s ease-in-out infinite;
-}
 @media (prefers-reduced-motion: reduce) {
-  .is-back, .is-back::before { animation: none; }
-  .is-back { box-shadow: 0 0 8px var(--glow); }
+  .back-badge, .back-badge svg, .back-badge::after { animation: none; }
+  .back-badge { box-shadow: 0 0 8px rgba(93, 255, 165, .8); }
 }

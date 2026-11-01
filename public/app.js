@@ -1422,6 +1422,9 @@ function historyText(h) {
 
 // Each week's share of snaps as a tiny bar: bright at half the snaps or more,
 // dim under half, a dot where he didn't play.
+// Back this week: two circling arrows in a pulsing badge.
+const backBadge = (cls = '') => `<span class="back-badge${cls}" title="Back this week"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19.5 10A8 8 0 0 0 5.6 6.6M4.5 14a8 8 0 0 0 13.9 3.4"/><path d="M5 2.5v4.5h4.5M19 21.5V17h-4.5"/></svg></span>`;
+
 const snapBars = (timeline) => (timeline?.length
   ? `<span class="heat-weeks" aria-hidden="true">${timeline.map((t) => (t.pct == null ? '<i class="none"></i>'
     : `<i class="${t.pct >= 50 ? 'hi' : 'lo'}" style="height:${Math.max(8, t.pct)}%"></i>`)).join('')}</span>`
@@ -1458,6 +1461,7 @@ function heatDetails(s) {
   return `<div class="pop-head">
       <span class="pop-pos">${esc(s.pos)}</span>
       <span class="pop-name">${esc(s.name ?? 'Nobody healthy')}</span>
+      ${s.history?.tag === 'back' ? backBadge(' in-key') : ''}
       ${s.rookie ? '<span class="rookie in-key" title="Rookie">R</span>' : ''}
       ${s.status === 'Questionable' ? '<span class="heat-tag">Q</span>' : ''}
     </div>
@@ -1469,14 +1473,15 @@ function heatDetails(s) {
 function heatSquare(s) {
   const level = heatLevel(s);
   const i = heatSquares.push(s) - 1;
-  // Back this week shows as a glowing border instead of a tag.
+  // Back this week shows as a badge in the corner instead of a tag.
   const back = s.history?.tag === 'back';
   const tag = back ? null : HEAT_TAGS[s.history?.tag];
-  return `<div class="heat-sq heat-${level}${back ? ' is-back' : ''}" data-i="${i}" tabindex="0" aria-label="${esc(`${s.pos}: ${s.name ?? 'nobody healthy'}, ${HEAT_LEVELS[level]}`)}">
+  return `<div class="heat-sq heat-${level}" data-i="${i}" tabindex="0" aria-label="${esc(`${s.pos}: ${s.name ?? 'nobody healthy'}, ${HEAT_LEVELS[level]}`)}">
     <span class="heat-pos">${esc(s.pos)}</span>
     <span class="heat-name">${esc(s.name ? shortName(s.name) : '—')}</span>
     ${tag ? `<span class="heat-how how-${s.history.tag}">${tag}</span>` : ''}
     ${snapBars(s.history?.timeline)}
+    ${back ? backBadge() : ''}
     ${s.rookie ? '<span class="rookie" title="Rookie">R</span>' : ''}
     ${s.status === 'Questionable' ? '<span class="heat-tag">Q</span>' : ''}
   </div>`;
@@ -1550,7 +1555,7 @@ async function renderHeatmap() {
       ${heatTerm('<span class="heat-how how-earned">Earned ↑</span>', 'Passed a healthy starter on the depth chart')}
       ${heatTerm('<span class="heat-how how-trade">Trade</span>', 'Traded in: played for another team earlier this season')}
       ${heatTerm('<span class="heat-how how-new">New</span>', 'A new starter, with nobody obvious losing the job (a new role, or the old starter left the team)')}
-      ${heatTerm('<span class="heat-back-key is-back"></span> Back', 'Glowing border: returning this week after missing the last game')}
+      ${heatTerm(`${backBadge(' in-key')} Back`, 'Returning this week after missing the last game')}
       ${heatTerm('<span class="heat-how how-part">Part-time</span>', 'Listed as a starter, but playing under half the snaps')}
       ${heatTerm('<span class="heat-how how-none">No tag</span>', 'A regular starter: every game since Week 1, or back for a while from an earlier absence')}
       ${heatTerm('<span class="heat-weeks"><i class="hi" style="height:90%"></i><i class="lo" style="height:35%"></i><i class="none"></i><i class="hi" style="height:100%"></i></span> Snaps', 'One bar per game: bright = 50% of snaps or more, dim = under 50%, dot = didn’t play')}
