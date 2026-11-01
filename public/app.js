@@ -1397,7 +1397,7 @@ async function renderStats() {
 // green for a starter, yellow for a backup, red for third string or deeper.
 
 let heatGame = null; // the game shown
-const HEAT_UNITS = [['line', 'OL', 'DL'], ['pass', 'WR/TE', 'DB'], ['back', 'QB/RB', 'LB']];
+const HEAT_UNITS = [['line', 'OL', 'DL'], ['back', 'QB/RB', 'LB'], ['pass', 'WR/TE', 'DB']];
 const HEAT_LEVELS = ['Nobody healthy', 'Starter', 'Backup', '3rd string or deeper'];
 
 // How the player got the job, from every week's snap counts this season.
