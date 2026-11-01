@@ -1542,7 +1542,7 @@ async function renderHeatmap() {
   if (!games.some((g) => g.id === heatGame)) heatGame = (games.find((g) => !g.started) ?? games[0]).id;
   const g = games.find((x) => x.id === heatGame);
   const kick = (x) => new Date(x.commence).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' });
-  const head = `<p class="small muted">Beta: who lines up for each team, from ESPN's current depth charts. Hurt players (Out, Doubtful, IR, suspended) are skipped, so a backup filling in shows up yellow. Tags and the little bars show how a starter got the job, from every week's snap counts this season (nflverse, updated weekly). Hover or long-press a square for details.</p>
+  const head = `<p class="small muted">Beta: who lines up for each team, from ESPN's current depth charts. Hurt players (Out, Doubtful, IR, suspended) are skipped, so a backup filling in shows up yellow. Tags and the little bars show how a starter got the job, from every week's snap counts this season (nflverse, updated weekly). Hover over a square (or tap it on a phone) for details.</p>
     <label class="heat-pick">Game <select id="heat-game">${games.map((x) => `<option value="${esc(x.id)}" ${x.id === heatGame ? 'selected' : ''}>${esc(shortMatchup(`${x.away} @ ${x.home}`))} · ${esc(kick(x))}</option>`).join('')}</select></label>
     <div class="heat-legend">${[1, 2, 3].map((l) => `<span class="heat-key heat-${l}">${HEAT_LEVELS[l]}</span>`).join('')}${heatTerm('<span class="heat-tag">Q</span> Questionable', 'Listed as questionable for this game')}</div>
     <div class="heat-legend">
@@ -1564,19 +1564,15 @@ async function renderHeatmap() {
 }
 
 // The details pop-up: one box, moved to whichever square is hovered,
-// focused, or long-pressed (phones), and kept on screen.
+// focused, or tapped (phones), and kept on screen.
 const heatPop = Object.assign(document.createElement('div'), { className: 'heat-pop', hidden: true });
 heatPop.setAttribute('role', 'tooltip');
 document.body.append(heatPop);
-let heatPopFor = null;
-function showHeatPop(sq) {
-  const s = heatSquares[sq.dataset.i];
-  if (!s) return;
-  heatPopFor = sq;
-  heatPop.className = `heat-pop heat-${heatLevel(s)}`;
-  heatPop.innerHTML = heatDetails(s);
-  heatPop.hidden = false;
-  const r = sq.getBoundingClientRect();
+let heatPopFor = null; // the square it's showing
+let heatPopBy = null; // 'mouse', 'focus', or 'touch'
+let heatPopY = 0; // where the page was scrolled when it opened
+function placeHeatPop() {
+  const r = heatPopFor.getBoundingClientRect();
   const p = heatPop.getBoundingClientRect();
   const left = Math.min(Math.max(8, r.left + r.width / 2 - p.width / 2), innerWidth - p.width - 8);
   // Above the square if it fits, else below.
@@ -1584,39 +1580,71 @@ function showHeatPop(sq) {
   heatPop.style.left = `${left}px`;
   heatPop.style.top = `${Math.max(8, top)}px`;
 }
+function showHeatPop(sq, by) {
+  const s = heatSquares[sq.dataset.i];
+  if (!s) return;
+  heatPopFor = sq;
+  heatPopBy = by;
+  heatPopY = scrollY;
+  heatPop.className = `heat-pop heat-${heatLevel(s)}`;
+  heatPop.innerHTML = heatDetails(s);
+  heatPop.hidden = false;
+  placeHeatPop();
+}
 function hideHeatPop() {
   heatPop.hidden = true;
   heatPopFor = null;
+  heatPopBy = null;
 }
 const heatSq = (e) => e.target.closest?.('.heat-sq[data-i]');
 $('#heatmap').addEventListener('pointerover', (e) => {
-  if (e.pointerType === 'mouse' && heatSq(e)) showHeatPop(heatSq(e));
+  if (e.pointerType === 'mouse' && heatSq(e)) showHeatPop(heatSq(e), 'mouse');
 });
 $('#heatmap').addEventListener('pointerout', (e) => {
-  if (e.pointerType === 'mouse' && heatPopFor && !heatPopFor.contains(e.relatedTarget)) hideHeatPop();
+  if (e.pointerType === 'mouse' && heatPopBy === 'mouse' && !heatPopFor.contains(e.relatedTarget)) hideHeatPop();
 });
-$('#heatmap').addEventListener('focusin', (e) => heatSq(e) && showHeatPop(heatSq(e)));
-$('#heatmap').addEventListener('focusout', () => hideHeatPop());
-// Phones: press and hold a square. Moving the finger (scrolling) cancels it,
-// and the pop-up stays until the next touch somewhere else.
+// Keyboard only: a tap focuses the square too, and is handled below.
+$('#heatmap').addEventListener('focusin', (e) => {
+  if (heatSq(e)?.matches(':focus-visible')) showHeatPop(heatSq(e), 'focus');
+});
+$('#heatmap').addEventListener('focusout', () => heatPopBy === 'focus' && hideHeatPop());
+// Phones: tap a square to open its details, tap it again (or anywhere else)
+// to close them; pressing and holding opens them too. Moving the finger
+// (scrolling) does neither.
 let heatPress = null;
 $('#heatmap').addEventListener('pointerdown', (e) => {
   if (e.pointerType === 'mouse' || !heatSq(e)) return;
-  const sq = heatSq(e);
-  heatPress = { x: e.clientX, y: e.clientY, timer: setTimeout(() => { showHeatPop(sq); navigator.vibrate?.(10); }, 350) };
+  const press = { sq: heatSq(e), x: e.clientX, y: e.clientY, shown: false };
+  press.timer = setTimeout(() => {
+    press.shown = true;
+    showHeatPop(press.sq, 'touch');
+    navigator.vibrate?.(10);
+  }, 350);
+  heatPress = press;
 });
 const endPress = () => heatPress && (clearTimeout(heatPress.timer), (heatPress = null));
 $('#heatmap').addEventListener('pointermove', (e) => {
   if (heatPress && Math.hypot(e.clientX - heatPress.x, e.clientY - heatPress.y) > 10) endPress();
 });
-$('#heatmap').addEventListener('pointerup', endPress);
+$('#heatmap').addEventListener('pointerup', () => {
+  if (!heatPress) return;
+  const { sq, shown } = heatPress;
+  endPress();
+  if (!shown) (heatPopFor === sq ? hideHeatPop() : showHeatPop(sq, 'touch'));
+});
 $('#heatmap').addEventListener('pointercancel', endPress);
 // A long press would otherwise open the browser's own menu.
 $('#heatmap').addEventListener('contextmenu', (e) => heatSq(e) && e.preventDefault());
 document.addEventListener('pointerdown', (e) => {
   if (e.pointerType !== 'mouse' && heatPopFor && !heatPopFor.contains(e.target)) hideHeatPop();
 });
-addEventListener('scroll', () => heatPopFor && hideHeatPop(), { passive: true });
+// Phones scroll a little on their own (the address bar sliding away), so the
+// pop-up follows its square, and closes only once the page really scrolls.
+addEventListener('scroll', () => {
+  if (!heatPopFor) return;
+  if (Math.abs(scrollY - heatPopY) > 60) hideHeatPop();
+  else placeHeatPop();
+}, { passive: true });
 
 // ---- Analysis ----------------------------------------------------------------
 
