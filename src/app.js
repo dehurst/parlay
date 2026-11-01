@@ -792,6 +792,27 @@ app.post('/api/rename', async (req, res, next) => {
 // Put money on a parlay (or change/remove it with amount 0). The parlay is
 // saved as it is right now, so it stays on the bet slip even after kickoff or
 // if picks later change.
+// Delete a parlay nobody placed (say the bet never got in at the sportsbook).
+// Works on any week, so a never-placed parlay doesn't count in Stats. Placed
+// ones can't be deleted: undo "placed" first.
+app.post('/api/delete-parlay', async (req, res, next) => {
+  try {
+    const name = checkPlayer(req, res);
+    if (!name) return;
+    const key = requestedWeek(req) ?? weekWindow().key;
+    const id = String(req.body.id ?? '');
+    const saved = store.data.stakes[key]?.[id];
+    if (!saved) return res.status(404).json({ error: 'That parlay is already gone. Refresh to see the latest.' });
+    if (saved.placed) return res.status(409).json({ error: `${saved.placed.by} marked this one placed. Undo that on the Bet Slip first if it never got in.` });
+    delete store.data.stakes[key][id];
+    for (const kind of ['parlays', 'parlayDowns']) delete store.data.reactions?.[key]?.[kind]?.[id];
+    await save();
+    res.json({ deleted: saved.name });
+  } catch (err) {
+    next(err);
+  }
+});
+
 app.post('/api/stake', async (req, res, next) => {
   try {
     const name = checkPlayer(req, res);

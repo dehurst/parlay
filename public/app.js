@@ -1137,6 +1137,14 @@ const rerenderParlayTab = () => (tab === 'slip' ? renderSlip(true) : renderParla
 
 // Parlays with money on them whose games have started but aren't decided:
 // legs that finished get a check or X; no more stakes can go in.
+// "Delete" for a parlay nobody placed (the bet never got in). Placed ones
+// can't be deleted.
+function deleteHtml(p, inline = false) {
+  if (p.placed) return '';
+  const btn = `<button type="button" class="link small danger" data-delete="${esc(p.id)}" data-name="${esc(p.name)}">Delete</button>`;
+  return inline ? btn : `<div class="delete-row"><span class="small muted">Never placed?</span> ${btn}</div>`;
+}
+
 function inPlayHtml(data) {
   if (!data.inPlay?.length) return '';
   const cards = data.inPlay.map((p) => {
@@ -1148,6 +1156,7 @@ function inPlayHtml(data) {
       </div>
       <ul class="graded-legs">${p.legs.map((l) => `<li>${gradeMark(l.grade) || '<span class="mark">·</span>'}<span><b>${betLabel(l.label)}</b> <span class="muted">${fmtOdds(l.price)}</span>${legSub(l)}</span></li>`).join('')}</ul>
       <div class="small muted backers">${betLine(p.total, p.payout, ' if it hits')}${whoLine(p.stakes)}</div>
+      ${deleteHtml(p)}
     </div>`;
   }).join('');
   return `<h3 class="section">In play</h3>${cards}`;
@@ -1166,6 +1175,7 @@ function settledHtml(data) {
       </div>
       <ul class="graded-legs">${p.legs.map((l) => `<li>${gradeMark(l.grade)}<span><b>${betLabel(l.label)}</b> <span class="muted">${fmtOdds(l.price)}</span>${legSub(l)}</span></li>`).join('')}</ul>
       <div class="small muted backers"><b>${money(p.total)} bet</b>, ${back}${whoLine(p.stakes)}</div>
+      ${deleteHtml(p)}
     </div>`;
   }).join('');
   return `<h3 class="section">Completed</h3>${cards}`;
@@ -2033,7 +2043,8 @@ async function renderSlip(quiet = false) {
              <button type="button" class="link" data-edit-payout="${esc(p.id)}">${p.placed.payout ? 'Edit payout' : 'Add payout'}</button>
              <button type="button" class="link" data-place="${esc(p.id)}" data-val="0">Undo</button>`
           : `<button type="button" class="primary" data-edit-payout="${esc(p.id)}">Mark placed</button>
-             <span class="small muted">Tap after you've placed it at ${esc(data.book ?? 'the sportsbook')}.</span>`}
+             <span class="small muted">Tap after you've placed it at ${esc(data.book ?? 'the sportsbook')}.</span>
+             ${deleteHtml(p, true)}`}
       </div>
       ${['won', 'push'].includes(p.status) ? `<div class="place-row">
         ${p.paidOut
@@ -2210,6 +2221,21 @@ $('#login-form').addEventListener('submit', async (e) => {
   }
   btn.disabled = false;
 });
+// Deleting a never-placed parlay, from the Parlays tab or the Bet Slip.
+document.addEventListener('click', async (e) => {
+  const del = e.target.closest('[data-delete]');
+  if (!del) return;
+  if (!confirm(`Delete ${del.dataset.name}? Use this when the bet never got placed. Everyone's stakes on it go away too.`)) return;
+  del.disabled = true;
+  try {
+    const res = await api('/api/delete-parlay', { method: 'POST', body: { name: me, id: del.dataset.delete, week: viewKey } });
+    notice(`Deleted ${res.deleted}.`);
+  } catch (err) {
+    notice(err.message);
+  }
+  rerenderParlayTab();
+});
+
 // Renaming works the same on the Parlays tab and the Bet Slip.
 document.addEventListener('click', async (e) => {
   const start = e.target.closest('[data-rename-start]');
