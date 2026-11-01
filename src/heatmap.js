@@ -6,7 +6,7 @@
 import { espnSite } from './sport.js';
 import { teamKey } from './schedule.js';
 import { fetchTeamDepthChart, fetchTeamRoster } from './injuries.js';
-import { seasonSnaps, teamCode, starterHistory, nextUp, positionGroup, usualShare, gamesPlayed } from './starters.js';
+import { seasonSnaps, teamCode, starterHistory, nextUp, positionGroup, usualShare, gamesPlayed, lastSeason, outsnapped } from './starters.js';
 
 // Tags that keep a player off the field; Questionable players still count.
 const SIDELINED = ['Out', 'Doubtful', 'Injured Reserve', 'Suspension'];
@@ -102,14 +102,19 @@ export function slotGroup(id) {
 
 // Sidelined players under this usual share aren't counted as starters.
 const STARTER_SHARE = 0.25;
+// A clear starter last season: this share of snaps over this many games.
+const PROVEN = { share: 0.6, games: 6 };
 
 // Each position group at full strength: today's starters plus anyone
-// sidelined at that position, by usual snap share, best first. A starter who
-// wouldn't make that lineup is filling in for one who's out, whatever the
-// depth chart says (ESPN often lists the hurt starter last, or moves the
-// backup up). `sidelined` is [{ name, status, group }], `share(name)` a usual
-// snap share (or null).
-export function markFillIns(side, sidelined, share) {
+// sidelined at that position, best first. A starter who wouldn't make that
+// lineup is filling in for one who's out, whatever the depth chart says
+// (ESPN often lists the hurt starter last, or moves the backup up); two or
+// more spots short of it makes him a deep fill-in (red). Best first is by
+// usual snap share, except that a hurt player who out-snapped a starter
+// earlier this season ranks ahead of him. `sidelined` is [{ name, status,
+// group }], `share(name)` a usual snap share (or null), and `ahead(a, b)`
+// whether hurt player `a` played ahead of starter `b`.
+export function markFillIns(side, sidelined, { share, ahead = () => false }) {
   const slots = Object.values(side).flat().filter((s) => s.name && !s.extra);
   const names = new Set(slots.map((s) => s.name));
   const groups = new Map();
@@ -119,14 +124,22 @@ export function markFillIns(side, sidelined, share) {
   }
   for (const [group, mine] of groups) {
     const out = sidelined.filter((p) => p.group === group && !names.has(p.name))
-      .map((p) => ({ ...p, share: share(p.name) ?? 0 })).filter((p) => p.share >= STARTER_SHARE);
-    const pool = [...mine.map((slot) => ({ slot, share: share(slot.name) ?? 0 })), ...out].sort((a, b) => b.share - a.share);
-    const missing = pool.slice(0, mine.length).filter((p) => !p.slot);
-    const fillIns = pool.slice(mine.length).filter((p) => p.slot);
-    for (const [i, { slot }] of fillIns.entries()) {
-      if (slot.history?.tag === 'fillin') continue;
-      const { name, status } = missing[i];
-      slot.history = { tag: 'fillin', replaced: name, replacedStatus: status, recent: slot.history?.recent, timeline: slot.history?.timeline };
+      .map((p) => ({ ...p, score: share(p.name) ?? 0 })).filter((p) => p.score >= STARTER_SHARE);
+    const starters = mine.map((slot) => ({ slot, name: slot.name, score: share(slot.name) ?? 0 }));
+    for (const x of out) {
+      for (const y of [...starters].sort((a, b) => b.score - a.score)) {
+        if (x.score <= y.score && ahead(x.name, y.name)) x.score = y.score + 1e-6;
+      }
+    }
+    const pool = [...starters, ...out].sort((a, b) => b.score - a.score);
+    for (const [i, p] of pool.entries()) {
+      if (!p.slot || i < mine.length) continue;
+      const above = pool.slice(0, i).filter((q) => !q.slot);
+      const deep = i - mine.length + 1;
+      const { name, status } = above.at(-1);
+      const h = p.slot.history?.tag === 'fillin' ? p.slot.history
+        : { tag: 'fillin', replaced: name, replacedStatus: status, recent: p.slot.history?.recent, timeline: p.slot.history?.timeline };
+      p.slot.history = { ...h, deep, ahead: above.map((q) => ({ name: q.name, status: q.status })) };
     }
   }
 }
@@ -184,12 +197,18 @@ export async function teamHeatmap(name, now = Date.now()) {
       slot.history = starterHistory(teams, teamCode(name), slot, { ...opts, taken });
     }
     if (teams && athletes) {
-      const last = lastSnaps.status === 'fulfilled' ? lastSnaps.value : null;
-      // Only players who've played for the team this season: someone out since
-      // before Week 1 isn't missed, the team has built around his absence.
-      const sidelined = athletes.filter((a) => SIDELINED.includes(a.injuries?.[0]?.status) && gamesPlayed(teams, teamCode(name), a.displayName) > 0)
+      const code = teamCode(name);
+      // Last season tells us about veterans only; rookies have none.
+      const last = (n) => (rookies.has(n) || lastSnaps.status !== 'fulfilled' ? null : lastSnaps.value);
+      // Someone out since before Week 1 is missed only if he was a clear
+      // starter last season; otherwise the team has built around his absence.
+      const proven = (n) => {
+        const before = lastSeason(last(n), code, n);
+        return before && before.games >= PROVEN.games && before.share >= PROVEN.share;
+      };
+      const sidelined = athletes.filter((a) => SIDELINED.includes(a.injuries?.[0]?.status) && (gamesPlayed(teams, code, a.displayName) > 0 || proven(a.displayName)))
         .map((a) => ({ name: a.displayName, status: a.injuries[0].status, group: positionGroup(a.position?.abbreviation) }));
-      markFillIns(side, sidelined, (n) => usualShare(teams, last, teamCode(name), n));
+      markFillIns(side, sidelined, { share: (n) => usualShare(teams, last(n), code, n), ahead: (a, b) => outsnapped(teams, code, a, b, lastSeason(last(b), code, b)?.share) });
     }
   }
   if (teams) {

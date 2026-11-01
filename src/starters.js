@@ -208,20 +208,48 @@ export function gamesPlayed(teams, code, name) {
   return me ? team.weeks.filter((w) => me.pct[w] != null).length : 0;
 }
 
+// Last season for a player: { share (when he played), games }, on this team
+// or the one team that had someone by that name. Null if he didn't play
+// (rookies: pass no `lastTeams`, so a namesake isn't mistaken for them).
+export function lastSeason(lastTeams, code, name) {
+  const found = Object.entries(lastTeams ?? {}).map(([c, t]) => [c, t, findPlayer(t, name)]).filter(([, , p]) => p);
+  const [, t, p] = found.find(([c]) => c === code) ?? (found.length === 1 ? found[0] : []);
+  const played = p ? t.weeks.filter((w) => p.pct[w] != null) : [];
+  return played.length ? { share: avg(p, played), games: played.length } : null;
+}
+
 // A player's usual share of snaps when he plays: this season's games, or
-// last season's (on any team) if he's played fewer than 2 this season, like
-// someone hurt early. Null if he hasn't played in either.
+// last season's if he's played fewer than 2 this season, like someone hurt
+// early. Null if he hasn't played in either.
 export function usualShare(teams, lastTeams, code, name) {
   const team = teams?.[code];
   const me = team && findPlayer(team, name);
   const played = me ? team.weeks.filter((w) => me.pct[w] != null) : [];
   const now = played.length ? avg(me, played) : null;
   if (played.length >= 2) return now;
-  // Last season: on this team, or the one team that has someone by that name.
-  const found = Object.entries(lastTeams ?? {}).map(([c, t]) => [c, t, findPlayer(t, name)]).filter(([, , p]) => p);
-  const [, t, p] = found.find(([c]) => c === code) ?? (found.length === 1 ? found[0] : []);
-  const before = p ? avg(p, t.weeks.filter((w) => p.pct[w] != null)) : null;
+  const before = lastSeason(lastTeams, code, name)?.share ?? null;
   return now == null && before == null ? null : Math.max(now ?? 0, before ?? 0);
+}
+
+// Whether `a` played ahead of `b` this season: in the games `a` played, `b`
+// was a backup (under REGULAR) and `a` averaged clearly more snaps. Games
+// `b` sat before his first one count as 0 for him only if he wasn't a
+// regular last season (`bLast`, his share then) and came in as a backup, so
+// he wasn't playing yet; otherwise he was likely hurt, like games he missed
+// later, which are left out.
+export function outsnapped(teams, code, a, b, bLast = 0) {
+  const team = teams?.[code];
+  const pa = team && findPlayer(team, a);
+  if (!pa) return false;
+  const pb = findPlayer(team, b);
+  const first = pb && team.weeks.find((w) => pb.pct[w] != null);
+  const newcomer = bLast < REGULAR && (first == null || pb.pct[first] < REGULAR);
+  const debut = !newcomer ? -Infinity : first ?? Infinity;
+  const weeks = team.weeks.filter((w) => pa.pct[w] != null && (pb?.pct[w] != null || w < debut));
+  if (!weeks.length) return false;
+  const mine = avg(pa, weeks);
+  const his = pb ? avg(pb, weeks) : 0;
+  return mine >= 0.25 && his < REGULAR && mine - his >= 0.1;
 }
 
 // Snap counts by season, kept in memory for a few hours (they update once a

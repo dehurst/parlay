@@ -44,11 +44,28 @@ test('a starter who would sit at full strength is a fill-in, wherever ESPN lists
   const share = { 'True Starter': 0.62, 'Part Timer': 0.18, 'Rotation End': 0.54, 'Star End': 0.82, 'Hurt End': 0.61, 'Hurt Nose': 0.39, 'Deep Reserve': 0.1 };
   const sidelined = [['Star End', 'DL'], ['Hurt End', 'DL'], ['Hurt Nose', 'DL'], ['Deep Reserve', 'DL'], ['Hurt Corner', 'DB']]
     .map(([name, group]) => ({ name, status: 'Injured Reserve', group }));
-  markFillIns(side, sidelined, (n) => share[n] ?? null);
+  markFillIns(side, sidelined, { share: (n) => share[n] ?? null });
   const [donald, hamilton, fiske] = side.line;
   assert.equal(donald.history.tag, 'week1');
   assert.equal(fiske.history.tag, 'fillin');
-  assert.equal(fiske.history.replaced, 'Star End');
+  assert.equal(fiske.history.replaced, 'Hurt End');
+  assert.equal(fiske.history.deep, 1);
+  // Three hurt players would play ahead of the part-timer: a deep fill-in.
   assert.equal(hamilton.history.tag, 'fillin');
-  assert.equal(hamilton.history.replaced, 'Hurt End');
+  assert.equal(hamilton.history.deep, 3);
+  assert.deepEqual(hamilton.history.ahead.map((p) => p.name), ['Star End', 'Hurt End', 'Hurt Nose']);
+});
+
+test('a hurt player who out-snapped a starter ranks ahead of him, whatever their usual shares', () => {
+  const sq = (slotId, name) => ({ slot: slotId, name, rank: 1, skipped: [], history: { tag: 'earned' } });
+  const side = { pass: [sq('wr1', 'Evans'), sq('wr2', 'Samuel'), sq('wr3', 'Watkins')] };
+  const share = { Evans: 0.54, Samuel: 0.58, Watkins: 0.51, Pearsall: 0.78, Robinson: 0.47, Stribling: 0.32 };
+  const sidelined = ['Pearsall', 'Robinson', 'Stribling'].map((name) => ({ name, status: 'Injured Reserve', group: 'WR' }));
+  // Robinson and Stribling started Week 1 while Watkins sat.
+  markFillIns(side, sidelined, { share: (n) => share[n] ?? null, ahead: (a, b) => b === 'Watkins' && a !== 'Pearsall' });
+  const [evans, samuel, watkins] = side.pass;
+  assert.equal(evans.history.tag, 'earned');
+  assert.equal(samuel.history.tag, 'earned');
+  assert.equal(watkins.history.tag, 'fillin');
+  assert.equal(watkins.history.deep, 3);
 });

@@ -1403,6 +1403,7 @@ const HEAT_LEVELS = ['Nobody healthy', 'Starter', 'Backup', '3rd string or deepe
 // How the player got the job, from every week's snap counts this season.
 const HEAT_TAGS = { fillin: 'Fill-in', earned: 'Earned ↑', trade: 'Trade', new: 'New', back: 'Back', part: 'Part-time' };
 const weekList = (weeks) => (weeks.length > 1 ? `Weeks ${weeks[0]}–${weeks[weeks.length - 1]}` : `Week ${weeks[0]}`);
+const listText = (items) => (items.length > 1 ? `${items.slice(0, -1).join(', ')} and ${items.at(-1)}` : items[0] ?? '');
 function historyText(h) {
   if (!h) return null;
   const who = (name, status) => `${name}${status ? ` (${status})` : ''}`;
@@ -1410,7 +1411,9 @@ function historyText(h) {
   const text = {
     week1: h.missed?.length ? `Starter again since Week ${h.since} (missed ${weekList(h.missed)})` : `Starter every game since Week ${h.since}`,
     back: h.missed?.length ? `Back this week after missing ${weekList(h.missed)}` : 'Back this week',
-    fillin: `Filling in for ${who(h.replaced, h.replacedStatus)}${since}`,
+    fillin: h.deep >= 2 && h.ahead?.length >= 2
+      ? `Deep fill-in: ${listText(h.ahead.map((p) => who(p.name, p.status)))} would all play ahead of him`
+      : `Filling in for ${who(h.replaced, h.replacedStatus)}${since}`,
     earned: `Took the job from ${h.replaced}${since}. He's healthy${h.replacedRecent != null ? ` and down to ${h.replacedRecent}% of snaps` : ''}`,
     trade: `Traded in: played for ${h.from} earlier this season`,
     new: h.replacedGone ? `Took over for ${h.replaced}${since}. He's no longer on the team` : `New starter${since}`,
@@ -1433,7 +1436,8 @@ const snapBars = (timeline) => (timeline?.length
 // Green, yellow, or red. ESPN often moves a backup to the top of the depth
 // chart once the starter goes on IR, so anyone filling in for a hurt starter
 // counts as a backup (yellow) even when listed first.
-const heatLevel = (s) => (!s.name ? 0 : s.history?.tag === 'fillin' ? Math.max(Math.min(s.rank, 3), 2) : Math.min(s.rank, 3));
+// Two or more spots short of full strength is a deep fill-in: red.
+const heatLevel = (s) => (!s.name ? 0 : s.history?.tag === 'fillin' ? Math.max(Math.min(s.rank, 3), s.history.deep >= 2 ? 3 : 2) : Math.min(s.rank, 3));
 
 // The squares on the page, by index, for their pop-up details.
 let heatSquares = [];

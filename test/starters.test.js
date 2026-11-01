@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseSnaps, findPlayer, starterHistory, teamCode, nextUp, usualShare, gamesPlayed } from '../src/starters.js';
+import { parseSnaps, findPlayer, starterHistory, teamCode, nextUp, usualShare, gamesPlayed, outsnapped, lastSeason } from '../src/starters.js';
 
 const HEAD = 'game_id,pfr_game_id,season,game_type,week,player,pfr_player_id,position,team,opponent,offense_snaps,offense_pct,defense_snaps,defense_pct,st_snaps,st_pct';
 // [week, name, id, pos, team, off%, def%]
@@ -152,4 +152,32 @@ test('games played this season, for telling who was hurt before Week 1', () => {
   assert.equal(gamesPlayed(t, 'ARI', 'Played Once'), 1);
   assert.equal(gamesPlayed(t, 'ARI', 'Every Game'), 2);
   assert.equal(gamesPlayed(t, 'ARI', 'Out All Year'), 0);
+});
+
+test('out-snapped: a hurt player who started while the newer starter sat ranks ahead of him', () => {
+  const t = parseSnaps(csv([
+    [1, 'Rookie Starter', 'rs', 'WR', 'SF', 0.32, 0],
+    [1, 'Vet Receiver', 'vr', 'WR', 'SF', 0.63, 0], [2, 'Vet Receiver', 'vr', 'WR', 'SF', 0.31, 0],
+    [3, 'Late Bloomer', 'lb', 'WR', 'SF', 0.28, 0], [4, 'Late Bloomer', 'lb', 'WR', 'SF', 0.76, 0],
+    [1, 'Hurt Starter', 'hs', 'WR', 'SF', 0.7, 0], [3, 'Hurt Starter', 'hs', 'WR', 'SF', 0.7, 0],
+    [1, 'Was Hurt', 'wh', 'WR', 'SF', 0.6, 0], [2, 'Was Hurt', 'wh', 'WR', 'SF', 0.6, 0], [4, 'Was Hurt', 'wh', 'WR', 'SF', 0.6, 0],
+  ]));
+  assert.equal(outsnapped(t, 'SF', 'Rookie Starter', 'Late Bloomer'), true);
+  assert.equal(outsnapped(t, 'SF', 'Vet Receiver', 'Late Bloomer'), true);
+  assert.equal(outsnapped(t, 'SF', 'Late Bloomer', 'Rookie Starter'), false);
+  // Week 3, after Was Hurt had started playing, doesn't count against him.
+  assert.equal(outsnapped(t, 'SF', 'Hurt Starter', 'Was Hurt'), false);
+  assert.deepEqual(lastSeason(null, 'SF', 'Rookie Starter'), null);
+});
+
+test('out-snapped: never for linemen who both start, or over a regular back from injury', () => {
+  const t = parseSnaps(csv([
+    [1, 'Star Tackle', 'st', 'T', 'BAL', 1, 0], [2, 'Star Tackle', 'st', 'T', 'BAL', 0.79, 0],
+    [1, 'Hurt Guard', 'hg', 'G', 'BAL', 1, 0], [2, 'Hurt Guard', 'hg', 'G', 'BAL', 1, 0],
+    [1, 'Rookie Back', 'rb', 'RB', 'BAL', 0.48, 0], [2, 'Rookie Back', 'rb', 'RB', 'BAL', 0.4, 0],
+  ]));
+  assert.equal(outsnapped(t, 'BAL', 'Hurt Guard', 'Star Tackle'), false);
+  // Hasn't played this year, but was a regular last season: he was hurt.
+  assert.equal(outsnapped(t, 'BAL', 'Rookie Back', 'Healed Runner', 0.5), false);
+  assert.equal(outsnapped(t, 'BAL', 'Rookie Back', 'Healed Runner', 0.1), true);
 });
