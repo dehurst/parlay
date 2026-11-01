@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 480">
+  <!-- Night sky, goalpost, football, and field. Square and full-bleed: iOS rounds the corners itself. -->
+  <rect width="480" height="480" fill="#1f2a44"/>
+  <rect y="368" width="480" height="112" fill="#2e5e3a"/>
+  <rect y="390" width="480" height="8" fill="#d8d3b8"/>
+  <rect y="420" width="480" height="8" fill="#d8d3b8"/>
+  <rect y="450" width="480" height="8" fill="#d8d3b8"/>
+  <g fill="#d9a23a">
+    <rect x="226" y="250" width="28" height="126"/>
+    <rect x="116" y="240" width="248" height="28" rx="14"/>
+    <rect x="116" y="72" width="28" height="196" rx="14"/>
+    <rect x="336" y="72" width="28" height="196" rx="14"/>
+  </g>
+  <defs>
+    <clipPath id="ball"><path d="M240 76 C290 104 290 188 240 216 C190 188 190 104 240 76 Z"/></clipPath>
+  </defs>
+  <g transform="rotate(-10 240 146)">
+    <path d="M240 76 C290 104 290 188 240 216 C190 188 190 104 240 76 Z" fill="#8b4a2b"/>
+    <g clip-path="url(#ball)" fill="#f2e8d5">
+      <path d="M190 108 Q240 98 290 108 L290 120 Q240 110 190 120 Z"/>
+      <path d="M190 172 Q240 182 290 172 L290 184 Q240 194 190 184 Z"/>
+    </g>
+    <g stroke="#f2e8d5" stroke-width="7" stroke-linecap="round">
+      <line x1="240" y1="128" x2="240" y2="164"/>
+      <line x1="231" y1="135" x2="249" y2="135"/>
+      <line x1="231" y1="146" x2="249" y2="146"/>
+      <line x1="231" y1="157" x2="249" y2="157"/>
+    </g>
+  </g>
+</svg>
