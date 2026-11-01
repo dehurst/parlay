@@ -506,7 +506,7 @@ h3.section.first { margin-top: 4px; }
 .heat-key.heat-1, .heat-key.heat-2, .heat-key.heat-3 { padding: 2px 8px; border-radius: 6px; border: 1px solid; color: var(--text); }
 .heat-title { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; margin: 0 0 2px; }
 .heat-unit { display: grid; grid-template-columns: 1fr auto 1fr; gap: 10px; align-items: start; padding: 12px 0; border-top: 1px solid var(--line); margin-top: 10px; }
-.heat-label { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-height: 20px; font-size: 14px; font-weight: 700; letter-spacing: .04em; color: var(--muted); margin-bottom: 6px; }
+.heat-label { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-height: 20px; font-size: 14px; font-weight: 700; letter-spacing: .04em; color: var(--text); margin-bottom: 6px; }
 /* A group's health (backups in) and rookie count, colored by how many. */
 .group-alert {
   position: relative; display: inline-flex; align-items: center; gap: 4px; padding: 1px 7px; border-radius: 999px; border: 1px solid;
