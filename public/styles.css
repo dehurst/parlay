@@ -641,9 +641,9 @@ h3.section.first { margin-top: 4px; }
   text-transform: uppercase; letter-spacing: .03em; background: rgba(15, 20, 25, .75);
 }
 .how-fillin { color: #8cc8ff; }
-.how-earned { color: #d4a8ff; }
+.how-earned { color: #7ee081; }
 .how-new { color: #c9d1d9; }
-.how-trade { color: #ff9ecb; }
+.how-trade { color: #ffd24d; }
 .how-none { color: var(--muted); border: 1px dashed currentColor; background: none; }
 .heat-key .heat-how { margin-top: 0; }
 .how-back { color: #9be9a8; }
