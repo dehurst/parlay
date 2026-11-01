@@ -1503,8 +1503,9 @@ function heatSummary(side) {
 }
 
 // A group's health next to its label: how many of its spots (RB2, TE2 and
-// WR4 included) are filled by backups, and how many are rookies (only if
-// any). Green is safe, then yellow, red, and a glistening red one past red.
+// WR4 included) are filled by backups, and how many are rookies (only from
+// 2 up: one rookie in a group is normal). Green is safe, then yellow, red,
+// and a glistening red one past red.
 // Each group turns yellow and red at its own count (2 and 3 unless listed).
 const ALERT_AT = { OL: [2, 3], 'WR/TE': [3, 4], 'QB/RB': [1, 2] };
 const alertLevel = (n, [yellow, red] = [2, 3]) => (n > red ? 4 : n === red ? 3 : n >= yellow ? 2 : 1);
@@ -1513,7 +1514,7 @@ function groupHealth(slots, label) {
   const rookies = slots.filter((s) => s.rookie).length;
   const health = `<span class="group-alert alert-${alertLevel(backups, ALERT_AT[label])}" title="${backups} of ${slots.length} spots filled by backups">
     <span class="group-word">Health</span> ${backups}/${slots.length} backup${backups === 1 ? '' : 's'}</span>`;
-  const young = rookies ? `<span class="group-alert alert-${alertLevel(rookies)}" title="${rookies} of ${slots.length} players are rookies">
+  const young = rookies >= 2 ? `<span class="group-alert alert-${alertLevel(rookies)}" title="${rookies} of ${slots.length} players are rookies">
     <span class="rookie in-key">R</span> ${rookies}/${slots.length} rookie${rookies === 1 ? '' : 's'}</span>` : '';
   return health + young;
 }
