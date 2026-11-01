@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { fillSlot, teamSides } from '../src/heatmap.js';
+import { fillSlot, teamSides, markFillIns } from '../src/heatmap.js';
 
 const athlete = (name, status) => ({ displayName: name, injuries: status ? [{ status }] : [] });
 const slot = (abbr, ...athletes) => ({ position: { abbreviation: abbr }, athletes });
@@ -36,4 +36,19 @@ test('slots group into units that face each other, in lineup order', () => {
   assert.deepEqual(defense.line.map((s) => s.slot), ['rde', 'nt', 'lde']);
   assert.deepEqual(defense.pass.map((s) => s.slot), ['lcb', 'fs']);
   assert.deepEqual(defense.back.map((s) => s.slot), ['wlb']);
+});
+
+test('a starter who would sit at full strength is a fill-in, wherever ESPN lists the hurt starters', () => {
+  const sq = (slotId, name) => ({ slot: slotId, name, rank: 1, skipped: [], history: { tag: 'week1' } });
+  const side = { line: [sq('rde', 'True Starter'), sq('nt', 'Part Timer'), sq('lde', 'Rotation End')] };
+  const share = { 'True Starter': 0.62, 'Part Timer': 0.18, 'Rotation End': 0.54, 'Star End': 0.82, 'Hurt End': 0.61, 'Hurt Nose': 0.39, 'Deep Reserve': 0.1 };
+  const sidelined = [['Star End', 'DL'], ['Hurt End', 'DL'], ['Hurt Nose', 'DL'], ['Deep Reserve', 'DL'], ['Hurt Corner', 'DB']]
+    .map(([name, group]) => ({ name, status: 'Injured Reserve', group }));
+  markFillIns(side, sidelined, (n) => share[n] ?? null);
+  const [donald, hamilton, fiske] = side.line;
+  assert.equal(donald.history.tag, 'week1');
+  assert.equal(fiske.history.tag, 'fillin');
+  assert.equal(fiske.history.replaced, 'Star End');
+  assert.equal(hamilton.history.tag, 'fillin');
+  assert.equal(hamilton.history.replaced, 'Hurt End');
 });

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseSnaps, findPlayer, starterHistory, teamCode, nextUp } from '../src/starters.js';
+import { parseSnaps, findPlayer, starterHistory, teamCode, nextUp, usualShare } from '../src/starters.js';
 
 const HEAD = 'game_id,pfr_game_id,season,game_type,week,player,pfr_player_id,position,team,opponent,offense_snaps,offense_pct,defense_snaps,defense_pct,st_snaps,st_pct';
 // [week, name, id, pos, team, off%, def%]
@@ -126,4 +126,23 @@ test('the next man up is the healthy player with the most snaps all season', () 
   assert.equal(pick.season, 30);
   assert.deepEqual(pick.skipped, [{ name: 'Hurt Back', status: 'Out' }]);
   assert.equal(nextUp(t, 'KC', ['RB']), null);
+});
+
+test('a starter who missed the opener is not filling in for someone he started next to', () => {
+  const t = parseSnaps(csv([
+    ...[1, 2, 3, 4, 5].map((w) => [w, 'Hurt Teammate', 'ht', 'DE', 'LA', 0, 0.65]),
+    ...[2, 3, 4, 5, 6].map((w) => [w, 'Late Starter', 'ls', 'DE', 'LA', 0, 0.6]),
+    [6, 'Filler', 'f', 'DE', 'LA', 0, 0.1],
+  ]));
+  const h = starterHistory(t, 'LA', { name: 'Late Starter', skipped: [] }, { injuries: new Map([['Hurt Teammate', 'Injured Reserve']]) });
+  assert.equal(h.tag, 'week1');
+  assert.deepEqual(h.missed, [1]);
+});
+
+test('usual share uses last season for someone who has barely played this year', () => {
+  const now = parseSnaps(csv([[1, 'Star End', 'se', 'LB', 'LA', 0, 0.62], [1, 'Regular', 'r', 'DE', 'LA', 0, 0.5], [2, 'Regular', 'r', 'DE', 'LA', 0, 0.7]]));
+  const last = parseSnaps(csv([[1, 'Star End', 'se', 'DE', 'CLE', 0, 0.8], [2, 'Star End', 'se', 'DE', 'CLE', 0, 0.84], [1, 'Regular', 'r', 'DE', 'LA', 0, 0.2]]));
+  assert.equal(usualShare(now, last, 'LA', 'Star End').toFixed(2), '0.82');
+  assert.equal(usualShare(now, last, 'LA', 'Regular'), 0.6);
+  assert.equal(usualShare(now, last, 'LA', 'Nobody'), null);
 });

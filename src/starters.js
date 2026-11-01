@@ -26,11 +26,12 @@ const TEAM_CODES = {
 };
 export const teamCode = (name) => TEAM_CODES[String(name).split(' ').pop().toLowerCase()] ?? null;
 
-// Positions that compete for the same jobs.
+// Positions that compete for the same jobs (nflverse's and ESPN's names).
 const GROUPS = {
-  T: 'OL', G: 'OL', C: 'OL', OL: 'OL', QB: 'QB', RB: 'RB', FB: 'RB', HB: 'RB', WR: 'WR', TE: 'TE',
-  DL: 'DL', DE: 'DL', DT: 'DL', NT: 'DL', LB: 'LB', CB: 'DB', S: 'DB', DB: 'DB',
+  T: 'OL', OT: 'OL', G: 'OL', OG: 'OL', C: 'OL', OL: 'OL', QB: 'QB', RB: 'RB', FB: 'RB', HB: 'RB', WR: 'WR', TE: 'TE',
+  DL: 'DL', DE: 'DL', DT: 'DL', NT: 'DL', LB: 'LB', OLB: 'LB', ILB: 'LB', MLB: 'LB', CB: 'DB', S: 'DB', FS: 'DB', SS: 'DB', DB: 'DB',
 };
+export const positionGroup = (abbr) => GROUPS[abbr] ?? null;
 
 // Names differ between sources ("D.J." / "DJ", "James Cook" / "James Cook III"),
 // and some use nicknames ("Greg" / "Gregory"), so match on a cleaned-up full
@@ -148,11 +149,16 @@ export function starterHistory(teams, code, slot, { injuries = new Map(), roster
     return { tag: 'week1', since, missed: weeks.slice(gapStart, start), ...base };
   }
   if (before.every((w) => me.pct[w] == null) && from()) return { tag: 'trade', since, from: from(), ...base };
+  // Missed only the opening game or two, then started: a starter who was hurt.
+  if (start < GAP && before.every((w) => me.pct[w] == null)) return { tag: 'week1', since, missed: before, ...base };
 
   // A regular for the first time from `since`: whose job was it? Someone at
   // his position who was a regular the game before and isn't now.
+  // Started alongside him for more than a game of this run: not his job.
+  const run = weeks.slice(start, last + 1);
   const candidates = team.players.filter((p) => p !== me && p.group && p.group === me.group
     && !regular(p, latest) && avg(p, recent) < REGULAR
+    && run.filter((w) => regular(p, w)).length <= 1
     && ![...starters, ...taken].some((n) => sameName(n, p.name)));
   const prev = weeks[start - 1];
   const replaced = candidates.filter((p) => regular(p, prev)).sort((a, b) => b.pct[prev] - a.pct[prev])[0]
@@ -195,17 +201,35 @@ export function nextUp(teams, code, positions, { exclude = [], injuries = new Ma
   return null;
 }
 
-// This season's snap counts, kept in memory for a few hours (they update once
-// a week, a day or two after the games).
-let snaps = null;
+// A player's usual share of snaps when he plays: this season's games, or
+// last season's (on any team) if he's played fewer than 2 this season, like
+// someone hurt early. Null if he hasn't played in either.
+export function usualShare(teams, lastTeams, code, name) {
+  const team = teams?.[code];
+  const me = team && findPlayer(team, name);
+  const played = me ? team.weeks.filter((w) => me.pct[w] != null) : [];
+  const now = played.length ? avg(me, played) : null;
+  if (played.length >= 2) return now;
+  // Last season: on this team, or the one team that has someone by that name.
+  const found = Object.entries(lastTeams ?? {}).map(([c, t]) => [c, t, findPlayer(t, name)]).filter(([, , p]) => p);
+  const [, t, p] = found.find(([c]) => c === code) ?? (found.length === 1 ? found[0] : []);
+  const before = p ? avg(p, t.weeks.filter((w) => p.pct[w] != null)) : null;
+  return now == null && before == null ? null : Math.max(now ?? 0, before ?? 0);
+}
+
+// Snap counts by season, kept in memory for a few hours (they update once a
+// week, a day or two after the games). `back` = 1 for last season.
+const snaps = new Map();
 const SNAPS_TTL = 6 * 3600e3;
 
-export async function seasonSnaps(now = new Date()) {
-  if (snaps && now - snaps.at < SNAPS_TTL) return snaps.teams;
+export async function seasonSnaps(now = new Date(), back = 0) {
   // The season is named for the year it starts (September).
-  const season = now.getMonth() >= 8 ? now.getFullYear() : now.getFullYear() - 1;
+  const season = (now.getMonth() >= 8 ? now.getFullYear() : now.getFullYear() - 1) - back;
+  const cached = snaps.get(season);
+  if (cached && now - cached.at < SNAPS_TTL) return cached.teams;
   const res = await fetch(SNAPS_URL(season), { signal: AbortSignal.timeout(8000) });
   if (!res.ok) throw new Error(`nflverse snap counts returned ${res.status}`);
-  snaps = { at: now.getTime(), teams: parseSnaps(await res.text()) };
-  return snaps.teams;
+  const teams = parseSnaps(await res.text());
+  snaps.set(season, { at: now.getTime(), teams });
+  return teams;
 }

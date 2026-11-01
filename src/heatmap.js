@@ -6,7 +6,7 @@
 import { espnSite } from './sport.js';
 import { teamKey } from './schedule.js';
 import { fetchTeamDepthChart, fetchTeamRoster } from './injuries.js';
-import { seasonSnaps, teamCode, starterHistory, nextUp } from './starters.js';
+import { seasonSnaps, teamCode, starterHistory, nextUp, positionGroup, usualShare } from './starters.js';
 
 // Tags that keep a player off the field; Questionable players still count.
 const SIDELINED = ['Out', 'Doubtful', 'Injured Reserve', 'Suspension'];
@@ -91,6 +91,46 @@ export function addExtras(offense, teams, code, opts) {
   }
 }
 
+// The position group a depth-chart slot belongs to.
+export function slotGroup(id) {
+  if (/^(lt|lg|c|rg|rt)$/.test(id)) return 'OL';
+  if (/(de|dt|nt)$/.test(id)) return 'DL';
+  if (/lb$/.test(id)) return 'LB';
+  if (/(cb|nb|ss|fs|^s)$/.test(id)) return 'DB';
+  return { qb: 'QB', rb: 'RB', hb: 'RB', te: 'TE', wr: 'WR' }[id.replace(/\d+$/, '')] ?? null;
+}
+
+// Sidelined players under this usual share aren't counted as starters.
+const STARTER_SHARE = 0.25;
+
+// Each position group at full strength: today's starters plus anyone
+// sidelined at that position, by usual snap share, best first. A starter who
+// wouldn't make that lineup is filling in for one who's out, whatever the
+// depth chart says (ESPN often lists the hurt starter last, or moves the
+// backup up). `sidelined` is [{ name, status, group }], `share(name)` a usual
+// snap share (or null).
+export function markFillIns(side, sidelined, share) {
+  const slots = Object.values(side).flat().filter((s) => s.name && !s.extra);
+  const names = new Set(slots.map((s) => s.name));
+  const groups = new Map();
+  for (const s of slots) {
+    const g = slotGroup(s.slot);
+    if (g) groups.set(g, [...(groups.get(g) ?? []), s]);
+  }
+  for (const [group, mine] of groups) {
+    const out = sidelined.filter((p) => p.group === group && !names.has(p.name))
+      .map((p) => ({ ...p, share: share(p.name) ?? 0 })).filter((p) => p.share >= STARTER_SHARE);
+    const pool = [...mine.map((slot) => ({ slot, share: share(slot.name) ?? 0 })), ...out].sort((a, b) => b.share - a.share);
+    const missing = pool.slice(0, mine.length).filter((p) => !p.slot);
+    const fillIns = pool.slice(mine.length).filter((p) => p.slot);
+    for (const [i, { slot }] of fillIns.entries()) {
+      if (slot.history?.tag === 'fillin') continue;
+      const { name, status } = missing[i];
+      slot.history = { tag: 'fillin', replaced: name, replacedStatus: status, recent: slot.history?.recent, timeline: slot.history?.timeline };
+    }
+  }
+}
+
 // Slots not in the lists above (other formations), by their name.
 function unitFor(id) {
   if (/(de|dt|nt)$|^(lt|lg|c|rg|rt)$/.test(id)) return 'line';
@@ -122,7 +162,7 @@ export async function teamHeatmap(name, now = Date.now()) {
   if (cached && now - cached.at < CHART_TTL) return cached.sides;
   // The roster (for injuries, IR included) and snap counts only add the
   // "how they got the job" tags, so the heat map still works without them.
-  const [chart, roster, snaps] = await Promise.allSettled([fetchTeamDepthChart(id), fetchTeamRoster(id), seasonSnaps(new Date(now))]);
+  const [chart, roster, snaps, lastSnaps] = await Promise.allSettled([fetchTeamDepthChart(id), fetchTeamRoster(id), seasonSnaps(new Date(now)), seasonSnaps(new Date(now), 1)]);
   if (chart.status === 'rejected') throw chart.reason;
   const sides = teamSides(chart.value);
   const teams = snaps.status === 'fulfilled' ? snaps.value : null;
@@ -142,6 +182,12 @@ export async function teamHeatmap(name, now = Date.now()) {
     const taken = new Set();
     for (const slot of [...slots].sort((a, b) => first.get(a) - first.get(b))) {
       slot.history = starterHistory(teams, teamCode(name), slot, { ...opts, taken });
+    }
+    if (teams && athletes) {
+      const last = lastSnaps.status === 'fulfilled' ? lastSnaps.value : null;
+      const sidelined = athletes.filter((a) => SIDELINED.includes(a.injuries?.[0]?.status))
+        .map((a) => ({ name: a.displayName, status: a.injuries[0].status, group: positionGroup(a.position?.abbreviation) }));
+      markFillIns(side, sidelined, (n) => usualShare(teams, last, teamCode(name), n));
     }
   }
   if (teams) {
