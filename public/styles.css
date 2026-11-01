@@ -516,7 +516,14 @@ h3.section.first { margin-top: 4px; }
   content: '▾'; position: absolute; right: 14px; top: 50%; transform: translateY(-50%);
   color: #d9ffe9; pointer-events: none; font-size: 15px;
 }
-.heat-legend { display: flex; flex-wrap: wrap; gap: 6px 12px; margin-bottom: 12px; font-size: 12px; color: var(--muted); }
+/* The key: one box, in groups (depth colors, how they got the job, badges,
+   snap bars) split by thin lines, flowing left to right and wrapping. */
+.heat-legend {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; margin-bottom: 12px; padding: 8px 12px;
+  border: 1px solid var(--line); border-radius: var(--radius); background: var(--card); font-size: 12px; color: var(--muted);
+}
+.key-group { display: contents; }
+.key-group + .key-group::before { content: ''; align-self: stretch; width: 1px; min-height: 18px; margin: 0 2px; background: var(--line); }
 .heat-key { display: inline-flex; align-items: center; gap: 4px; }
 .heat-key.heat-1, .heat-key.heat-2, .heat-key.heat-3 { padding: 2px 8px; border-radius: 6px; border: 1px solid; color: var(--text); }
 /* A matchup card's heading, with the game-day weather to its right (under
