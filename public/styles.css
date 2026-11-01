@@ -502,7 +502,20 @@ h3.section.first { margin-top: 4px; }
 /* Heat map (beta): squares colored by how deep on the depth chart each player is. */
 .tabs .beta { font-size: 11px; opacity: .75; }
 .heat-pick { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--muted); margin: 6px 0 10px; }
-.heat-pick select { flex: 1; min-width: 0; max-width: 360px; }
+/* The game picker: a long rounded box in the starter squares' green, with
+   our own arrow (Safari ignores padding on native dropdowns). */
+.heat-select { position: relative; display: flex; flex: 1; min-width: 0; max-width: 380px; }
+.heat-select select {
+  -webkit-appearance: none; appearance: none; flex: 1; min-width: 0; padding: 9px 36px 9px 14px; border-radius: 8px;
+  border: 1px solid #2fbf71; background: rgba(47, 191, 113, .28); color: #d9ffe9;
+  font: inherit; font-size: 15px; font-weight: 700; cursor: pointer; text-overflow: ellipsis;
+}
+.heat-select select:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
+.heat-select select option { background: var(--card); color: var(--text); font-weight: 600; }
+.heat-select::after {
+  content: '▾'; position: absolute; right: 14px; top: 50%; transform: translateY(-50%);
+  color: #d9ffe9; pointer-events: none; font-size: 15px;
+}
 .heat-legend { display: flex; flex-wrap: wrap; gap: 6px 12px; margin-bottom: 12px; font-size: 12px; color: var(--muted); }
 .heat-key { display: inline-flex; align-items: center; gap: 4px; }
 .heat-key.heat-1, .heat-key.heat-2, .heat-key.heat-3 { padding: 2px 8px; border-radius: 6px; border: 1px solid; color: var(--text); }

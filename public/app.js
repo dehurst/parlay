@@ -1543,7 +1543,7 @@ async function renderHeatmap() {
   const g = games.find((x) => x.id === heatGame);
   const kick = (x) => new Date(x.commence).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' });
   const head = `<p class="small muted">Beta: who lines up for each team, from ESPN's current depth charts. Hurt players (Out, Doubtful, IR, suspended) are skipped, so a backup filling in shows up yellow. Tags and the little bars show how a starter got the job, from every week's snap counts this season (nflverse, updated weekly). Hover over a square (or tap it on a phone) for details.</p>
-    <label class="heat-pick">Game <select id="heat-game">${games.map((x) => `<option value="${esc(x.id)}" ${x.id === heatGame ? 'selected' : ''}>${esc(shortMatchup(`${x.away} @ ${x.home}`))} · ${esc(kick(x))}</option>`).join('')}</select></label>
+    <label class="heat-pick">Game <span class="heat-select"><select id="heat-game">${games.map((x) => `<option value="${esc(x.id)}" ${x.id === heatGame ? 'selected' : ''}>${esc(shortMatchup(`${x.away} @ ${x.home}`))} · ${esc(kick(x))}</option>`).join('')}</select></span></label>
     <div class="heat-legend">${[1, 2, 3].map((l) => `<span class="heat-key heat-${l}">${HEAT_LEVELS[l]}</span>`).join('')}${heatTerm('<span class="heat-tag">Q</span> Questionable', 'Listed as questionable for this game')}</div>
     <div class="heat-legend">
       ${heatTerm('<span class="heat-how how-fillin">Fill-in</span>', 'Filling in for a starter who is hurt')}
