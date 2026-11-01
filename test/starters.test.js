@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseSnaps, findPlayer, starterHistory, teamCode, nextUp, usualShare } from '../src/starters.js';
+import { parseSnaps, findPlayer, starterHistory, teamCode, nextUp, usualShare, gamesPlayed } from '../src/starters.js';
 
 const HEAD = 'game_id,pfr_game_id,season,game_type,week,player,pfr_player_id,position,team,opponent,offense_snaps,offense_pct,defense_snaps,defense_pct,st_snaps,st_pct';
 // [week, name, id, pos, team, off%, def%]
@@ -145,4 +145,11 @@ test('usual share uses last season for someone who has barely played this year',
   assert.equal(usualShare(now, last, 'LA', 'Star End').toFixed(2), '0.82');
   assert.equal(usualShare(now, last, 'LA', 'Regular'), 0.6);
   assert.equal(usualShare(now, last, 'LA', 'Nobody'), null);
+});
+
+test('games played this season, for telling who was hurt before Week 1', () => {
+  const t = parseSnaps(csv([[1, 'Played Once', 'po', 'RB', 'ARI', 0.6, 0], [2, 'Every Game', 'eg', 'RB', 'ARI', 0.5, 0], [1, 'Every Game', 'eg', 'RB', 'ARI', 0.5, 0]]));
+  assert.equal(gamesPlayed(t, 'ARI', 'Played Once'), 1);
+  assert.equal(gamesPlayed(t, 'ARI', 'Every Game'), 2);
+  assert.equal(gamesPlayed(t, 'ARI', 'Out All Year'), 0);
 });

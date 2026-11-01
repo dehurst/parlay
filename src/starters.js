@@ -201,6 +201,13 @@ export function nextUp(teams, code, positions, { exclude = [], injuries = new Ma
   return null;
 }
 
+// How many of the team's games this season a player has been on the field for.
+export function gamesPlayed(teams, code, name) {
+  const team = teams?.[code];
+  const me = team && findPlayer(team, name);
+  return me ? team.weeks.filter((w) => me.pct[w] != null).length : 0;
+}
+
 // A player's usual share of snaps when he plays: this season's games, or
 // last season's (on any team) if he's played fewer than 2 this season, like
 // someone hurt early. Null if he hasn't played in either.

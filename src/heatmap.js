@@ -6,7 +6,7 @@
 import { espnSite } from './sport.js';
 import { teamKey } from './schedule.js';
 import { fetchTeamDepthChart, fetchTeamRoster } from './injuries.js';
-import { seasonSnaps, teamCode, starterHistory, nextUp, positionGroup, usualShare } from './starters.js';
+import { seasonSnaps, teamCode, starterHistory, nextUp, positionGroup, usualShare, gamesPlayed } from './starters.js';
 
 // Tags that keep a player off the field; Questionable players still count.
 const SIDELINED = ['Out', 'Doubtful', 'Injured Reserve', 'Suspension'];
@@ -185,7 +185,9 @@ export async function teamHeatmap(name, now = Date.now()) {
     }
     if (teams && athletes) {
       const last = lastSnaps.status === 'fulfilled' ? lastSnaps.value : null;
-      const sidelined = athletes.filter((a) => SIDELINED.includes(a.injuries?.[0]?.status))
+      // Only players who've played for the team this season: someone out since
+      // before Week 1 isn't missed, the team has built around his absence.
+      const sidelined = athletes.filter((a) => SIDELINED.includes(a.injuries?.[0]?.status) && gamesPlayed(teams, teamCode(name), a.displayName) > 0)
         .map((a) => ({ name: a.displayName, status: a.injuries[0].status, group: positionGroup(a.position?.abbreviation) }));
       markFillIns(side, sidelined, (n) => usualShare(teams, last, teamCode(name), n));
     }
