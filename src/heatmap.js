@@ -140,10 +140,10 @@ function unitFor(id) {
 }
 
 // ESPN team ids by our team key, and each team's depth chart, kept in memory
-// for a few hours (depth charts change a few times a week at most).
+// for half an hour, so trades and injury moves show up soon after ESPN has them.
 let teamIds = null;
 const charts = new Map();
-const CHART_TTL = 3 * 3600e3;
+const CHART_TTL = 30 * 60e3;
 
 async function espnTeamId(name) {
   if (!teamIds) {
