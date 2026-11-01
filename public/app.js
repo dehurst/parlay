@@ -1387,7 +1387,7 @@ async function renderStats() {
 // green for a starter, yellow for a backup, red for third string or deeper.
 
 let heatGame = null; // the game shown
-const HEAT_UNITS = [['line', 'Offensive line', 'Defensive line'], ['pass', 'Receivers', 'Secondary'], ['back', 'Backfield', 'Linebackers']];
+const HEAT_UNITS = [['line', 'OL', 'DL'], ['pass', 'WR/TE', 'DB'], ['back', 'QB/RB', 'LB']];
 const HEAT_LEVELS = ['Nobody healthy', 'Starter', 'Backup', '3rd string or deeper'];
 
 // How the player got the job, from every week's snap counts this season.
@@ -1460,12 +1460,27 @@ function heatSummary(side) {
   return how ? `${depth} (${how})` : depth;
 }
 
+// An offensive group's health next to its label: how many of its starting
+// spots are filled by backups, and how many rookies start. 0-1 is green
+// (safe), 2 yellow, 3 red, 4 or more a glistening red.
+const alertLevel = (n) => Math.max(1, Math.min(n, 4));
+function groupHealth(squares) {
+  const slots = squares.filter((s) => !s.extra);
+  const backups = slots.filter((s) => heatLevel(s) !== 1).length;
+  const rookies = slots.filter((s) => s.rookie).length;
+  const health = `<span class="group-alert alert-${alertLevel(backups)}" title="${backups} of ${slots.length} starting spots filled by backups">
+    <span class="group-word">Health</span> ${backups}/${slots.length} backup${backups === 1 ? '' : 's'}</span>`;
+  const young = rookies ? `<span class="group-alert alert-${alertLevel(rookies)}" title="${rookies} of ${slots.length} starters are rookies">
+    <span class="rookie in-key">R</span> ×${rookies}</span>` : '';
+  return health + young;
+}
+
 function heatMatchup(g, offHome, data) {
   const [off, def] = offHome ? [data.home.offense, data.away.defense] : [data.away.offense, data.home.defense];
   const [offTeam, defTeam] = offHome ? [g.home, g.away] : [g.away, g.home];
   const [offShort, defShort] = offHome ? [g.homeShort, g.awayShort] : [g.awayShort, g.homeShort];
   const units = HEAT_UNITS.map(([id, oLabel, dLabel]) => `<div class="heat-unit">
-      <div class="heat-side"><div class="heat-label">${oLabel}</div><div class="heat-row">${off[id].map(heatSquare).join('')}</div></div>
+      <div class="heat-side"><div class="heat-label">${oLabel}${groupHealth(off[id])}</div><div class="heat-row">${off[id].map(heatSquare).join('')}</div></div>
       <div class="heat-vs">vs</div>
       <div class="heat-side"><div class="heat-label">${dLabel}</div><div class="heat-row">${def[id].map(heatSquare).join('')}</div></div>
     </div>`).join('');

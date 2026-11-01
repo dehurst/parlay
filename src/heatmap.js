@@ -65,23 +65,25 @@ const rankOf = (order, id) => (order.includes(id) ? order.indexOf(id) : order.le
 // Squares the depth chart doesn't have, filled from this season's snap counts:
 // the healthy RB and TE with the most snaps after the starter, and a 4th WR.
 const EXTRAS = [
-  { slot: 'rb2', unit: 'back', pos: 'RB', from: ['RB', 'HB'], chart: ['rb'], nth: '2nd RB' },
+  { slot: 'rb2', unit: 'back', pos: 'RB2', from: ['RB', 'HB'], chart: ['rb'], nth: '2nd RB' },
   { slot: 'wr4', unit: 'pass', pos: 'WR', from: ['WR'], chart: ['wr1', 'wr2', 'wr3'], nth: '4th WR' },
-  { slot: 'te2', unit: 'pass', pos: 'TE', from: ['TE'], chart: ['te'], nth: '2nd TE' },
+  { slot: 'te2', unit: 'pass', pos: 'TE2', from: ['TE'], chart: ['te'], nth: '2nd TE' },
 ];
 
-export function addExtras(offense, depthChart, teams, code, opts) {
-  const group = (depthChart?.depthchart ?? []).find((g) => g.positions?.qb);
+export function addExtras(offense, teams, code, opts) {
   const all = () => Object.values(offense).flat();
   for (const x of EXTRAS) {
     if (!offense[x.unit]) continue;
     const exclude = all().flatMap((s) => [s.name, ...s.skipped.map((p) => p.name)]).filter(Boolean);
     const pick = nextUp(teams, code, x.from, { ...opts, exclude });
     if (!pick) continue;
-    // How deep the depth chart has him at that position (3rd string if not listed).
-    const ranks = x.chart.map((id) => (group?.positions?.[id]?.athletes ?? []).findIndex((a) => a.displayName === pick.name)).filter((i) => i >= 0);
+    // These squares are part of the normal rotation, so the usual guy here is
+    // green. Yellow once the room is short: a starter at the position is out
+    // (so this player moved up), or someone with more snaps is sidelined.
+    const starters = offense[x.unit].filter((s) => x.chart.includes(s.slot));
+    const short = pick.skipped.length > 0 || starters.some((s) => s.rank !== 1 || s.history?.tag === 'fillin');
     offense[x.unit].push({
-      slot: x.slot, pos: x.pos, name: pick.name, rank: ranks.length ? Math.max(Math.min(...ranks) + 1, 2) : 3, status: pick.status,
+      slot: x.slot, pos: x.pos, name: pick.name, rank: short ? 2 : 1, status: pick.status,
       skipped: pick.skipped, extra: { nth: x.nth, season: pick.season }, history: { timeline: pick.timeline, recent: pick.recent },
     });
     const order = UNITS.find((u) => u.id === x.unit).o;
@@ -143,7 +145,7 @@ export async function teamHeatmap(name, now = Date.now()) {
     }
   }
   if (teams) {
-    addExtras(sides.offense, chart.value, teams, teamCode(name), { injuries, roster: names });
+    addExtras(sides.offense, teams, teamCode(name), { injuries, roster: names });
     for (const slot of Object.values(sides.offense).flat()) slot.rookie = rookies.has(slot.name);
   }
   charts.set(id, { at: now, sides });
