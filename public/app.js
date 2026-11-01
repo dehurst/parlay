@@ -1406,9 +1406,8 @@ function historyText(h) {
     new: h.replacedGone ? `Took over for ${h.replaced}${since}. He's no longer on the team` : `New starter${since}`,
     part: 'Listed as a starter, but playing well under half the snaps',
   }[h.tag];
-  const weeks = h.timeline?.map((t) => `Wk ${t.week}: ${t.pct == null ? 'did not play' : `${t.pct}%`}`).join(', ');
   const recent = h.recent != null ? `${h.recent}% of snaps the last 3 games` : null;
-  return [text && recent ? `${text} · ${recent}` : text ?? recent, weeks && `Snaps by week: ${weeks}`].filter(Boolean).join('\n');
+  return { text, recent };
 }
 
 // Each week's share of snaps as a tiny bar: bright at half the snaps or more,
@@ -1423,19 +1422,47 @@ const snapBars = (timeline) => (timeline?.length
 // counts as a backup (yellow) even when listed first.
 const heatLevel = (s) => (!s.name ? 0 : s.history?.tag === 'fillin' ? Math.max(Math.min(s.rank, 3), 2) : Math.min(s.rank, 3));
 
+// The squares on the page, by index, for their pop-up details.
+let heatSquares = [];
+
+// A square's details, shown on hover (or a long press on phones): who, how
+// deep, how he got the job, and each week's snaps as a little chart.
+function heatDetails(s) {
+  const level = heatLevel(s);
+  const note = s.rank > 3 ? ` (#${s.rank} on the depth chart)` : s.rank === 1 && level === 2 ? ' (listed first, filling in)' : '';
+  const { text, recent } = historyText(s.history) ?? {};
+  const tag = HEAT_TAGS[s.history?.tag];
+  const rows = [
+    text,
+    recent,
+    s.extra && `${s.extra.nth} by snaps this season: ${s.extra.season}%`,
+    s.status && `Injury status: ${s.status}`,
+    ...s.skipped.map((p) => `${p.name} is ${p.status}`),
+  ].filter(Boolean);
+  const weeks = s.history?.timeline ?? [];
+  const chart = weeks.length ? `<div class="pop-snaps" aria-label="Snaps by week">${weeks.map((t) => `<div class="pop-wk">
+      <span class="pop-pct">${t.pct == null ? '–' : t.pct}</span>
+      <span class="pop-bar">${t.pct == null ? '<i class="none"></i>' : `<i class="${t.pct >= 50 ? 'hi' : 'lo'}" style="height:${Math.max(6, t.pct)}%"></i>`}</span>
+      <span class="pop-wkn">${t.week}</span></div>`).join('')}</div>
+    <div class="pop-caption">% of snaps by week</div>` : '';
+  return `<div class="pop-head">
+      <span class="pop-pos">${esc(s.pos)}</span>
+      <span class="pop-name">${esc(s.name ?? 'Nobody healthy')}</span>
+      ${s.rookie ? '<span class="rookie in-key" title="Rookie">R</span>' : ''}
+      ${s.status === 'Questionable' ? '<span class="heat-tag">Q</span>' : ''}
+    </div>
+    <div class="pop-level">${HEAT_LEVELS[level]}${esc(note)}${tag ? ` <span class="heat-how how-${s.history.tag}">${tag}</span>` : ''}</div>
+    ${rows.map((r) => `<div class="pop-row">${esc(r)}</div>`).join('')}
+    ${chart}`;
+}
+
 function heatSquare(s) {
   const level = heatLevel(s);
-  const tip = [`${s.pos}: ${s.name ?? 'nobody healthy'}`, HEAT_LEVELS[level] + (s.rank > 3 ? ` (#${s.rank} on the depth chart)` : s.rank === 1 && level === 2 ? ' (listed first, filling in)' : '')];
-  if (s.extra) tip.push(`${s.extra.nth} by snaps this season: ${s.extra.season}%`);
-  if (s.rookie) tip.push('Rookie');
-  if (s.status) tip.push(s.status);
-  for (const p of s.skipped) tip.push(`${p.name} is ${p.status}`);
-  const history = historyText(s.history);
-  if (history) tip.push(history);
+  const i = heatSquares.push(s) - 1;
   // Back this week shows as a glowing border instead of a tag.
   const back = s.history?.tag === 'back';
   const tag = back ? null : HEAT_TAGS[s.history?.tag];
-  return `<div class="heat-sq heat-${level}${back ? ' is-back' : ''}" title="${esc(tip.join('\n'))}">
+  return `<div class="heat-sq heat-${level}${back ? ' is-back' : ''}" data-i="${i}" tabindex="0" aria-label="${esc(`${s.pos}: ${s.name ?? 'nobody healthy'}, ${HEAT_LEVELS[level]}`)}">
     <span class="heat-pos">${esc(s.pos)}</span>
     <span class="heat-name">${esc(s.name ? shortName(s.name) : '—')}</span>
     ${tag ? `<span class="heat-how how-${s.history.tag}">${tag}</span>` : ''}
@@ -1522,8 +1549,64 @@ async function renderHeatmap() {
   box.innerHTML = head + '<p class="muted">Loading depth charts…</p>';
   const data = await api(withWeek(`/api/heatmap?game=${encodeURIComponent(heatGame)}`)).catch((err) => (notice(err.message), null));
   if (!data || tab !== 'heatmap' || g.id !== heatGame) return;
+  heatSquares = [];
   box.innerHTML = head + heatMatchup(g, false, data) + heatMatchup(g, true, data);
 }
+
+// The details pop-up: one box, moved to whichever square is hovered,
+// focused, or long-pressed (phones), and kept on screen.
+const heatPop = Object.assign(document.createElement('div'), { className: 'heat-pop', hidden: true });
+heatPop.setAttribute('role', 'tooltip');
+document.body.append(heatPop);
+let heatPopFor = null;
+function showHeatPop(sq) {
+  const s = heatSquares[sq.dataset.i];
+  if (!s) return;
+  heatPopFor = sq;
+  heatPop.className = `heat-pop heat-${heatLevel(s)}`;
+  heatPop.innerHTML = heatDetails(s);
+  heatPop.hidden = false;
+  const r = sq.getBoundingClientRect();
+  const p = heatPop.getBoundingClientRect();
+  const left = Math.min(Math.max(8, r.left + r.width / 2 - p.width / 2), innerWidth - p.width - 8);
+  // Above the square if it fits, else below.
+  const top = r.top - p.height - 8 >= 8 ? r.top - p.height - 8 : Math.min(r.bottom + 8, innerHeight - p.height - 8);
+  heatPop.style.left = `${left}px`;
+  heatPop.style.top = `${Math.max(8, top)}px`;
+}
+function hideHeatPop() {
+  heatPop.hidden = true;
+  heatPopFor = null;
+}
+const heatSq = (e) => e.target.closest?.('.heat-sq[data-i]');
+$('#heatmap').addEventListener('pointerover', (e) => {
+  if (e.pointerType === 'mouse' && heatSq(e)) showHeatPop(heatSq(e));
+});
+$('#heatmap').addEventListener('pointerout', (e) => {
+  if (e.pointerType === 'mouse' && heatPopFor && !heatPopFor.contains(e.relatedTarget)) hideHeatPop();
+});
+$('#heatmap').addEventListener('focusin', (e) => heatSq(e) && showHeatPop(heatSq(e)));
+$('#heatmap').addEventListener('focusout', () => hideHeatPop());
+// Phones: press and hold a square. Moving the finger (scrolling) cancels it,
+// and the pop-up stays until the next touch somewhere else.
+let heatPress = null;
+$('#heatmap').addEventListener('pointerdown', (e) => {
+  if (e.pointerType === 'mouse' || !heatSq(e)) return;
+  const sq = heatSq(e);
+  heatPress = { x: e.clientX, y: e.clientY, timer: setTimeout(() => { showHeatPop(sq); navigator.vibrate?.(10); }, 350) };
+});
+const endPress = () => heatPress && (clearTimeout(heatPress.timer), (heatPress = null));
+$('#heatmap').addEventListener('pointermove', (e) => {
+  if (heatPress && Math.hypot(e.clientX - heatPress.x, e.clientY - heatPress.y) > 10) endPress();
+});
+$('#heatmap').addEventListener('pointerup', endPress);
+$('#heatmap').addEventListener('pointercancel', endPress);
+// A long press would otherwise open the browser's own menu.
+$('#heatmap').addEventListener('contextmenu', (e) => heatSq(e) && e.preventDefault());
+document.addEventListener('pointerdown', (e) => {
+  if (e.pointerType !== 'mouse' && heatPopFor && !heatPopFor.contains(e.target)) hideHeatPop();
+});
+addEventListener('scroll', () => heatPopFor && hideHeatPop(), { passive: true });
 
 // ---- Analysis ----------------------------------------------------------------
 
