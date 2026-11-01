@@ -1519,7 +1519,47 @@ function groupHealth(slots, label) {
   return health + young;
 }
 
-function heatMatchup(g, offHome, data) {
+// Game-day weather at the stadium, 3 hours before kickoff to 4 after: one
+// column per hour (kickoff's outlined), with sky, temperature, wind and the
+// chance of rain. Wind of 15 mph or more turns yellow, 20 or more red, since
+// it's what moves totals and kicking. Domes just say so.
+const WX_ICONS = [[0, '☀️', '🌙'], [2, '⛅', '☁️'], [3, '☁️'], [48, '🌫️'], [57, '🌦️'], [67, '🌧️'], [77, '🌨️'], [82, '🌧️'], [86, '🌨️'], [99, '⛈️']];
+const wxIcon = (code, day) => {
+  const row = WX_ICONS.find(([max]) => code <= max) ?? WX_ICONS.at(-1);
+  return day || !row[2] ? row[1] : row[2];
+};
+const wxWind = (mph) => (mph >= 20 ? 'wx-max' : mph >= 15 ? 'wx-hi' : '');
+const DOME_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 18h18M5 18a7 7 0 0 1 14 0M12 11v7M8.2 12.2 9.5 18M15.8 12.2 14.5 18"/></svg>';
+function heatWeather(w) {
+  if (!w) return '';
+  if (w.roof === 'dome') {
+    return `<div class="heat-wx wx-dome" title="${esc(w.stadium)} has a roof, so weather doesn't matter">${DOME_ICON}<div><b>Dome</b><div class="small">${esc(w.stadium)}</div></div></div>`;
+  }
+  if (!w.hours?.length) return `<div class="heat-wx wx-none small muted">Forecast not out yet · ${esc(w.stadium)}</div>`;
+  const kickHour = Math.floor(new Date(w.kickoff).getTime() / 3600e3);
+  const at = w.hours.find((h) => Math.floor(new Date(h.time).getTime() / 3600e3) === kickHour) ?? w.hours[0];
+  const round = (x) => Math.round(x);
+  const summary = [`${round(at.temp)}°`, `wind ${round(at.wind)} mph${at.gusts >= at.wind + 5 ? ` (gusts ${round(at.gusts)})` : ''}`, `${at.rain ?? 0}% rain`].join(' · ');
+  const cols = w.hours.map((h) => {
+    const time = new Date(h.time).toLocaleTimeString([], { hour: 'numeric' }).replace(/\s?([AP])M/i, (_, x) => x.toLowerCase());
+    const kick = h === at;
+    const tip = `${new Date(h.time).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}: ${round(h.temp)}°F, wind ${round(h.wind)} mph (gusts ${round(h.gusts)}), ${h.rain ?? 0}% chance of rain`;
+    return `<div class="wx-hr${kick ? ' wx-kick' : ''}" title="${esc(tip)}">
+      <span class="wx-time">${kick ? 'Kick' : time}</span>
+      <span class="wx-icon">${wxIcon(h.code, h.day)}</span>
+      <span class="wx-temp">${round(h.temp)}°</span>
+      <span class="wx-wind ${wxWind(h.wind)}"><i style="transform:rotate(${h.dir ?? 0}deg)">↓</i>${round(h.wind)}</span>
+      <span class="wx-rain${h.rain >= 50 ? ' wx-wet' : ''}">${h.rain ?? 0}%</span>
+    </div>`;
+  }).join('');
+  return `<div class="heat-wx">
+    <div class="wx-head"><b>Kickoff:</b> ${summary}${w.roof === 'retractable' ? ' · <span class="muted">retractable roof</span>' : ''}</div>
+    <div class="wx-hours">${cols}</div>
+    <div class="wx-key">° F · wind mph · chance of rain · ${esc(w.stadium)}</div>
+  </div>`;
+}
+
+function heatMatchup(g, offHome, data, weather = '') {
   const [off, def] = offHome ? [data.home.offense, data.away.defense] : [data.away.offense, data.home.defense];
   const [offTeam, defTeam] = offHome ? [g.home, g.away] : [g.away, g.home];
   const [offShort, defShort] = offHome ? [g.homeShort, g.awayShort] : [g.awayShort, g.homeShort];
@@ -1529,8 +1569,10 @@ function heatMatchup(g, offHome, data) {
       <div class="heat-side"><div class="heat-label">${dLabel}${groupHealth(def[id], dLabel)}</div><div class="heat-row">${def[id].map(heatSquare).join('')}</div></div>
     </div>`).join('');
   return `<div class="card heat-card">
-    <h3 class="heat-title">${teamLogo(offTeam, 'small')}${esc(offShort)} offense <span class="muted">vs</span> ${teamLogo(defTeam, 'small')}${esc(defShort)} defense</h3>
-    <div class="small muted">${esc(offShort)}: ${heatSummary(off)} · ${esc(defShort)}: ${heatSummary(def)}</div>
+    <div class="heat-head"><div class="heat-head-text">
+      <h3 class="heat-title">${teamLogo(offTeam, 'small')}${esc(offShort)} offense <span class="muted">vs</span> ${teamLogo(defTeam, 'small')}${esc(defShort)} defense</h3>
+      <div class="small muted">${esc(offShort)}: ${heatSummary(off)} · ${esc(defShort)}: ${heatSummary(def)}</div>
+    </div>${weather}</div>
     ${units}
   </div>`;
 }
@@ -1566,7 +1608,7 @@ async function renderHeatmap() {
   const data = await api(withWeek(`/api/heatmap?game=${encodeURIComponent(heatGame)}`)).catch((err) => (notice(err.message), null));
   if (!data || tab !== 'heatmap' || g.id !== heatGame) return;
   heatSquares = [];
-  box.innerHTML = head + heatMatchup(g, false, data) + heatMatchup(g, true, data);
+  box.innerHTML = head + heatMatchup(g, false, data, heatWeather(data.weather)) + heatMatchup(g, true, data);
 }
 
 // The details pop-up: one box, moved to whichever square is hovered,

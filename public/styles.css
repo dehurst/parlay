@@ -519,6 +519,33 @@ h3.section.first { margin-top: 4px; }
 .heat-legend { display: flex; flex-wrap: wrap; gap: 6px 12px; margin-bottom: 12px; font-size: 12px; color: var(--muted); }
 .heat-key { display: inline-flex; align-items: center; gap: 4px; }
 .heat-key.heat-1, .heat-key.heat-2, .heat-key.heat-3 { padding: 2px 8px; border-radius: 6px; border: 1px solid; color: var(--text); }
+/* A matchup card's heading, with the game-day weather to its right (under
+   it on phones). */
+.heat-head { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 10px 16px; }
+.heat-head-text { flex: 1 1 280px; min-width: 0; }
+.heat-wx { flex: 0 1 auto; max-width: 100%; padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; background: rgba(255, 255, 255, .03); font-size: 12px; }
+.wx-head { margin-bottom: 4px; }
+.wx-hours { display: flex; gap: 2px; overflow-x: auto; }
+.wx-hr { display: flex; flex-direction: column; align-items: center; gap: 1px; min-width: 38px; padding: 3px 2px; border: 1px solid transparent; border-radius: 6px; line-height: 1.25; }
+.wx-hr.wx-kick { border-color: #2fbf71; background: rgba(47, 191, 113, .18); }
+.wx-time { font-size: 10px; color: var(--muted); }
+.wx-kick .wx-time { color: #9be9a8; font-weight: 700; }
+.wx-icon { font-size: 15px; }
+.wx-temp { font-weight: 700; }
+.wx-wind { font-size: 11px; white-space: nowrap; }
+.wx-wind i { display: inline-block; font-style: normal; margin-right: 1px; opacity: .8; }
+.wx-hi { color: #ffe25c; font-weight: 700; }
+.wx-max { color: #ff7a7f; font-weight: 800; }
+.wx-rain { font-size: 10px; color: var(--muted); }
+.wx-wet { color: #8cc8ff; font-weight: 700; }
+.wx-key { margin-top: 3px; font-size: 10px; color: var(--muted); }
+.wx-dome { display: flex; align-items: center; gap: 8px; }
+/* Phones: the weather box spans the card and the hours share its width. */
+@media (max-width: 600px) {
+  .heat-wx:not(.wx-dome) { flex-basis: 100%; }
+  .wx-hr { flex: 1 1 0; min-width: 0; padding: 3px 0; }
+}
+.wx-dome svg { width: 28px; height: 28px; fill: none; stroke: #9be9a8; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
 .heat-title { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; margin: 0 0 2px; }
 .heat-unit { display: grid; grid-template-columns: 1fr auto 1fr; gap: 10px; align-items: start; padding: 12px 0; border-top: 1px solid var(--line); margin-top: 10px; }
 .heat-label { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-height: 20px; font-size: 14px; font-weight: 700; letter-spacing: .04em; color: var(--text); margin-bottom: 6px; }

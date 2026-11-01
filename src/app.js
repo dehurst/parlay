@@ -17,6 +17,7 @@ import { analyzeWeek } from './analysis.js';
 import { seasonYear, fetchSeasonWeek, parseSeasonWeek, mergeWeek, fetchGameLine, buildTeams, fetchGameTeamStats, regularSeasonWeeks } from './research.js';
 import { fetchTeamRoster, fetchTeamDepthChart, teamInjuries, dropStaleHistory, weekOf } from './injuries.js';
 import { teamHeatmap } from './heatmap.js';
+import { gameWeather } from './weather.js';
 import { canSpend, spend, limitFor, easternDate, easternWeekday, LINES_COST, SCORES_COST } from './credits.js';
 import { sport, runInSport, inSlate, SPORTS } from './sport.js';
 
@@ -1128,9 +1129,11 @@ app.get('/api/heatmap', async (req, res, next) => {
     const { gamesById } = await loadWeek({ key: requestedWeek(req) });
     const game = gamesById.get(String(req.query.game ?? ''));
     if (!game) return res.status(404).json({ error: 'That game isn’t on this week’s schedule.' });
-    const [away, home] = await Promise.all([teamHeatmap(game.away), teamHeatmap(game.home)]);
+    // Weather is extra: the heat map still shows without it.
+    const [away, home, weather] = await Promise.all([teamHeatmap(game.away), teamHeatmap(game.home),
+      gameWeather(game).catch((err) => (console.error(`Weather failed: ${err.message}`), null))]);
     if (!away || !home) return res.status(503).json({ error: 'Couldn’t get depth charts from ESPN. Try again in a few minutes.' });
-    res.json({ away, home });
+    res.json({ away, home, weather });
   } catch (err) {
     next(err);
   }
