@@ -209,6 +209,8 @@ table.league tr.team-row:hover td { background: rgba(255, 255, 255, .03); }
 .rename-form input { flex: 1; min-width: 140px; padding: 6px 10px; font-weight: 600; }
 .rename-form .primary { padding: 6px 12px; }
 
+.stakes-form { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 6px 0; }
+.stakes-form .stake-box input { width: 64px; }
 .delete-row { margin-top: 8px; display: flex; align-items: center; gap: 6px; }
 
 .past-banner {

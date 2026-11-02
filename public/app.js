@@ -2062,6 +2062,7 @@ function leagueHtml(teams) {
 }
 
 let placingId = null; // Bet Slip parlay whose payout box is open
+let stakesEditId = null; // Bet Slip parlay whose "Edit stakes" form is open
 
 // quiet: same as renderParlays (no placeholder, keep your scroll spot).
 async function renderSlip(quiet = false) {
@@ -2107,7 +2108,12 @@ async function renderSlip(quiet = false) {
       <ul class="graded-legs">${legs}</ul>
       <table class="slip">
         <thead><tr><th>Who</th><th class="num">Stake</th><th class="num">Profit</th><th class="num">Payout</th></tr></thead>
-        <tbody>${rows}</tbody>
+        <tbody>${stakesEditId === p.id && !p.placed && !past ? `<tr><td colspan="4">
+          <form class="stakes-form" data-id="${esc(p.id)}">
+            ${week.players.map((who) => `<label class="stake-box">${esc(who)} $<input type="number" name="${esc(who)}" inputmode="decimal" min="0" step="1" value="${p.stakes[who] ?? ''}" placeholder="0"></label>`).join('')}
+            <button type="submit" class="primary">Save</button>
+            <button type="button" class="link small" data-act="cancel-stakes">Cancel</button>
+          </form></td></tr>` : rows}</tbody>
         <tfoot><tr><th>Total</th><th class="num">${money(p.total)}</th><th class="num">${money(p.payout - p.total)}</th><th class="num">${money(p.payout)}</th></tr></tfoot>
       </table>
       <div class="place-row">
@@ -2131,6 +2137,7 @@ async function renderSlip(quiet = false) {
              <button type="button" class="link" data-place="${esc(p.id)}" data-val="0">Undo</button>`
           : `<button type="button" class="primary" data-edit-payout="${esc(p.id)}">Mark placed</button>
              <span class="small muted">Tap after you've placed it at ${esc(data.book ?? 'the sportsbook')}.</span>
+             <button type="button" class="link small" data-edit-stakes="${esc(p.id)}">Edit stakes</button>
              ${deleteHtml(p, true)}`}
       </div>
       ${['won', 'push'].includes(p.status) ? `<div class="place-row">
@@ -2421,6 +2428,21 @@ $('#parlays').addEventListener('click', (e) => {
   if (copy && editable.has(copy.dataset.editCopy)) copyAndEdit(editable.get(copy.dataset.editCopy));
 });
 $('#slip').addEventListener('submit', async (e) => {
+  // Edit stakes: everyone's amounts on a bet that isn't placed yet.
+  const stakesForm = e.target.closest('.stakes-form');
+  if (stakesForm) {
+    e.preventDefault();
+    const stakes = Object.fromEntries(week.players.map((who) => [who, Number(stakesForm.elements[who]?.value || 0)]));
+    try {
+      await api('/api/stakes-all', { method: 'POST', body: { name: me, id: stakesForm.dataset.id, stakes } });
+      stakesEditId = null;
+      notice(null);
+    } catch (err) {
+      notice(err.message);
+    }
+    renderSlip(true);
+    return;
+  }
   const form = e.target.closest('.payout-form');
   if (!form) return;
   e.preventDefault();
@@ -2450,6 +2472,17 @@ $('#slip').addEventListener('click', async (e) => {
     placingId = open.dataset.editPayout;
     await renderSlip(true);
     $('.payout-form input')?.select();
+    return;
+  }
+  const editStakes = e.target.closest('[data-edit-stakes]');
+  if (editStakes) {
+    stakesEditId = editStakes.dataset.editStakes;
+    renderSlip(true);
+    return;
+  }
+  if (e.target.closest('[data-act="cancel-stakes"]')) {
+    stakesEditId = null;
+    renderSlip(true);
     return;
   }
   if (e.target.closest('[data-act="cancel-place"]')) {

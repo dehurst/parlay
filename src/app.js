@@ -793,6 +793,35 @@ app.post('/api/rename', async (req, res, next) => {
 // Put money on a parlay (or change/remove it with amount 0). The parlay is
 // saved as it is right now, so it stays on the bet slip even after kickoff or
 // if picks later change.
+// Set everyone's stakes on a bet that isn't marked placed yet: for whoever
+// places it, when people chipped in at the last second. Allowed while its
+// games are under way, but not once any of them has a final score.
+app.post('/api/stakes-all', async (req, res, next) => {
+  try {
+    const name = checkPlayer(req, res);
+    if (!name) return;
+    const key = weekWindow().key;
+    const saved = store.data.stakes[key]?.[String(req.body.id ?? '')];
+    if (!saved) return res.status(404).json({ error: 'That bet isn’t on the slip anymore. Refresh and try again.' });
+    if (saved.placed) return res.status(409).json({ error: `${saved.placed.by} already marked it placed, so stakes are locked. Undo that first.` });
+    const results = store.data.results[key] ?? {};
+    if (saved.legs.some((l) => results[l.gameId])) return res.status(409).json({ error: 'One of its games is over, so stakes can’t change now.' });
+    const stakes = {};
+    for (const [who, value] of Object.entries(req.body.stakes ?? {})) {
+      if (!players.includes(who)) continue;
+      const amt = Math.round(Number(value || 0) * 100) / 100;
+      if (!Number.isFinite(amt) || amt < 0 || amt > 10000) return res.status(400).json({ error: 'Stakes go from $0 to $10,000.' });
+      if (amt > 0) stakes[who] = amt;
+    }
+    if (!Object.keys(stakes).length) return res.status(400).json({ error: 'Someone needs money on it. To drop it entirely, use Delete.' });
+    saved.stakes = stakes;
+    await save();
+    res.json({ stakes });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // Delete a parlay nobody placed (say the bet never got in at the sportsbook).
 // Works on any week, so a never-placed parlay doesn't count in Stats. Placed
 // ones can't be deleted: undo "placed" first.
