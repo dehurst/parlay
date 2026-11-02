@@ -181,3 +181,25 @@ test('out-snapped: never for linemen who both start, or over a regular back from
   assert.equal(outsnapped(t, 'BAL', 'Rookie Back', 'Healed Runner', 0.5), false);
   assert.equal(outsnapped(t, 'BAL', 'Rookie Back', 'Healed Runner', 0.1), true);
 });
+
+test('usual share follows a traded player to his old team, by exact name', () => {
+  const now = parseSnaps(csv([
+    [1, 'Jeffery Simmons', 'js', 'DT', 'TEN', 0, 0.86], [2, 'Jeffery Simmons', 'js', 'DT', 'TEN', 0, 0.88],
+    [1, 'Justin Simmons', 'jus', 'S', 'ATL', 0, 0.9],
+  ]));
+  assert.equal(usualShare(now, null, 'CHI', 'Jeffery Simmons'), 0.87);
+  assert.equal(lastSeason(now, 'CHI', 'Jeffery Simmons').games, 2);
+});
+
+test('a clear starter last season who left the opener hurt and took the job back is not a fill-in', () => {
+  const t = parseSnaps(csv([
+    [1, 'Old Starter', 'os', 'QB', 'SEA', 0.1, 0], [3, 'Old Starter', 'os', 'QB', 'SEA', 1, 0], [4, 'Old Starter', 'os', 'QB', 'SEA', 1, 0],
+    [1, 'Spot Starter', 'ss', 'QB', 'SEA', 0.9, 0], [2, 'Spot Starter', 'ss', 'QB', 'SEA', 1, 0],
+  ]));
+  const slot = { name: 'Old Starter', skipped: [] };
+  const h = starterHistory(t, 'SEA', slot, { proven: (n) => n === 'Old Starter' });
+  assert.equal(h.tag, 'week1');
+  assert.deepEqual(h.missed, [1, 2]);
+  // Without last season to go on, he looks like the backup taking over.
+  assert.notEqual(starterHistory(t, 'SEA', slot).tag, 'week1');
+});

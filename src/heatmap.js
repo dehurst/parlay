@@ -185,11 +185,19 @@ export async function teamHeatmap(name, now = Date.now()) {
   const names = athletes?.map((a) => a.displayName) ?? null;
   // Rookies: ESPN lists them with 0 years in the league.
   const rookies = new Set((athletes ?? []).filter((a) => a.experience?.years === 0).map((a) => a.displayName));
+  const code = teamCode(name);
+  // Last season tells us about veterans only; rookies have none.
+  const last = (n) => (rookies.has(n) || lastSnaps.status !== 'fulfilled' ? null : lastSnaps.value);
+  // A clear starter last season, here or anywhere.
+  const proven = (n) => {
+    const before = lastSeason(last(n), code, n);
+    return Boolean(before && before.games >= PROVEN.games && before.share >= PROVEN.share);
+  };
   for (const side of Object.values(sides)) {
     const slots = Object.values(side).flat();
     for (const slot of slots) slot.rookie = rookies.has(slot.name);
     const starters = slots.map((s) => s.name).filter(Boolean);
-    const opts = { injuries, roster: names, starters };
+    const opts = { injuries, roster: names, starters, proven };
     // Each job lost goes to one replacement: whoever took over first.
     const first = new Map(slots.map((s) => [s, starterHistory(teams, teamCode(name), s, opts)?.since ?? Infinity]));
     const taken = new Set();
@@ -197,15 +205,8 @@ export async function teamHeatmap(name, now = Date.now()) {
       slot.history = starterHistory(teams, teamCode(name), slot, { ...opts, taken });
     }
     if (teams && athletes) {
-      const code = teamCode(name);
-      // Last season tells us about veterans only; rookies have none.
-      const last = (n) => (rookies.has(n) || lastSnaps.status !== 'fulfilled' ? null : lastSnaps.value);
       // Someone out since before Week 1 is missed only if he was a clear
       // starter last season; otherwise the team has built around his absence.
-      const proven = (n) => {
-        const before = lastSeason(last(n), code, n);
-        return before && before.games >= PROVEN.games && before.share >= PROVEN.share;
-      };
       const sidelined = athletes.filter((a) => SIDELINED.includes(a.injuries?.[0]?.status) && (gamesPlayed(teams, code, a.displayName) > 0 || proven(a.displayName)))
         .map((a) => ({ name: a.displayName, status: a.injuries[0].status, group: positionGroup(a.position?.abbreviation) }));
       markFillIns(side, sidelined, { share: (n) => usualShare(teams, last(n), code, n), ahead: (a, b) => outsnapped(teams, code, a, b, lastSeason(last(b), code, b)?.share) });

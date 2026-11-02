@@ -95,9 +95,10 @@ export const timelineOf = (team, p) => team.weeks.map((week) => ({ week, pct: p?
 // each week's share. `teams` is every team's snaps and `code` this one's;
 // `injuries` maps name -> ESPN injury status for the team's roster, `roster`
 // lists everyone on it (null if unknown), `starters` names everyone starting
-// on this side now, and `taken` collects players already named as replaced
-// (each job goes to one replacement). Returns null when we can't tell.
-export function starterHistory(teams, code, slot, { injuries = new Map(), roster = null, starters = [], taken = new Set() } = {}) {
+// on this side now, `taken` collects players already named as replaced
+// (each job goes to one replacement), and `proven(name)` says whether he was
+// a clear starter last season. Returns null when we can't tell.
+export function starterHistory(teams, code, slot, { injuries = new Map(), roster = null, starters = [], taken = new Set(), proven = () => false } = {}) {
   const team = teams?.[code];
   if (!team || !slot.name || !team.weeks.length) return null;
   const me = findPlayer(team, slot.name);
@@ -151,6 +152,9 @@ export function starterHistory(teams, code, slot, { injuries = new Map(), roster
   if (before.every((w) => me.pct[w] == null) && from()) return { tag: 'trade', since, from: from(), ...base };
   // Missed only the opening game or two, then started: a starter who was hurt.
   if (start < GAP && before.every((w) => me.pct[w] == null)) return { tag: 'week1', since, missed: before, ...base };
+  // A clear starter last season who left the opener early or sat a game or
+  // two, then took the job back: the starter, hurt early, not a fill-in.
+  if (start <= GAP && proven(slot.name)) return { tag: 'week1', since, missed: before, ...base };
 
   // A regular for the first time from `since`: whose job was it? Someone at
   // his position who was a regular the game before and isn't now.
@@ -208,12 +212,23 @@ export function gamesPlayed(teams, code, name) {
   return me ? team.weeks.filter((w) => me.pct[w] != null).length : 0;
 }
 
+// A player's snap record in a season's `teams`: on team `code`, or else
+// (traded, or signed since) the one other team with that exact name, or the
+// one with a close match ("D.J." / "DJ"). [team, player], or [] if unclear.
+function findAnywhere(teams, code, name) {
+  const own = teams?.[code] && findPlayer(teams[code], name);
+  if (own) return [teams[code], own];
+  const found = Object.values(teams ?? {}).map((t) => [t, findPlayer(t, name)]).filter(([, p]) => p);
+  const exact = found.filter(([, p]) => [...p.names].some((n) => fullKey(n) === fullKey(name)));
+  if (exact.length === 1) return exact[0];
+  return found.length === 1 ? found[0] : [];
+}
+
 // Last season for a player: { share (when he played), games }, on this team
-// or the one team that had someone by that name. Null if he didn't play
-// (rookies: pass no `lastTeams`, so a namesake isn't mistaken for them).
+// or wherever he played. Null if he didn't play (rookies: pass no
+// `lastTeams`, so a namesake isn't mistaken for them).
 export function lastSeason(lastTeams, code, name) {
-  const found = Object.entries(lastTeams ?? {}).map(([c, t]) => [c, t, findPlayer(t, name)]).filter(([, , p]) => p);
-  const [, t, p] = found.find(([c]) => c === code) ?? (found.length === 1 ? found[0] : []);
+  const [t, p] = findAnywhere(lastTeams, code, name);
   const played = p ? t.weeks.filter((w) => p.pct[w] != null) : [];
   return played.length ? { share: avg(p, played), games: played.length } : null;
 }
@@ -222,8 +237,9 @@ export function lastSeason(lastTeams, code, name) {
 // last season's if he's played fewer than 2 this season, like someone hurt
 // early. Null if he hasn't played in either.
 export function usualShare(teams, lastTeams, code, name) {
-  const team = teams?.[code];
-  const me = team && findPlayer(team, name);
+  // This season's games for his team now, or for his old one if he was
+  // traded and hasn't played for the new one yet.
+  const [team, me] = findAnywhere(teams, code, name);
   const played = me ? team.weeks.filter((w) => me.pct[w] != null) : [];
   const now = played.length ? avg(me, played) : null;
   if (played.length >= 2) return now;
