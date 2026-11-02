@@ -28,7 +28,8 @@ const {
   BOOKMAKER = 'fanduel',
   DAILY_CREDIT_LIMIT = '16',
   SUNDAY_CREDIT_LIMIT = '30',
-  PLAYERS = 'Daniel,Asher,Matt,Robi',
+  PLAYERS = 'Daniel,Asher,Matt',
+  VIEWERS = 'Robi', // view-only logins: can look at everything, change nothing (comma-separated)
   GROUP_CODE = '',
   LOGINS = '', // "matt:password,daniel:password,..." (set in Vercel, never in the code)
   SESSION_SECRET = '',
@@ -61,7 +62,8 @@ const canEditStakes = (name) => !!name && stakeEditors.includes(name.toLowerCase
 
 // Logins: on once LOGINS is set. Sessions are signed with SESSION_SECRET, or
 // one derived from LOGINS (changing a password logs everyone out).
-const logins = parseLogins(LOGINS, players);
+const viewers = VIEWERS.split(',').map((p) => p.trim()).filter((v) => v && !players.includes(v));
+const logins = parseLogins(LOGINS, [...players, ...viewers]);
 const authOn = logins.size > 0;
 const sessionSecret = SESSION_SECRET || createHash('sha256').update(`parlay-session:${LOGINS}`).digest('hex');
 if (!authOn) console.log('No LOGINS set: the site is open to anyone with the link.');
@@ -116,8 +118,17 @@ app.use('/api', (req, res, next) => {
 app.use('/api', (req, res, next) => {
   if (!authOn) return next();
   const player = readToken(cookieValue(req.headers.cookie, COOKIE), sessionSecret);
-  if (!player || !players.includes(player)) return res.status(401).json({ error: 'Please log in.', login: true });
+  if (!player || !(players.includes(player) || viewers.includes(player))) return res.status(401).json({ error: 'Please log in.', login: true });
   req.player = player;
+  req.viewer = viewers.includes(player);
+  next();
+});
+
+// View-only logins can look at everything but change nothing.
+app.use('/api', (req, res, next) => {
+  if (req.viewer && req.method !== 'GET') {
+    return res.status(403).json({ error: 'This is a view-only account: you can look around, but not make changes.' });
+  }
   next();
 });
 
@@ -415,7 +426,7 @@ app.get('/api/week', async (req, res, next) => {
   try {
     await refreshResults(); // free (ESPN), at most every 10 min, so finished games show scores
     const past = requestedWeek(req);
-    const { win, games, schedule, lines, warning, limitHit } = await loadWeek({ refreshLines: !past && req.query.refresh === '1', key: past });
+    const { win, games, schedule, lines, warning, limitHit } = await loadWeek({ refreshLines: !past && !req.viewer && req.query.refresh === '1', key: past });
     const now = new Date();
     const me = req.player ?? (players.includes(req.query.me) ? req.query.me : null);
     const currentKey = weekWindow().key;
@@ -455,7 +466,8 @@ app.get('/api/week', async (req, res, next) => {
       // Manual refreshes: Sundays only.
       manualLeft: live ? manualLeft(now) : 0,
       manualPerSunday: SUNDAY_MANUAL_REFRESHES,
-      canEditStakes: canEditStakes(me), // "Edit stakes" on the Bet Slip
+      canEditStakes: !req.viewer && canEditStakes(me), // "Edit stakes" on the Bet Slip
+      viewer: !!req.viewer, // a view-only login
       limitHit,
     });
   } catch (err) {

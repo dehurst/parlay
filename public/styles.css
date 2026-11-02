@@ -211,6 +211,14 @@ table.league tr.team-row:hover td { background: rgba(255, 255, 255, .03); }
 
 .stakes-form { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 6px 0; }
 .stakes-form .stake-box input { width: 64px; }
+/* View-only login: hide everything that changes something. (The server
+   refuses those changes anyway; this keeps the page from offering them.) */
+body.viewer #submit-bar, body.viewer #calc-post, body.viewer #refresh, body.viewer #clear-picks,
+body.viewer .stake-form, body.viewer #build-custom, body.viewer .edit-copy, body.viewer .rename,
+body.viewer .delete-row, body.viewer [data-delete], body.viewer .place-row button, body.viewer [data-slip-out],
+body.viewer [data-edit-stakes], body.viewer #late-toggle { display: none !important; }
+body.viewer .react { pointer-events: none; }
+
 .delete-row { margin-top: 8px; display: flex; align-items: center; gap: 6px; }
 
 .past-banner {

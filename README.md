@@ -6,7 +6,7 @@ the plays most of you agree on and builds a few parlays out of them.
 - **Weekly schedule and FanDuel lines** from [The Odds API](https://the-odds-api.com)
   (free key). The week runs Tuesday to Tuesday, so Thursday, Sunday, and
   Monday games are all included. ESPN is a backup for the schedule.
-- **Players**: Daniel, Asher, Matt, and Robi (set with `PLAYERS`). Pick your name
+- **Players**: Daniel, Asher, and Matt (set with `PLAYERS`); Robi has a view-only login (`VIEWERS`). Pick your name
   and the site remembers you on that device.
 - **My Picks**: tap a spread, total, or moneyline to select it, tap again to
   remove it. Picks stay private until you hit **Submit**, which saves them at
@@ -134,7 +134,8 @@ Settings (in `.env` or as environment variables):
 | Variable | Default | What it does |
 | --- | --- | --- |
 | `ODDS_API_KEY` | _(empty)_ | The Odds API key. Needed for lines, so picks need it too |
-| `PLAYERS` | `Daniel,Asher,Matt,Robi` | Who's in the group, comma-separated |
+| `PLAYERS` | `Daniel,Asher,Matt` | Who's in the group, comma-separated |
+| `VIEWERS` | `Robi` | View-only logins: can see every tab but change nothing (needs a LOGINS entry too) |
 | `BOOKMAKER` | `fanduel` | Book to pull lines from (`draftkings`, `betmgm`, `williamhill_us`, ...) |
 | `DAILY_CREDIT_LIMIT` | `16` | Backstop: most credits line refreshes can spend per day (Eastern) |
 | `SUNDAY_CREDIT_LIMIT` | `30` | The same, on Sundays |

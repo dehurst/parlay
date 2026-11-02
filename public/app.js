@@ -107,7 +107,9 @@ async function load(refresh = false) {
     ${details ? `<span class="meta-details">${details}</span>` : ''}`;
   $('#schedule-meta').hidden = isPast();
 
-  if (me && !week.players.includes(me)) me = null;
+  // A view-only login isn't one of the players, and that's fine.
+  document.body.classList.toggle('viewer', !!week.viewer);
+  if (me && !week.players.includes(me) && !week.viewer) me = null;
   if (!me) return showJoin();
   $('#join').hidden = true;
   $('#tabs').hidden = false;
@@ -178,7 +180,7 @@ function renderWho() {
   // Who you are, as a small chip; tap it to switch.
   // With logins it's a log out button; without, tap to switch player.
   $('#who').innerHTML = week.auth
-    ? `<span class="me-chip static">${esc(me)}</span><button class="link small" id="logout" type="button">Log out</button>`
+    ? `${week.viewer ? '<span class="chip tag">View only</span>' : ''}<span class="me-chip static">${esc(me)}</span><button class="link small" id="logout" type="button">Log out</button>`
     : `<button class="me-chip" id="switch" type="button" title="Switch player">${esc(me)} <span class="muted">⇄</span></button>`;
 }
 
@@ -445,7 +447,9 @@ function renderGames() {
   const locked = isLocked() && !calc;
   const allStarted = !openGames().length;
   const n = submittedPicks()?.length ?? 0;
-  $('#picks-hint').textContent = isPast()
+  $('#picks-hint').textContent = week.viewer && !calc
+    ? 'View-only account: look around anywhere. The Board shows everyone’s picks, and Build a parlay works as a calculator.'
+    : isPast()
     ? (n ? `Your ${n} pick${n === 1 ? '' : 's'} for ${week.label}, graded once each game finished.` : `You didn't submit picks for ${week.label}.`)
     : !calc && allStarted && hasSubmitted()
     ? `Every game this week has kicked off, so picks are locked. Next week's games show up Tuesday at 6 AM Eastern.`
@@ -497,7 +501,8 @@ function renderGames() {
       // While editing, picks on games that have started can't change: show a lock.
       const lockedPick = !calc && isEditing() && g.started && mine.has(key) && !result;
       const mark = lockedPick ? '🔒' : { win: '✓', loss: '✗', push: 'P', right: '✓' }[result];
-      const disabled = locked || g.started || !line;
+      // View-only: picks can't be made (the payout calculator still works).
+      const disabled = locked || (week.viewer && !calc) || g.started || !line;
       // Friends' picks aren't shown here, so everyone picks on their own.
       const titles = { win: 'Your pick won', loss: 'Your pick lost', push: 'Push', right: 'This side won' };
       // Your picks get a padlock: tap it to make the pick a lock (you're sure
