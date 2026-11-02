@@ -2137,7 +2137,7 @@ async function renderSlip(quiet = false) {
              <button type="button" class="link" data-place="${esc(p.id)}" data-val="0">Undo</button>`
           : `<button type="button" class="primary" data-edit-payout="${esc(p.id)}">Mark placed</button>
              <span class="small muted">Tap after you've placed it at ${esc(data.book ?? 'the sportsbook')}.</span>
-             <button type="button" class="link small" data-edit-stakes="${esc(p.id)}">Edit stakes</button>
+             ${week.canEditStakes ? `<button type="button" class="link small" data-edit-stakes="${esc(p.id)}">Edit stakes</button>` : ''}
              ${deleteHtml(p, true)}`}
       </div>
       ${['won', 'push'].includes(p.status) ? `<div class="place-row">

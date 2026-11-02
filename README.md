@@ -139,6 +139,7 @@ Settings (in `.env` or as environment variables):
 | `DAILY_CREDIT_LIMIT` | `16` | Backstop: most credits line refreshes can spend per day (Eastern) |
 | `SUNDAY_CREDIT_LIMIT` | `30` | The same, on Sundays |
 | `LOGINS` | _(empty)_ | Turns on the login page: `matt:pass,daniel:pass,asher:pass` (usernames match players). Set it in Vercel, not in the repo |
+| `STAKE_EDITORS` | `Daniel` | Who can set everyone's stakes with **Edit stakes** on the Bet Slip (comma-separated) |
 | `SESSION_SECRET` | _(from LOGINS)_ | Optional key that signs login sessions (60 days) |
 | `GROUP_CODE` | _(empty)_ | Optional shared code friends enter before they can use the site |
 | `SEASON_START` | Tuesday after Labor Day | Sets the "Week N" label (YYYY-MM-DD, a Tuesday) |

@@ -32,6 +32,7 @@ const {
   GROUP_CODE = '',
   LOGINS = '', // "matt:password,daniel:password,..." (set in Vercel, never in the code)
   SESSION_SECRET = '',
+  STAKE_EDITORS = 'Daniel', // who can set other people's stakes on the Bet Slip (comma-separated)
   DATA_FILE = join(root, 'data', 'db.json'),
   CFB_DATA_FILE = join(root, 'data', 'cfb.json'),
 } = process.env;
@@ -55,6 +56,8 @@ const BOOK_NAMES = { fanduel: 'FanDuel', draftkings: 'DraftKings', betmgm: 'BetM
 const bookName = BOOK_NAMES[BOOKMAKER] ?? BOOKMAKER;
 
 const players = PLAYERS.split(',').map((p) => p.trim()).filter(Boolean);
+const stakeEditors = STAKE_EDITORS.split(',').map((p) => p.trim().toLowerCase()).filter(Boolean);
+const canEditStakes = (name) => !!name && stakeEditors.includes(name.toLowerCase());
 
 // Logins: on once LOGINS is set. Sessions are signed with SESSION_SECRET, or
 // one derived from LOGINS (changing a password logs everyone out).
@@ -452,6 +455,7 @@ app.get('/api/week', async (req, res, next) => {
       // Manual refreshes: Sundays only.
       manualLeft: live ? manualLeft(now) : 0,
       manualPerSunday: SUNDAY_MANUAL_REFRESHES,
+      canEditStakes: canEditStakes(me), // "Edit stakes" on the Bet Slip
       limitHit,
     });
   } catch (err) {
@@ -800,6 +804,7 @@ app.post('/api/stakes-all', async (req, res, next) => {
   try {
     const name = checkPlayer(req, res);
     if (!name) return;
+    if (!canEditStakes(name)) return res.status(403).json({ error: 'Only the person who places the bets can edit everyone’s stakes.' });
     const key = weekWindow().key;
     const saved = store.data.stakes[key]?.[String(req.body.id ?? '')];
     if (!saved) return res.status(404).json({ error: 'That bet isn’t on the slip anymore. Refresh and try again.' });
