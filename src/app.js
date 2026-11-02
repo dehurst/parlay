@@ -28,7 +28,7 @@ const {
   BOOKMAKER = 'fanduel',
   DAILY_CREDIT_LIMIT = '16',
   SUNDAY_CREDIT_LIMIT = '30',
-  PLAYERS = 'Daniel,Asher,Matt',
+  PLAYERS = 'Daniel,Asher,Matt,Robi',
   GROUP_CODE = '',
   LOGINS = '', // "matt:password,daniel:password,..." (set in Vercel, never in the code)
   SESSION_SECRET = '',
