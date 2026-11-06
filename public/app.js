@@ -1,3 +1,5 @@
+import { sgpDecimal } from './sgp.js';
+
 const $ = (sel) => document.querySelector(sel);
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 const fmtOdds = (a) => (a > 0 ? `+${a}` : `${a}`);
@@ -646,13 +648,14 @@ function renderCalcBar(bar) {
   // Same-game legs are allowed (say Over + Packers -3), except the spread and
   // moneyline from one game together, which FanDuel won't take.
   const conflict = [...games].some((id) => [...calcKeys].some((k) => k.startsWith(`${id}|spread|`)) && [...calcKeys].some((k) => k.startsWith(`${id}|ml|`)));
-  const payout = calcStake * decimal;
+  // Same-game: estimate what FanDuel will pay (the multiplied odds are the most).
+  const est = sameGame ? sgpDecimal(decimal, [...calcKeys], week.sgpAdjust ?? 1) : decimal;
   const canPost = legs.length >= 1 && !conflict;
   bar.innerHTML = `<span class="calc-sum">
-      <b>${legs.length === 1 ? 'Straight bet' : `${legs.length}-leg parlay`} ${fmtOdds(toAmerican(decimal))}</b>
-      <span class="small">$${esc(calcStake)} pays <b>${money(payout)}</b> (profit ${money(payout - calcStake)})</span>
+      <b>${legs.length === 1 ? 'Straight bet' : `${legs.length}-leg parlay`} ${sameGame ? '≈' : ''}${fmtOdds(oddsFromMultiplier(est))}</b>
+      <span class="small calc-pays">${calcPaysText(calcStake, est, sameGame ? decimal : null)}</span>
       ${conflict ? '<span class="small warn-text">Can’t combine the spread and moneyline from the same game.</span>'
-        : sameGame ? '<span class="small warn-text">Same-game parlay: FanDuel prices these together, so its payout will differ. Enter its payout when you mark it placed.</span>' : ''}
+        : sameGame ? '<span class="small warn-text">Same-game estimate: FanDuel pays less than the odds multiplied.</span>' : ''}
       <button type="button" class="link small" id="calc-clear">Clear</button>
     </span>
     <span class="actions">
@@ -917,11 +920,11 @@ function parlayText(p) {
       return betText(l.key, l.point, away, home);
     });
   const total = Object.values(p.stakes ?? {}).reduce((sum, amt) => sum + amt, 0);
-  const real = p.placed?.payout ? payMultiplier(p) : null;
-  const odds = real ? oddsFromMultiplier(real) : p.american;
-  const mult = real ?? p.decimal;
-  const lines = [...legs, '', `Odds: ${fmtOdds(odds)}`, `$10 pays ${money(10 * mult)}`];
-  if (total > 0) lines.push(`Total bet: ${money(total)}, pays ${money(total * mult)}`);
+  const mult = payMultiplier(p);
+  const est = isEstimate(p) ? '≈' : '';
+  const lines = [...legs, '', `Odds: ${oddsText(p)}`, `$10 pays ${est}${money(10 * mult)}`];
+  if (total > 0) lines.push(`Total bet: ${money(total)}, pays ${est}${money(total * mult)}`);
+  if (est) lines.push(`(same-game estimate; up to ${money((total > 0 ? total : 10) * p.decimal)})`);
   return lines.join('\n');
 }
 
@@ -929,13 +932,22 @@ function parlayText(p) {
 // else the estimate from its legs' odds.
 function payMultiplier(p) {
   const total = Object.values(p.stakes ?? {}).reduce((sum, amt) => sum + amt, 0);
-  return p.placed?.payout && total > 0 ? p.placed.payout / total : p.decimal;
+  return p.placed?.payout && total > 0 ? p.placed.payout / total : p.estDecimal ?? p.decimal;
 }
+// A same-game parlay without FanDuel's real payout yet: the numbers shown are
+// an estimate ("≈"), with the multiplied odds as the most it could pay.
+const isEstimate = (p) => !!p.sameGame && !p.placed?.payout;
+const oddsText = (p) => `${isEstimate(p) ? '≈' : ''}${fmtOdds(shownOdds(p))}`;
+const upTo = (p, total) => (isEstimate(p) ? ` <span class="up-to">(up to ${money(total * p.decimal)})</span>` : '');
+// The builder's "$10 pays ≈ $X (profit $Y) (up to $Z)".
+const calcPaysText = (stake, est, multiplied) =>
+  `$${esc(stake)} pays <b>${multiplied ? '≈' : ''}${money(stake * est)}</b> (profit ${money(stake * est - stake)})`
+  + (multiplied ? ` <span class="up-to">(up to ${money(stake * multiplied)})</span>` : '');
 // FanDuel shows odds rounded toward zero (+301.6 -> +301).
 const oddsFromMultiplier = (d) => (d >= 2 ? Math.trunc((d - 1) * 100) : Math.trunc(-100 / (d - 1)));
 
 // Odds to show: what the sportsbook actually gave once a payout is entered.
-const shownOdds = (p) => (p.placed?.payout ? oddsFromMultiplier(payMultiplier(p)) : p.american);
+const shownOdds = (p) => (p.placed?.payout || isEstimate(p) ? oddsFromMultiplier(payMultiplier(p)) : p.american);
 
 // Parlays on screen, by id, for their Copy buttons.
 const copyable = new Map();
@@ -1112,13 +1124,13 @@ function stakeHtml(p, closed) {
       </form>`;
   return `${form}
     <div class="small muted backers">${backers.length
-      ? betLine(total, total * payMultiplier(p)) + whoLine(p.stakes)
+      ? betLine(total, total * payMultiplier(p), '', p) + whoLine(p.stakes)
       : 'Nobody is in yet'}</div>`;
 }
 
 // "$10.00 bet, pays $25.04 ($15.04 profit)", then who's in on the next line.
-const betLine = (total, payout, when = '') =>
-  `<b>${money(total)} bet</b>, pays ${money(payout)}${when} (${money(payout - total)} profit)`;
+const betLine = (total, payout, when = '', p = null) =>
+  `<b>${money(total)} bet</b>, pays ${p && isEstimate(p) ? '≈' : ''}${money(payout)}${when} (${money(payout - total)} profit)${p ? upTo(p, total) : ''}`;
 const whoLine = (stakes) =>
   `<div>${Object.entries(stakes).map(([who, amt]) => `${esc(who)} ${money(amt)}`).join(' · ')}</div>`;
 
@@ -1157,10 +1169,10 @@ function inPlayHtml(data) {
       <div class="head">
         <div>${p.placed ? '<span class="chip placed">✓ Placed</span>' : '<span class="chip pending">Not placed</span>'}
           ${titleHtml(p, !isPast())}<div class="small muted">${betKind(p, p.custom)}</div></div>
-        <div class="odds-col"><div class="odds">${fmtOdds(shownOdds(p))}</div>${copyButton(p)}</div>
+        <div class="odds-col"><div class="odds">${oddsText(p)}</div>${copyButton(p)}</div>
       </div>
       <ul class="graded-legs">${p.legs.map((l) => `<li>${gradeMark(l.grade) || '<span class="mark">·</span>'}<span><b>${betLabel(l.label)}</b> <span class="muted">${fmtOdds(l.price)}</span>${legSub(l)}</span></li>`).join('')}</ul>
-      <div class="small muted backers">${betLine(p.total, p.payout, ' if it hits')}${whoLine(p.stakes)}</div>
+      <div class="small muted backers">${betLine(p.total, p.payout, ' if it hits', p)}${whoLine(p.stakes)}</div>
       ${deleteHtml(p)}
     </div>`;
   }).join('');
@@ -1176,7 +1188,7 @@ function settledHtml(data) {
     return `<div class="card parlay done ${p.status}">
       <div class="head">
         <div>${statusChip(p.status, p.returned, p.total)}${titleHtml(p, !isPast())}<div class="small muted">${betKind(p)}</div></div>
-        <div class="odds-col"><div class="odds">${fmtOdds(shownOdds(p))}</div>${copyButton(p)}</div>
+        <div class="odds-col"><div class="odds">${oddsText(p)}</div>${copyButton(p)}</div>
       </div>
       <ul class="graded-legs">${p.legs.map((l) => `<li>${gradeMark(l.grade)}<span><b>${betLabel(l.label)}</b> <span class="muted">${fmtOdds(l.price)}</span>${legSub(l)}</span></li>`).join('')}</ul>
       <div class="small muted backers"><b>${money(p.total)} bet</b>, ${back}${whoLine(p.stakes)}</div>
@@ -1195,10 +1207,10 @@ function customHtml(data) {
       <div class="head">
         <div>${likersOf(p).length >= majority() ? '<span class="badge">Group\'s pick</span>' : ''}
           ${titleHtml(p)}<div class="small muted">${betKind(p, true)}${p.sameGame ? ' · same-game' : ''}${p.basedOn ? ` · based on ${esc(p.basedOn)}` : ''}</div></div>
-        <div class="odds-col"><div class="odds">${fmtOdds(shownOdds(p))}</div>${copyButton(p)}</div>
+        <div class="odds-col"><div class="odds">${oddsText(p)}</div>${copyButton(p)}</div>
       </div>
       <ul class="legs">${p.legs.map((l) => `<li><span><b>${betLabel(l.label)}</b> <span class="muted">${fmtOdds(l.price)}</span>${legSub(l)}${lineMoved(l, data.book)}</span>${p.started ? '' : dislikeHtml(l)}</li>`).join('')}</ul>
-      <div class="stats"><span>$10.00 pays <b>${money(10 * p.decimal)}</b></span></div>
+      <div class="stats"><span>$10.00 pays <b>${isEstimate(p) ? '≈' : ''}${money(10 * payMultiplier(p))}</b>${upTo(p, 10)}</span></div>
       ${p.started ? '' : reactHtml(p)}
       ${stakeHtml(p, p.started)}
     </div>`).join('');
@@ -1247,7 +1259,7 @@ async function renderParlays(quiet = false) {
           ${groupPick ? '<span class="badge">Group\'s pick</span>' : ''}
           ${titleHtml(p, Object.keys(p.stakes).length > 0)}<div class="small muted">${esc(p.blurb)}</div>
         </div>
-        <div class="odds-col"><div class="odds">${fmtOdds(shownOdds(p))}</div>${copyButton(p)}</div>
+        <div class="odds-col"><div class="odds">${oddsText(p)}</div>${copyButton(p)}</div>
       </div>
       <ul class="legs">${p.legs.map((l) => `<li><span><b>${betLabel(l.label)}</b> <span class="muted">${fmtOdds(l.price)}</span>${legSub(l, ` · ${l.pickers.length}/${data.voters} picked`)}${lineMoved(l, data.book)}</span>${dislikeHtml(l)}</li>`).join('')}</ul>
       <div class="stats">
@@ -2102,11 +2114,11 @@ async function renderSlip(quiet = false) {
     const legs = p.legs.map((l) => `<li>${gradeMark(l.grade) || '<span class="mark">·</span>'}<span><b>${betLabel(l.label)}</b> <span class="muted">${fmtOdds(l.price)}</span>${legSub(l)}${l.grade === 'pending' ? lineMoved(l, data.book) : ''}</span></li>`).join('');
     const rows = Object.entries(p.stakes).map(([who, amt]) => `<tr>
         <td>${esc(who)}${who === me && !p.placed && !past ? ` <button type="button" class="link danger" data-slip-out="${esc(p.id)}">remove</button>` : ''}</td>
-        <td class="num">${money(amt)}</td><td class="num">${money(amt * (p.decimal - 1))}</td><td class="num">${money(amt * p.decimal)}</td></tr>`).join('');
+        <td class="num">${money(amt)}</td><td class="num">${money(amt * (payMultiplier(p) - 1))}</td><td class="num">${money(amt * payMultiplier(p))}</td></tr>`).join('');
     return `<div class="card parlay ${p.placed ? 'placed' : ''} ${p.status !== 'pending' ? `done ${p.status}` : ''}">
       <div class="head">
         <div><span class="muted small">Bet ${i + 1}</span> ${p.placed ? '<span class="chip placed">✓ Placed</span>' : ''} ${statusChip(p.status, p.returned, p.total)} ${p.paidOut ? '<span class="chip paid">💵 Paid out</span>' : ''}${titleHtml(p, !past)}<div class="small muted">${betKind(p)}</div></div>
-        <div class="odds-col"><div class="odds">${fmtOdds(shownOdds(p))}</div>${copyButton(p)}</div>
+        <div class="odds-col"><div class="odds">${oddsText(p)}</div>${copyButton(p)}</div>
       </div>
       ${p.sameGame && !p.placed?.payout && !past ? `<div class="lines">Same-game parlay: ${esc(data.book ?? 'the sportsbook')} prices these together, so the real payout will differ from this estimate. Enter it when you mark it placed.</div>` : ''}
       ${p.stillOption || p.placed || past ? '' : '<div class="lines">Picks changed since people bought in, so this parlay is no longer one of the current options. Double-check before placing it.</div>'}
@@ -2119,8 +2131,9 @@ async function renderSlip(quiet = false) {
             <button type="submit" class="primary">Save</button>
             <button type="button" class="link small" data-act="cancel-stakes">Cancel</button>
           </form></td></tr>` : rows}</tbody>
-        <tfoot><tr><th>Total</th><th class="num">${money(p.total)}</th><th class="num">${money(p.payout - p.total)}</th><th class="num">${money(p.payout)}</th></tr></tfoot>
+        <tfoot><tr><th>Total</th><th class="num">${money(p.total)}</th><th class="num">${money(p.payout - p.total)}</th><th class="num">${isEstimate(p) ? '≈' : ''}${money(p.payout)}</th></tr></tfoot>
       </table>
+      ${isEstimate(p) && !past ? `<p class="small muted up-to-note">Same-game estimate. The most it could pay is ${money(p.upTo)} (the odds multiplied); ${esc(data.book ?? 'the sportsbook')} pays less because the legs move together.</p>` : ''}
       <div class="place-row">
         ${past
           ? `<span class="small muted">${p.placed
@@ -2133,7 +2146,7 @@ async function renderSlip(quiet = false) {
                <button type="submit" class="primary">Save</button>
                <button type="button" class="link" data-act="cancel-place">Cancel</button>
                <p class="small muted">The payout ${esc(data.book ?? 'the sportsbook')} shows for the whole bet, stake included.
-                 The site estimated ${money(p.estimate)}${p.legs.some((l) => l.current && !sameLine(l.current, l)) ? ' (some lines have moved since)' : ''}.</p>
+                 The site estimated ${p.sameGame ? '≈' : ''}${money(p.estimate)}${p.sameGame ? ` (up to ${money(p.upTo)})` : ''}${p.legs.some((l) => l.current && !sameLine(l.current, l)) ? ' (some lines have moved since)' : ''}.</p>
              </form>`
           : p.placed
           ? `<span class="small muted">Placed by ${esc(p.placed.by)} ${esc(at(p.placed.at))}. Stakes are locked.
@@ -2220,10 +2233,13 @@ $('#submit-bar').addEventListener('input', (e) => {
   // Update the numbers without re-rendering the input (keeps the keyboard up).
   const legs = [...calcKeys].map(bookLine);
   const decimal = legs.reduce((d, l) => d * toDecimal(l.price), 1);
-  const line = document.querySelector('.calc-sum .small');
+  const keys = [...calcKeys];
+  const sameGame = new Set(keys.map((k) => k.split('|')[0])).size < keys.length;
+  const est = sameGame ? sgpDecimal(decimal, keys, week.sgpAdjust ?? 1) : decimal;
+  const line = document.querySelector('.calc-pays');
   const box = document.querySelector('.builder');
   if (box) box.outerHTML = builderHtml();
-  if (line) line.innerHTML = `$${esc(calcStake)} pays <b>${money(calcStake * decimal)}</b> (profit ${money(calcStake * decimal - calcStake)})`;
+  if (line) line.innerHTML = calcPaysText(calcStake, est, sameGame ? decimal : null);
 });
 $('#submit-bar').addEventListener('click', (e) => {
   if (e.target.closest('#submit-picks')) submit();
@@ -2548,4 +2564,11 @@ $('#sport-switch').addEventListener('click', (e) => {
 });
 
 renderLeague();
+// Leave room under the page for the bottom bar, however tall it gets, so the
+// last bets can always scroll out from under it.
+new ResizeObserver(() => {
+  const bar = $('#submit-bar');
+  document.body.style.paddingBottom = bar.hidden ? '' : `${bar.offsetHeight + 24}px`;
+}).observe($('#submit-bar'));
+
 load();

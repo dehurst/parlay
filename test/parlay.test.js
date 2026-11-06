@@ -209,3 +209,20 @@ test('same-game parlays: a total with a side is fine, spread + moneyline is not'
   assert.equal(isSameGame(['g1|total|over', 'g1|spread|home']), true);
   assert.equal(isSameGame(['g1|total|over', 'g2|spread|home']), false);
 });
+
+test('same-game parlay estimate lands near what FanDuel paid', async () => {
+  const { sgpDecimal, sgpFactor, learnAdjust } = await import('../public/sgp.js');
+  // Jaguars ML -500, T. Lawrence o1.5 pass TDs -128, B. Strange TD +250: odds
+  // multiplied to 7.48x; FanDuel paid $126.56 on $30 (4.22x).
+  const keys = ['g|ml|away', 'g|ptd:Trevor Lawrence|over', 'g|td:Brenton Strange|yes'];
+  const multiplied = 1.2 * (1 + 100 / 128) * 3.5;
+  const est = sgpDecimal(multiplied, keys);
+  assert.ok(Math.abs(30 * est - 126.56) / 126.56 < 0.08, `estimate ${30 * est} should be within 8% of 126.56`);
+  // Legs from different games are untouched; an under with a TD isn't cut.
+  assert.equal(sgpDecimal(3.64, ['a|spread|home', 'b|total|over']), 3.64);
+  assert.equal(sgpFactor(['g|total|under', 'g|td:Someone|yes']), 1);
+  // Learns: a bet that paid less than estimated pulls later estimates down, gently.
+  const adj = learnAdjust([{ decimal: multiplied, keys, actual: 126.56 / 30 }]);
+  assert.ok(adj < 1 && adj > 0.95, `adjust ${adj}`);
+  assert.equal(learnAdjust([]), 1);
+});

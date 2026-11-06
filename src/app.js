@@ -14,6 +14,7 @@ import { computeStats } from './stats.js';
 import { createHash } from 'node:crypto';
 import { parseLogins, checkLogin, makeToken, readToken, cookieValue, sessionCookie, COOKIE } from './auth.js';
 import { analyzeWeek } from './analysis.js';
+import { sgpDecimal, learnAdjust, isSameGameKeys } from '../public/sgp.js';
 import { seasonYear, fetchSeasonWeek, parseSeasonWeek, mergeWeek, fetchGameLine, buildTeams, fetchGameTeamStats, regularSeasonWeeks } from './research.js';
 import { fetchTeamRoster, fetchTeamDepthChart, teamInjuries, dropStaleHistory, weekOf } from './injuries.js';
 import { teamHeatmap } from './heatmap.js';
@@ -468,6 +469,7 @@ app.get('/api/week', async (req, res, next) => {
       manualPerSunday: SUNDAY_MANUAL_REFRESHES,
       canEditStakes: !req.viewer && canEditStakes(me), // "Edit stakes" on the Bet Slip
       viewer: !!req.viewer, // a view-only login
+      sgpAdjust: sgpAdjust(), // learned nudge for same-game parlay estimates
       limitHit,
     });
   } catch (err) {
@@ -679,12 +681,15 @@ app.get('/api/parlays', async (req, res, next) => {
       if (saved?.renamed) opt.name = saved.name;
       opt.placed = store.data.stakes[win.key]?.[opt.id]?.placed ?? null;
     }
+    const adjust = sgpAdjust();
     const custom = Object.values(store.data.stakes[win.key] ?? {})
       .filter((p) => p.custom && !settledIds.has(p.id))
       .sort((a, b) => a.createdAt - b.createdAt)
       .map((p) => ({
         ...p,
         stakes: stakesFor(win, p.id),
+        sameGame: isSameGameKeys(p.legs.map((l) => l.key)),
+        estDecimal: estimatedDecimal(p, Object.values(stakesFor(win, p.id)).reduce((a, b) => a + b, 0), adjust),
         started: customStarted(p, gamesById),
         legs: p.legs.map((l) => ({ ...l, current: lineFor(gamesById.get(l.gameId), l.market, l.side) })),
       }));
@@ -910,8 +915,30 @@ app.post('/api/stake', async (req, res, next) => {
 // who's in for how much, and whether any line has moved since.
 // Every parlay with money on it this week, graded against final scores:
 // each leg's result, the parlay's status, and what it pays back.
+// How FanDuel's real payouts on placed same-game parlays compared with the
+// estimate, across every week: nudges future same-game estimates.
+function sgpAdjust() {
+  const history = [];
+  for (const week of Object.values(store.data.stakes)) {
+    for (const p of Object.values(week)) {
+      const keys = p.legs.map((l) => l.key);
+      const total = Object.values(p.stakes ?? {}).reduce((a, b) => a + b, 0);
+      if (p.placed?.payout && total > 0 && isSameGameKeys(keys)) history.push({ decimal: p.decimal, keys, actual: p.placed.payout / total });
+    }
+  }
+  return learnAdjust(history);
+}
+
+// A saved parlay's estimated payout multiplier: FanDuel's real one once it's
+// entered, else the multiplied odds, cut for legs from the same game.
+function estimatedDecimal(p, total, adjust) {
+  if (p.placed?.payout && total > 0) return p.placed.payout / total;
+  return sgpDecimal(p.decimal, p.legs.map((l) => l.key), adjust);
+}
+
 function gradedParlays(win, gamesById, optionIds) {
   const results = store.data.results[win.key] ?? {};
+  const adjust = sgpAdjust();
   return Object.values(store.data.stakes[win.key] ?? {})
     .map((p) => {
       const stakes = stakesFor(win, p.id);
@@ -924,7 +951,14 @@ function gradedParlays(win, gamesById, optionIds) {
       const decimal = actualDecimal(p, total);
       const { status, returned } = gradeParlay(legs, total, decimal / p.decimal);
       const stillOption = p.custom || optionIds.has(p.id);
-      return { ...p, stakes, total, estimate: total * p.decimal, decimal, payout: total * decimal, stillOption, legs, status, returned };
+      // Same-game: the multiplied odds are only an upper limit ("up to").
+      const sameGame = isSameGameKeys(p.legs.map((l) => l.key));
+      const estDecimal = estimatedDecimal(p, total, adjust);
+      return {
+        ...p, stakes, total, sameGame, estDecimal, upTo: total * p.decimal,
+        estimate: total * sgpDecimal(p.decimal, p.legs.map((l) => l.key), adjust),
+        decimal, payout: total * estDecimal, stillOption, legs, status, returned,
+      };
     })
     .filter((p) => p.total > 0);
 }

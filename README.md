@@ -27,8 +27,12 @@ the plays most of you agree on and builds a few parlays out of them.
   see what a one-off parlay would pay at FanDuel's current lines for any
   stake. Nothing in it is saved or shared until you Post. Legs from the same
   game are fine (say the Over plus Packers -6.5), except the spread and
-  moneyline together; FanDuel prices those as a Same Game Parlay, so the app
-  flags that its payout will differ and to enter FanDuel's when placing it.
+  moneyline together. FanDuel prices those as a Same Game Parlay and pays less
+  than the odds multiplied, because the legs move together, so the app shows
+  an estimate ("≈ $133, up to $224"): each same-game pair that tends to hit
+  together (a team and its QB's TDs, a TD scorer and the Over) cuts the
+  payout, and the cut learns from FanDuel's real payouts on your placed
+  same-game parlays (public/sgp.js). Enter FanDuel's payout when placing.
 - **Group Board**: every submitted bet ranked by how many of you took it,
   plus who still needs to submit. It flags bets where FanDuel's line has
   moved since.

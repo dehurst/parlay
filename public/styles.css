@@ -732,3 +732,7 @@ h3.section.first { margin-top: 4px; }
   .back-badge, .back-badge svg, .back-badge::after { animation: none; }
   .back-badge { box-shadow: 0 0 8px rgba(93, 255, 165, .8); }
 }
+
+/* Same-game estimate: "(up to $X)" */
+.up-to { color: var(--muted); font-weight: 400; }
+.up-to-note { margin: 6px 0 0; }
