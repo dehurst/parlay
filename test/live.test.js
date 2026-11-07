@@ -23,18 +23,18 @@ test('reads live games from ESPN, with the clock', () => {
 test('how each bet is doing at a live score', () => {
   const s = { state: 'in', homeScore: 14, awayScore: 17, detail: '4:12 - 3rd' }; // away up 3, 31 points
   const st = (key, point) => legStatus({ key, point }, s);
-  assert.deepEqual(st('g|spread|home', 3.5), { cls: 'ahead', text: 'Covering · down 3 · 4:12 - 3rd' });
-  assert.deepEqual(st('g|spread|home', 2.5), { cls: 'behind', text: 'Not covering · down 3 · 4:12 - 3rd' });
-  assert.deepEqual(st('g|spread|away', -3), { cls: 'even', text: 'Push right now · up 3 · 4:12 - 3rd' });
-  assert.deepEqual(st('g|ml|away'), { cls: 'ahead', text: 'Winning · up 3 · 4:12 - 3rd' });
-  assert.deepEqual(st('g|ml|home'), { cls: 'behind', text: 'Losing · down 3 · 4:12 - 3rd' });
-  assert.deepEqual(st('g|total|over', 44.5), { cls: 'behind', text: '31 pts · needs 14 more · 4:12 - 3rd' });
-  assert.deepEqual(st('g|total|over', 30.5), { cls: 'win', text: 'Hit · 31 pts · 4:12 - 3rd' });
-  assert.deepEqual(st('g|total|under', 44.5), { cls: 'ahead', text: '31 pts · 13 to spare · 4:12 - 3rd' });
-  assert.deepEqual(st('g|total|under', 44), { cls: 'ahead', text: '31 pts · 12 to spare · 4:12 - 3rd' });
-  assert.deepEqual(st('g|total|under', 30.5), { cls: 'loss', text: 'Busted · 31 pts · 4:12 - 3rd' });
+  assert.deepEqual(st('g|spread|home', 3.5), { cls: 'ahead', text: 'Covering · down 3' });
+  assert.deepEqual(st('g|spread|home', 2.5), { cls: 'behind', text: 'Not covering · down 3' });
+  assert.deepEqual(st('g|spread|away', -3), { cls: 'even', text: 'Push right now · up 3' });
+  assert.deepEqual(st('g|ml|away'), { cls: 'ahead', text: 'Winning · up 3' });
+  assert.deepEqual(st('g|ml|home'), { cls: 'behind', text: 'Losing · down 3' });
+  assert.deepEqual(st('g|total|over', 44.5), { cls: 'behind', text: '31 pts · needs 14 more' });
+  assert.deepEqual(st('g|total|over', 30.5), { cls: 'win', text: 'Hit · 31 pts' });
+  assert.deepEqual(st('g|total|under', 44.5), { cls: 'ahead', text: '31 pts · 13 to spare' });
+  assert.deepEqual(st('g|total|under', 44), { cls: 'ahead', text: '31 pts · 12 to spare' });
+  assert.deepEqual(st('g|total|under', 30.5), { cls: 'loss', text: 'Busted · 31 pts' });
   // Final, before kickoff, and props.
-  assert.deepEqual(legStatus({ key: 'g|spread|home', point: 3.5 }, { ...s, state: 'post' }), { cls: 'win', text: 'Won · final 17-14' });
+  assert.deepEqual(legStatus({ key: 'g|spread|home', point: 3.5 }, { ...s, state: 'post' }), { cls: 'win', text: 'Won' });
   assert.equal(legStatus({ key: 'g|spread|home', point: 3.5 }, { ...s, state: 'pre' }), null);
   assert.equal(legStatus({ key: 'g|spread|home', point: 3.5 }, undefined), null);
   assert.equal(legStatus({ key: 'g|td:Josh Allen|yes', point: null }, s), null);

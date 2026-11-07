@@ -251,6 +251,7 @@ function applyLive() {
     el.innerHTML = scoreHtml(g);
     el.hidden = false;
   }
+  for (const el of document.querySelectorAll('[data-leg-game]')) el.innerHTML = legWhen(el.dataset.legGame, el.dataset.kick);
   for (const el of document.querySelectorAll('[data-leg-live]')) {
     const now = legLive({ key: el.dataset.legLive, point: el.dataset.point === '' ? null : Number(el.dataset.point) });
     el.hidden = !now;
@@ -1300,10 +1301,20 @@ async function submit() {
 const shortMatchup = (m) => String(m).split(' @ ').map((t) => (league === 'cfb' ? college(t)?.short ?? t : t.split(' ').pop())).join(' @ ');
 // A leg's matchup on its own small line under the bet.
 // Under each leg: the matchup and its kickoff ("Sun 1:00 PM"), in gray.
+// After the matchup: the kickoff time, then the score once it starts
+// ("Jaguars @ Ravens · 17–14 · 4:12 - 3rd", away first like the matchup).
 const legKick = (l) => {
-  const t = l.commence ?? (l.key && gameOf(l.key)?.commence);
-  return t ? ` · ${new Date(t).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' })}` : '';
+  const gameId = String(l.key ?? '').split('|')[0];
+  const t = l.commence ?? (l.key && gameOf(l.key)?.commence) ?? '';
+  return `<span data-leg-game="${esc(gameId)}" data-kick="${esc(t)}">${legWhen(gameId, t)}</span>`;
 };
+function legWhen(gameId, t) {
+  const s = liveNow[gameId];
+  const final = gameById(gameId)?.result ?? (s?.state === 'post' ? s : null);
+  if (final) return ` · Final <b class="leg-score">${final.awayScore}–${final.homeScore}</b>`;
+  if (s?.state === 'in') return ` · <b class="leg-score">${s.awayScore}–${s.homeScore}</b> · ${esc(s.detail)}`;
+  return t ? ` · ${new Date(t).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' })}` : '';
+}
 const legSub = (l, extra = '') => `<div class="small muted leg-sub">${matchupHtml(l.matchup)}${legKick(l)}${extra}</div>${legLiveHtml(l)}`;
 
 // Note when the book's line has moved off the one the group took.

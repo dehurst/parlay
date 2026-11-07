@@ -770,3 +770,4 @@ body.viewer #push-open { display: none; }
 .leg-live { margin-top: 1px; font-weight: 600; color: var(--muted); }
 .leg-live.ahead, .leg-live.win { color: var(--accent); }
 .leg-live.behind, .leg-live.loss { color: var(--bad); }
+.leg-score { color: var(--text); font-weight: 600; }
