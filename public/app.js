@@ -1223,7 +1223,12 @@ async function submit() {
 // "San Francisco 49ers @ Atlanta Falcons" -> "49ers @ Falcons"
 const shortMatchup = (m) => String(m).split(' @ ').map((t) => (league === 'cfb' ? college(t)?.short ?? t : t.split(' ').pop())).join(' @ ');
 // A leg's matchup on its own small line under the bet.
-const legSub = (l, extra = '') => `<div class="small muted leg-sub">${matchupHtml(l.matchup)}${extra}</div>`;
+// Under each leg: the matchup and its kickoff ("Sun 1:00 PM"), in gray.
+const legKick = (l) => {
+  const t = l.commence ?? (l.key && gameOf(l.key)?.commence);
+  return t ? ` · ${new Date(t).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' })}` : '';
+};
+const legSub = (l, extra = '') => `<div class="small muted leg-sub">${matchupHtml(l.matchup)}${legKick(l)}${extra}</div>`;
 
 // Note when the book's line has moved off the one the group took.
 function lineMoved(s, book) {
