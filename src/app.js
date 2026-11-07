@@ -167,11 +167,15 @@ app.post('/api/logout', (req, res) => {
 // "Authorization: Bearer <CRON_SECRET>"). For each league, any game kicking
 // off in the next 35 minutes that's in a live bet with money on it gets one
 // notification to REMINDER_PLAYERS, listing the bets and which aren't placed.
-const secretOk = (req) => {
-  const got = Buffer.from(String(req.get('authorization') ?? ''));
-  const want = Buffer.from(`Bearer ${CRON_SECRET}`);
-  return !!CRON_SECRET && got.length === want.length && timingSafeEqual(got, want);
+// The secret comes as "Authorization: Bearer <secret>" or, for schedulers that
+// can't set headers, ?key=<secret> on the address.
+const sameText = (a, b) => {
+  const x = Buffer.from(String(a ?? ''));
+  const y = Buffer.from(String(b));
+  return x.length === y.length && timingSafeEqual(x, y);
 };
+const secretOk = (req) => !!CRON_SECRET
+  && (sameText(req.get('authorization'), `Bearer ${CRON_SECRET}`) || sameText(req.query.key, CRON_SECRET));
 app.all('/api/reminders', async (req, res, next) => {
   if (!CRON_SECRET) return res.status(503).json({ error: 'Reminders aren’t set up: add CRON_SECRET in Vercel.' });
   if (!secretOk(req)) return res.status(401).json({ error: 'Wrong or missing secret.' });

@@ -271,7 +271,8 @@ bet with money on it (and not already lost) sends one notification to
    - Destination: `https://<your site>/api/reminders`
    - Schedule: every 5 minutes (`*/5 * * * *`)
    - Method: `POST`
-   - Header: `Authorization` = `Bearer <CRON_SECRET>`
+   - Header: `Upstash-Forward-Authorization` = `Bearer <CRON_SECRET>` (or skip
+     the header and use `https://<your site>/api/reminders?key=<CRON_SECRET>`)
 3. Each check answers with what it sent (`{"ok":true,"sent":[]}` when nothing was due).
 
 
