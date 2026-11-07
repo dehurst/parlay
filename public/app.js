@@ -124,13 +124,30 @@ function timeAgo(ms) {
 
 // The recent list in the bell's panel. New ones (since you last looked) stand out.
 const INBOX_SHOWN = 20;
+const INBOX_EMPTY = '<p class="small muted inbox-empty">No notifications yet. New bets, people joining yours, placed bets and payouts show up here.</p>';
 function inboxHtml(items, seenAt) {
-  if (!items.length) return '<p class="small muted inbox-empty">No notifications yet. New bets, people joining yours, placed bets and payouts show up here.</p>';
+  if (!items.length) return INBOX_EMPTY;
   return `<ul class="inbox">${items.slice(0, INBOX_SHOWN).map((n) => `
     <li><a class="inbox-item${n.at > seenAt ? ' unread' : ''}" href="${esc(n.url || '/')}">
       <span class="inbox-top"><b>${esc(n.title)}</b><span class="muted">${timeAgo(n.at)}</span></span>
       <span class="small muted">${esc(n.body)}</span>
-    </a></li>`).join('')}</ul>`;
+    </a><button type="button" class="inbox-x" data-clear="${n.at}" aria-label="Clear this notification" title="Clear">×</button></li>`).join('')}</ul>`;
+}
+
+// Clear one notification (by its time) or all of them.
+async function clearInbox(at) {
+  const body = at ? { name: me, at } : { name: me, all: true };
+  try {
+    await api('/api/inbox/clear', { method: 'POST', body });
+  } catch (err) {
+    return notice(err.message);
+  }
+  pushInfo.inbox = at ? pushInfo.inbox.filter((n) => n.at !== at) : [];
+  if (at) $(`#push-panel [data-clear="${at}"]`)?.closest('li')?.remove();
+  if (!pushInfo.inbox.length) {
+    $('#push-panel .inbox')?.replaceWith(Object.assign(document.createElement('div'), { innerHTML: INBOX_EMPTY }).firstChild);
+    $('#inbox-clear-all')?.remove();
+  }
 }
 let pushSettingsOpen = null; // remembers if Settings was opened or closed
 
@@ -171,7 +188,7 @@ async function renderPushPanel() {
   }
   // Settings start open until phone notifications are on, then tuck away.
   const open = pushSettingsOpen ?? !body.includes('data-pref');
-  panel.innerHTML = `<div class="push-head"><b>Notifications</b><button type="button" class="link small" id="push-close">Close</button></div>
+  panel.innerHTML = `<div class="push-head"><b>Notifications</b><span class="push-head-actions">${pushInfo.inbox?.length ? '<button type="button" class="link small" id="inbox-clear-all">Clear all</button>' : ''}<button type="button" class="link small" id="push-close">Close</button></span></div>
     ${inboxHtml(pushInfo.inbox ?? [], pushInfo.seenAt ?? 0)}
     <details class="push-settings"${open ? ' open' : ''}><summary>Settings</summary>${body}</details>`;
   panel.querySelector('.push-settings').addEventListener('toggle', (e) => (pushSettingsOpen = e.target.open));
@@ -2779,6 +2796,9 @@ $('#slip').addEventListener('click', async (e) => {
 });
 $('#push-panel').addEventListener('click', async (e) => {
   if (e.target.closest('#push-close')) $('#push-panel').hidden = true;
+  if (e.target.closest('#inbox-clear-all')) clearInbox(null);
+  const x = e.target.closest('[data-clear]');
+  if (x) clearInbox(Number(x.dataset.clear));
   if (e.target.closest('#push-on')) turnOnPush();
   if (e.target.closest('#push-off')) turnOffPush();
   if (e.target.closest('#push-test')) {

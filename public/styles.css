@@ -771,3 +771,9 @@ body.viewer #push-open { display: none; }
 .leg-live.ahead, .leg-live.win { color: var(--accent); }
 .leg-live.behind, .leg-live.loss { color: var(--bad); }
 .leg-score { color: var(--text); font-weight: 600; }
+/* Clearing notifications */
+.push-head-actions { display: flex; gap: 14px; align-items: center; }
+.inbox li { position: relative; }
+.inbox-item { padding-right: 34px; }
+.inbox-x { position: absolute; top: 4px; right: 0; width: 30px; height: 30px; padding: 0; border: 0; background: none; color: var(--muted); font-size: 20px; line-height: 1; border-radius: 999px; }
+.inbox-x:hover { color: var(--text); background: rgba(127,127,127,.12); }

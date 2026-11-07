@@ -1000,6 +1000,21 @@ app.post('/api/inbox/seen', async (req, res, next) => {
   }
 });
 
+// Clear one notification from your list (by its time), or all of them.
+app.post('/api/inbox/clear', async (req, res, next) => {
+  try {
+    const name = checkPlayer(req, res);
+    if (!name) return;
+    const data = await loadPush();
+    const at = Number(req.body.at);
+    data.inbox[name] = req.body.all ? [] : (data.inbox[name] ?? []).filter((n) => n.at !== at);
+    await pushStore.save();
+    res.json({ ok: true, left: data.inbox[name].length });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // A test notification to your own devices.
 app.post('/api/push/test', async (req, res, next) => {
   try {
