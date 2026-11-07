@@ -9,7 +9,7 @@ import { fetchOddsApiSchedule, fetchBookLines, fetchEventIds, fetchEventProps } 
 import { isProp, validProp, propLine, parseProps, parseBoxScore, PROP_MARKETS } from './props.js';
 import { tally, buildParlays, priceParlay, selectionLabel, MARKETS, sameGameProblem, isSameGame } from './parlay.js';
 import { gradeLeg, gradeParlay, actualDecimal } from './grading.js';
-import { fetchEspnScores, fetchOddsApiScores, fetchEspnPlayerStats } from './results.js';
+import { fetchEspnScores, fetchEspnLive, fetchOddsApiScores, fetchEspnPlayerStats } from './results.js';
 import { computeStats } from './stats.js';
 import { setupPush, sendEvent, addToInbox, defaultPrefs, EVENTS, REMINDER_EVENT, remindersDue } from './push.js';
 import { createHash, timingSafeEqual } from 'node:crypto';
@@ -1209,6 +1209,57 @@ app.get('/api/slip', async (req, res, next) => {
       // Still to place first, then placed; bigger bets first within each.
       .sort((a, b) => !!a.placed - !!b.placed || b.total - a.total);
     res.json({ book: ODDS_API_KEY ? bookName : null, parlays, totals });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Live scores for games under way, from ESPN's free scoreboard. Each server
+// keeps the answer ~30 seconds, so several open phones don't each go to ESPN.
+// A game ESPN calls final is saved as a result right away, so bets grade the
+// moment it ends instead of ~3 hours after kickoff.
+const LIVE_TTL = 30e3;
+const LIVE_FOR = 8 * 3600e3; // stop looking ~8 hours after kickoff
+const liveCache = {}; // { league: { at, week, ids, games } }
+async function liveScores(win, games) {
+  const now = Date.now();
+  const results = (store.data.results[win.key] ??= {});
+  const active = games.filter((g) => hasStarted(g, now) && !results[g.id] && now - new Date(g.commence).getTime() < LIVE_FOR);
+  if (!active.length) return {};
+  const ids = active.map((g) => g.id).join(',');
+  const cached = liveCache[sport().id];
+  if (cached?.week === win.key && cached.ids === ids && now - cached.at < LIVE_TTL) return cached.games;
+  const board = await fetchEspnLive(win.key, active);
+  liveCache[sport().id] = { at: now, week: win.key, ids, games: board };
+  const done = active.filter((g) => board[g.id]?.completed);
+  for (const g of done) results[g.id] = { homeScore: board[g.id].homeScore, awayScore: board[g.id].awayScore, espnId: board[g.id].espnId };
+  if (done.length) await save();
+  return board;
+}
+
+// Scores for this week's games that have started: { games: { gameId: { state,
+// homeScore, awayScore, detail } } }. The page asks every minute while games
+// are on.
+app.get('/api/live', async (req, res, next) => {
+  try {
+    const win = weekWindow();
+    const sched = store.data.schedule[win.key];
+    if (!sched || sched.demo) return res.json({ games: {} });
+    let board = {};
+    try {
+      board = await liveScores(win, sched.games);
+    } catch (err) {
+      console.error(`ESPN live scores failed: ${describe(err)}`);
+    }
+    const results = store.data.results[win.key] ?? {};
+    const games = {};
+    for (const g of sched.games) {
+      const b = board[g.id];
+      const r = results[g.id];
+      if (r) games[g.id] = { state: 'post', homeScore: r.homeScore, awayScore: r.awayScore, detail: b?.detail || 'Final' };
+      else if (b && b.state !== 'pre') games[g.id] = { state: b.state, homeScore: b.homeScore, awayScore: b.awayScore, detail: b.detail };
+    }
+    res.json({ games });
   } catch (err) {
     next(err);
   }

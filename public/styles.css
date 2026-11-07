@@ -765,3 +765,8 @@ body.viewer #push-open { display: none; }
 .inbox-empty { margin: 6px 0 10px; }
 .push-settings { border-top: 1px solid var(--line); padding-top: 8px; }
 .push-settings summary { cursor: pointer; font-weight: 600; font-size: 14px; margin-bottom: 6px; }
+
+/* Live status under each bet leg */
+.leg-live { margin-top: 1px; font-weight: 600; color: var(--muted); }
+.leg-live.ahead, .leg-live.win { color: var(--accent); }
+.leg-live.behind, .leg-live.loss { color: var(--bad); }

@@ -1,5 +1,8 @@
 import { americanToDecimal } from './odds-math.js';
 import { isProp, gradeProp } from './props.js';
+import { legMargin } from '../public/margin.js';
+
+export { legMargin };
 
 // Grade one bet against a final score: 'win' | 'loss' | 'push' | 'pending'.
 // A leg is { key: "gameId|market|side", point, price }. Moneylines push on a
@@ -11,14 +14,6 @@ export function gradeLeg(leg, result) {
   if (isProp(market)) return gradeProp(market, side, leg.point, result.players);
   const diff = legMargin(leg, result);
   return diff > 0 ? 'win' : diff < 0 ? 'loss' : 'push';
-}
-
-// How many points a bet won (+) or lost (-) by against a final score.
-export function legMargin(leg, { homeScore: h, awayScore: a }) {
-  const [, market, side] = leg.key.split('|');
-  if (market === 'spread') return (side === 'home' ? h - a : a - h) + leg.point;
-  if (market === 'total') return side === 'over' ? h + a - leg.point : leg.point - (h + a);
-  return side === 'home' ? h - a : a - h;
 }
 
 // Grade a parlay whose legs already carry a `grade`. Any loss loses it; a

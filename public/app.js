@@ -1,4 +1,5 @@
 import { sgpDecimal } from './sgp.js';
+import { legStatus } from './margin.js';
 
 const $ = (sel) => document.querySelector(sel);
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
@@ -212,6 +213,83 @@ async function turnOffPush() {
   renderPushPanel();
 }
 
+// ---- Live scores -----------------------------------------------------------
+// While games are on, the page asks for scores every minute and updates the
+// game cards and every bet leg in place (no reload, no jumping around).
+
+let liveNow = {}; // { gameId: { state: 'in' | 'post', homeScore, awayScore, detail } }
+let liveTimer = null;
+const LIVE_EVERY = 60e3;
+const gameById = (id) => week?.games.find((g) => g.id === id);
+
+// The score line on a game card.
+function scoreHtml(g) {
+  const s = liveNow[g.id];
+  const final = g.result ?? (s?.state === 'post' ? s : null);
+  const line = (r) => `${teamLogo(g.away, 'small')}${esc(abbr(g.away))} ${r.awayScore}, ${teamLogo(g.home, 'small')}${esc(abbr(g.home))} ${r.homeScore}`;
+  if (final) return `${esc(/^Final\//.test(s?.detail ?? '') ? s.detail : 'Final')}: ${line(final)}`;
+  if (s?.state === 'in') return `<span class="live">● ${esc(s.detail || 'Live')}</span> ${line(s)}`;
+  // No score yet: a game runs about 3½ hours from kickoff.
+  return Date.now() - new Date(g.commence) > 3.5 * 3600e3 ? 'Final' : '<span class="live">● Live</span>';
+}
+
+// How one bet is doing right now (null before kickoff, and for player props).
+const legLive = (l) => legStatus(l, liveNow[String(l.key ?? '').split('|')[0]]);
+
+const legLiveHtml = (l) => {
+  const [, market] = String(l.key ?? '').split('|');
+  if (!['spread', 'total', 'ml'].includes(market)) return '';
+  const now = legLive(l);
+  return `<div class="small leg-live ${now?.cls ?? ''}" data-leg-live="${esc(l.key)}" data-point="${l.point ?? ''}"${now ? '' : ' hidden'}>${now ? esc(now.text) : ''}</div>`;
+};
+
+// Put the latest scores on whatever is on screen.
+function applyLive() {
+  for (const el of document.querySelectorAll('[data-score]')) {
+    const g = gameById(el.dataset.score);
+    if (!g || !liveNow[g.id]) continue;
+    el.innerHTML = scoreHtml(g);
+    el.hidden = false;
+  }
+  for (const el of document.querySelectorAll('[data-leg-live]')) {
+    const now = legLive({ key: el.dataset.legLive, point: el.dataset.point === '' ? null : Number(el.dataset.point) });
+    el.hidden = !now;
+    if (!now) continue;
+    el.className = `small leg-live ${now.cls}`;
+    el.textContent = now.text;
+  }
+}
+
+// Every minute while the page is open: scores for games under way (if any).
+async function pollLive() {
+  clearTimeout(liveTimer);
+  liveTimer = setTimeout(pollLive, LIVE_EVERY);
+  if (!week || isPast() || document.visibilityState !== 'visible') return;
+  const now = Date.now();
+  const on = week.games.some((g) => !g.result && new Date(g.commence) <= now && now - new Date(g.commence) < 8 * 3600e3);
+  if (!on) return;
+  const forLeague = league;
+  let data;
+  try {
+    data = await api('/api/live');
+  } catch {
+    return; // try again next minute
+  }
+  if (forLeague !== league) return;
+  // A game that just ended: the server has graded it, so redraw the bets.
+  const ended = Object.entries(data.games).filter(([id, s]) => s.state === 'post' && !gameById(id)?.result);
+  liveNow = data.games;
+  for (const [id, s] of ended) {
+    const g = gameById(id);
+    if (g) g.result = { homeScore: s.homeScore, awayScore: s.awayScore };
+  }
+  applyLive();
+  if (ended.length && (tab === 'parlays' || tab === 'slip')) rerenderParlayTab();
+}
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') pollLive();
+});
+
 // ---- Loading -------------------------------------------------------------
 
 async function load(refresh = false) {
@@ -265,6 +343,7 @@ async function load(refresh = false) {
   $('#join').hidden = true;
   $('#tabs').hidden = false;
   render();
+  pollLive();
 }
 
 // NFL | CFB switch under the week. Switching shows that league's current week.
@@ -279,6 +358,7 @@ function renderLeague() {
 function switchLeague(next) {
   if (next === league) return;
   league = next;
+  liveNow = {};
   storage.set('parlay.sport', league);
   researchTeam = storage.get(teamStorageKey());
   compareA = compareB = null;
@@ -719,10 +799,6 @@ function renderGames() {
     const row = (team, side, totalSide) => `
       <div class="team" title="${esc(team)}">${teamLogo(team, 'small')}<span>${esc(side === 'home' ? g.homeShort : g.awayShort)}</span></div>
       ${cell('spread', side)}${cell('total', totalSide)}${cell('ml', side)}`;
-    const status = g.result
-      ? `Final: ${teamLogo(g.away, 'small')}${esc(abbr(g.away))} ${g.result.awayScore}, ${teamLogo(g.home, 'small')}${esc(abbr(g.home))} ${g.result.homeScore}`
-      // No score on file: a game runs about 3½ hours from kickoff.
-      : Date.now() - new Date(g.commence) > 3.5 * 3600e3 ? 'Final' : '<span class="live">● Live</span>';
     return `<div class="card ${isFinal(g) ? 'done' : ''}" data-game="${esc(g.id)}">
       <div class="game-head">
         <h3>
@@ -730,7 +806,7 @@ function renderGames() {
           <span class="team-line">${teamLogo(g.home)}${esc(g.home)}${rec(g.homeRecord)}</span>
         </h3>
       </div>
-      ${g.started ? `<div class="score small">${status}</div>` : ''}
+      <div class="score small" data-score="${esc(g.id)}"${g.started || liveNow[g.id] ? '' : ' hidden'}>${scoreHtml(g)}</div>
       <div class="game-grid ${locked ? 'is-locked' : ''}">
         <div class="kick">${kick}</div>
         <div class="colhead">Spread</div><div class="colhead">Total</div><div class="colhead">Moneyline</div>
@@ -1228,7 +1304,7 @@ const legKick = (l) => {
   const t = l.commence ?? (l.key && gameOf(l.key)?.commence);
   return t ? ` · ${new Date(t).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' })}` : '';
 };
-const legSub = (l, extra = '') => `<div class="small muted leg-sub">${matchupHtml(l.matchup)}${legKick(l)}${extra}</div>`;
+const legSub = (l, extra = '') => `<div class="small muted leg-sub">${matchupHtml(l.matchup)}${legKick(l)}${extra}</div>${legLiveHtml(l)}`;
 
 // Note when the book's line has moved off the one the group took.
 function lineMoved(s, book) {
