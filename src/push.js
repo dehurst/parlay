@@ -7,6 +7,8 @@ import { setVapidDetails, sendNotification } from 'web-push';
 //   joined  - someone puts money on a bet you're in (the others in it)
 //   placed  - a bet you're in is marked placed (the others in it)
 //   paid    - you've been paid out on a bet (the others in it)
+//   reminder - a game in a bet with money on it starts in ~30 min (only the
+//              people in REMINDER_PLAYERS; sent by the /api/reminders check)
 
 export const EVENTS = {
   posted: 'New parlays and bets',
@@ -15,7 +17,10 @@ export const EVENTS = {
   paid: 'You’ve been paid out',
 };
 
-export const defaultPrefs = () => Object.fromEntries(Object.keys(EVENTS).map((k) => [k, true]));
+// Only shown to the people who get game reminders.
+export const REMINDER_EVENT = { reminder: 'Game starting in 30 min (bets with money on them)' };
+
+export const defaultPrefs = () => Object.fromEntries(Object.keys({ ...EVENTS, ...REMINDER_EVENT }).map((k) => [k, true]));
 
 export function setupPush({ VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, VAPID_SUBJECT }) {
   if (!VAPID_PUBLIC_KEY || !VAPID_PRIVATE_KEY) return false;
@@ -37,6 +42,17 @@ export function messageFor(event, who) {
       return { title: `${tag}${actor} is in on ${name}`, body: `${money(event.amount)} from ${actor} · ${money(event.total)} total now.` };
     case 'placed':
       return { title: `${tag}${name} is placed`, body: event.payout ? `${actor} placed it: pays ${money(event.payout)} if it hits.` : `${actor} placed it.` };
+    case 'reminder': {
+      const unplaced = event.bets.filter((b) => !b.placed).map((b) => b.name);
+      const placed = event.bets.filter((b) => b.placed).map((b) => b.name);
+      const when = `start${event.games.length === 1 ? 's' : ''} in ${event.minutes} min`;
+      const title = event.games.length === 1 ? `${tag}${event.games[0]} ${when}` : `${tag}${event.games.length} of your games ${when}`;
+      const parts = [];
+      if (event.games.length > 1) parts.push(`${event.games.join(', ')}.`);
+      if (unplaced.length) parts.push(`Not placed yet: ${unplaced.join(', ')}.`);
+      if (placed.length) parts.push(`Placed: ${placed.join(', ')}.`);
+      return { title, body: parts.join(' ') };
+    }
     case 'paid':
       return { title: `${tag}Paid out: ${name}`, body: `${actor} marked it paid.${event.shares?.[who] ? ` Your share: ${money(event.shares[who])}.` : ''}` };
     default:
@@ -47,6 +63,7 @@ export function messageFor(event, who) {
 // Who an event is for: everyone but the person who did it, limited to the
 // people in the bet for anything but a new post.
 export function recipientsFor(event, players) {
+  if (event.to) return event.to.filter((p) => players.includes(p));
   const pool = event.type === 'posted' ? players : Object.keys(event.stakes ?? {});
   return pool.filter((p) => p !== event.actor && players.includes(p));
 }
@@ -72,7 +89,7 @@ export async function sendEvent(event, { players, subs, prefs, send = (s, payloa
   const gone = [];
   const jobs = [];
   for (const who of recipientsFor(event, players)) {
-    if (!(prefs[who] ?? defaultPrefs())[event.type]) continue;
+    if ((prefs[who] ?? {})[event.type] === false) continue;
     const msg = messageFor(event, who);
     if (!msg) continue;
     const payload = JSON.stringify({ ...msg, url: event.url, tag: `${event.type}:${event.id}` });
@@ -86,4 +103,29 @@ export async function sendEvent(event, { players, subs, prefs, send = (s, payloa
   // Don't hold the request up for long on a slow push service.
   await Promise.race([Promise.allSettled(jobs), new Promise((r) => setTimeout(r, 4000))]);
   return gone;
+}
+
+// Games about to start that are in a bet with money on it (still live), and
+// haven't been reminded about yet. `games` are { id, commence, away, home },
+// `bets` are { id, name, placed, status, legs: [{ gameId }] }, `sent` is
+// { gameId: true }. Due once kickoff is within `windowMs` (35 min, so a check
+// every 5 min lands 30-35 min before).
+export const REMIND_WINDOW = 35 * 60e3;
+export function remindersDue(games, bets, sent, now = Date.now(), windowMs = REMIND_WINDOW) {
+  const live = bets.filter((b) => b.status === 'pending');
+  const due = games.filter((g) => {
+    const until = new Date(g.commence).getTime() - now;
+    return until > 0 && until <= windowMs && !sent[g.id] && live.some((b) => b.legs.some((l) => l.gameId === g.id));
+  }).sort((a, b) => a.commence.localeCompare(b.commence));
+  if (!due.length) return null;
+  const ids = new Set(due.map((g) => g.id));
+  const inBets = live.filter((b) => b.legs.some((l) => ids.has(l.gameId)))
+    // Not placed yet first: those are the ones to act on.
+    .sort((a, b) => !!a.placed - !!b.placed);
+  return {
+    gameIds: due.map((g) => g.id),
+    games: due.map((g) => `${g.away} @ ${g.home}`),
+    minutes: Math.max(1, Math.round((new Date(due[0].commence).getTime() - now) / 60e3)),
+    bets: inBets.map((b) => ({ id: b.id, name: b.name, placed: !!b.placed })),
+  };
 }

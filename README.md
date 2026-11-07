@@ -153,6 +153,8 @@ Settings (in `.env` or as environment variables):
 | `LOGINS` | _(empty)_ | Turns on the login page: `matt:pass,daniel:pass,asher:pass` (usernames match players). Set it in Vercel, not in the repo |
 | `STAKE_EDITORS` | `Daniel` | Who can set everyone's stakes with **Edit stakes** on the Bet Slip (comma-separated) |
 | `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` | _(empty)_ | Turn on push notifications (generate a pair with `npx web-push generate-vapid-keys`). Keep the private one secret |
+| `REMINDER_PLAYERS` | `Daniel` | Who gets a "game starts in 30 min" notification for games in bets with money on them (comma-separated) |
+| `CRON_SECRET` | _(empty)_ | Password the reminder check sends (see **Game reminders** below). Set it in Vercel, not in the repo |
 | `SESSION_SECRET` | _(from LOGINS)_ | Optional key that signs login sessions (60 days) |
 | `GROUP_CODE` | _(empty)_ | Optional shared code friends enter before they can use the site |
 | `SEASON_START` | Tuesday after Labor Day | Sets the "Week N" label (YYYY-MM-DD, a Tuesday) |
@@ -255,6 +257,23 @@ site keeps using `data/db.json`.)
    run `npm run upload-data`.
 
 Pushing to the repo's default branch redeploys automatically.
+
+### Game reminders (Upstash QStash)
+
+The site only runs when someone opens it, so a free Upstash QStash schedule
+checks in every 5 minutes. Any game kicking off within 35 minutes that's in a
+bet with money on it (and not already lost) sends one notification to
+`REMINDER_PLAYERS`, saying which of those bets aren't placed yet.
+
+1. Make up a long random password and add it in Vercel as `CRON_SECRET`, then
+   redeploy.
+2. In the Upstash console, open **QStash → Schedules → Create**:
+   - Destination: `https://<your site>/api/reminders`
+   - Schedule: every 5 minutes (`*/5 * * * *`)
+   - Method: `POST`
+   - Header: `Authorization` = `Bearer <CRON_SECRET>`
+3. Each check answers with what it sent (`{"ok":true,"sent":[]}` when nothing was due).
+
 
 You can also host it anywhere that runs Node: `npm start` with the same
 environment variables. Without Upstash variables it uses `data/db.json`, so

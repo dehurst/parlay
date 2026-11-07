@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { messageFor, recipientsFor, sendEvent, defaultPrefs, addToInbox, INBOX_SIZE } from '../src/push.js';
+import { messageFor, recipientsFor, sendEvent, defaultPrefs, addToInbox, INBOX_SIZE, remindersDue } from '../src/push.js';
 
 const players = ['Daniel', 'Asher', 'Matt'];
 
@@ -49,4 +49,36 @@ test('in-app list: everyone it is for, newest first, capped', () => {
   for (let i = 0; i < INBOX_SIZE + 5; i++) addToInbox(inbox, { type: 'posted', actor: 'Asher', name: `p${i}`, summary: 'x', amount: 1 }, players, 10 + i);
   assert.equal(inbox.Daniel.length, INBOX_SIZE);
   assert.equal(inbox.Daniel[0].title, `Asher posted p${INBOX_SIZE + 4}`);
+});
+
+test('game reminders: due 30-35 min out, live bets with money only, once', () => {
+  const now = Date.parse('2026-11-08T17:30:00Z');
+  const at = (min) => new Date(now + min * 60e3).toISOString();
+  const games = [
+    { id: 'g1', commence: at(33), away: 'Jaguars', home: 'Ravens' },
+    { id: 'g2', commence: at(33), away: 'Bills', home: 'Jets' },
+    { id: 'g3', commence: at(50), away: 'Rams', home: 'Seahawks' }, // too early to remind
+    { id: 'g4', commence: at(31), away: 'Bears', home: 'Lions' }, // only in a lost bet
+    { id: 'g5', commence: at(-5), away: 'Colts', home: 'Texans' }, // already started
+  ];
+  const bets = [
+    { id: 'b1', name: 'Sunday Ladder', placed: { by: 'Daniel' }, status: 'pending', legs: [{ gameId: 'g1' }, { gameId: 'g3' }] },
+    { id: 'b2', name: 'Bills ML', placed: null, status: 'pending', legs: [{ gameId: 'g2' }, { gameId: 'g5' }] },
+    { id: 'b3', name: 'Dead one', placed: { by: 'Daniel' }, status: 'lost', legs: [{ gameId: 'g4' }] },
+  ];
+  const due = remindersDue(games, bets, {}, now);
+  assert.deepEqual(due.gameIds, ['g1', 'g2']);
+  assert.equal(due.minutes, 33);
+  assert.deepEqual(due.bets.map((b) => b.name), ['Bills ML', 'Sunday Ladder']); // not placed first
+  const msg = messageFor({ type: 'reminder', ...due }, 'Daniel');
+  assert.equal(msg.title, '2 of your games start in 33 min');
+  assert.equal(msg.body, 'Jaguars @ Ravens, Bills @ Jets. Not placed yet: Bills ML. Placed: Sunday Ladder.');
+  // Already sent: nothing more until the next game.
+  assert.equal(remindersDue(games, bets, { g1: true, g2: true }, now), null);
+  // One game, all placed.
+  const one = remindersDue(games, bets, { g2: true }, now);
+  assert.deepEqual(messageFor({ type: 'reminder', league: 'cfb', ...one }, 'Daniel'),
+    { title: 'CFB · Jaguars @ Ravens starts in 33 min', body: 'Placed: Sunday Ladder.' });
+  // Only the people it's addressed to.
+  assert.deepEqual(recipientsFor({ type: 'reminder', to: ['Daniel'] }, ['Daniel', 'Asher', 'Matt']), ['Daniel']);
 });

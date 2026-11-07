@@ -11,8 +11,8 @@ import { tally, buildParlays, priceParlay, selectionLabel, MARKETS, sameGameProb
 import { gradeLeg, gradeParlay, actualDecimal } from './grading.js';
 import { fetchEspnScores, fetchOddsApiScores, fetchEspnPlayerStats } from './results.js';
 import { computeStats } from './stats.js';
-import { setupPush, sendEvent, addToInbox, defaultPrefs, EVENTS } from './push.js';
-import { createHash } from 'node:crypto';
+import { setupPush, sendEvent, addToInbox, defaultPrefs, EVENTS, REMINDER_EVENT, remindersDue } from './push.js';
+import { createHash, timingSafeEqual } from 'node:crypto';
 import { parseLogins, checkLogin, makeToken, readToken, cookieValue, sessionCookie, COOKIE } from './auth.js';
 import { analyzeWeek } from './analysis.js';
 import { sgpDecimal, learnAdjust, isSameGameKeys } from '../public/sgp.js';
@@ -37,6 +37,8 @@ const {
   LOGINS = '', // "matt:password,daniel:password,..." (set in Vercel, never in the code)
   SESSION_SECRET = '',
   STAKE_EDITORS = 'Daniel', // who can set other people's stakes on the Bet Slip (comma-separated)
+  REMINDER_PLAYERS = 'Daniel', // who gets "game starts in 30 min" reminders (comma-separated)
+  CRON_SECRET = '', // the password the reminder check (QStash) sends; set in Vercel
   DATA_FILE = join(root, 'data', 'db.json'),
   CFB_DATA_FILE = join(root, 'data', 'cfb.json'),
 } = process.env;
@@ -72,6 +74,7 @@ async function loadPush() {
   pushStore.data.pushPrefs ??= {}; // { player: { posted, joined, placed, paid } }
   pushStore.data.inbox ??= {}; // the in-app list: { player: [{ title, body, url, type, at }] }
   pushStore.data.inboxSeen ??= {}; // { player: ms } when they last opened the list
+  pushStore.data.reminded ??= {}; // { "nfl:gameId": ms } games already reminded about
   return pushStore.data;
 }
 
@@ -107,6 +110,9 @@ async function unreadFor(who) {
     return 0;
   }
 }
+const reminderPlayers = REMINDER_PLAYERS.split(',').map((p) => p.trim()).filter((p) => players.includes(p));
+// The notification settings someone sees: game reminders only for those who get them.
+const eventsFor = (who) => (reminderPlayers.includes(who) ? { ...EVENTS, ...REMINDER_EVENT } : EVENTS);
 const stakeEditors = STAKE_EDITORS.split(',').map((p) => p.trim().toLowerCase()).filter(Boolean);
 const canEditStakes = (name) => !!name && stakeEditors.includes(name.toLowerCase());
 
@@ -156,6 +162,56 @@ app.post('/api/logout', (req, res) => {
   res.setHeader('Set-Cookie', sessionCookie(null, { secure: httpsReq(req) }));
   res.json({ ok: true });
 });
+
+// Game reminders: Upstash QStash calls this every 5 minutes (with
+// "Authorization: Bearer <CRON_SECRET>"). For each league, any game kicking
+// off in the next 35 minutes that's in a live bet with money on it gets one
+// notification to REMINDER_PLAYERS, listing the bets and which aren't placed.
+const secretOk = (req) => {
+  const got = Buffer.from(String(req.get('authorization') ?? ''));
+  const want = Buffer.from(`Bearer ${CRON_SECRET}`);
+  return !!CRON_SECRET && got.length === want.length && timingSafeEqual(got, want);
+};
+app.all('/api/reminders', async (req, res, next) => {
+  if (!CRON_SECRET) return res.status(503).json({ error: 'Reminders aren’t set up: add CRON_SECRET in Vercel.' });
+  if (!secretOk(req)) return res.status(401).json({ error: 'Wrong or missing secret.' });
+  try {
+    const sent = [];
+    for (const id of Object.keys(SPORTS)) {
+      await new Promise((resolve, reject) => runInSport(id, () => remindLeague().then((r) => (r && sent.push({ league: id, ...r }), resolve()), reject)));
+    }
+    res.json({ ok: true, sent });
+  } catch (err) {
+    next(err);
+  }
+});
+async function remindLeague() {
+  if (!reminderPlayers.length) return null;
+  await store.load();
+  const win = weekWindow();
+  const games = store.data.schedule[win.key]?.games ?? [];
+  if (!games.length || store.data.schedule[win.key]?.demo) return null;
+  // Fresh scores first, so a bet that's already lost doesn't get a reminder.
+  try {
+    await refreshResults();
+  } catch (err) {
+    console.error(`Reminder score check failed: ${describe(err)}`);
+  }
+  const bets = gradedParlays(win, new Map(), new Set());
+  const data = await loadPush();
+  const prefix = `${sport().id}:`;
+  const sent = Object.fromEntries(Object.keys(data.reminded).filter((k) => k.startsWith(prefix)).map((k) => [k.slice(prefix.length), true]));
+  const due = remindersDue(games, bets, sent);
+  if (!due) return null;
+  // Mark them first, so a retried or overlapping check can't send twice.
+  const now = Date.now();
+  for (const gid of due.gameIds) data.reminded[prefix + gid] = now;
+  for (const [k, at] of Object.entries(data.reminded)) if (now - at > 7 * 24 * 3600e3) delete data.reminded[k];
+  await pushStore.save();
+  const first = due.bets.find((b) => !b.placed) ?? due.bets[0];
+  await notify({ type: 'reminder', to: reminderPlayers, ...due, id: due.gameIds.join(','), url: parlayUrl(first.id, win.key) });
+  return { games: due.games, bets: due.bets.length };
+}
 
 // Every API request is for one league, set by the page's NFL/CFB switch.
 app.use('/api', (req, res, next) => {
@@ -870,7 +926,7 @@ app.get('/api/push', async (req, res, next) => {
       seenAt: data.inboxSeen[me] ?? 0,
       enabled: pushOn && players.includes(me),
       publicKey: pushOn ? process.env.VAPID_PUBLIC_KEY : null,
-      events: EVENTS,
+      events: eventsFor(me),
       prefs: { ...defaultPrefs(), ...data.pushPrefs[me] },
       endpoints: (data.subs[me] ?? []).map((s) => s.endpoint),
     });
@@ -918,7 +974,7 @@ app.post('/api/push/prefs', async (req, res, next) => {
     const name = checkPlayer(req, res);
     if (!name) return;
     const data = await loadPush();
-    data.pushPrefs[name] = Object.fromEntries(Object.keys(EVENTS).map((k) => [k, req.body.prefs?.[k] !== false]));
+    data.pushPrefs[name] = Object.fromEntries(Object.keys(eventsFor(name)).map((k) => [k, req.body.prefs?.[k] !== false]));
     await pushStore.save();
     res.json({ prefs: data.pushPrefs[name] });
   } catch (err) {
