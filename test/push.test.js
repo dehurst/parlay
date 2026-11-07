@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { messageFor, recipientsFor, sendEvent, defaultPrefs } from '../src/push.js';
+import { messageFor, recipientsFor, sendEvent, defaultPrefs, addToInbox, INBOX_SIZE } from '../src/push.js';
 
 const players = ['Daniel', 'Asher', 'Matt'];
 
@@ -34,4 +34,19 @@ test('sends per person and setting, and reports dead devices', async () => {
   assert.deepEqual(sent.map(([e]) => e), ['d1']); // Asher turned new posts off; Matt posted it
   assert.equal(sent[0][1].url, '/?parlay=x');
   assert.deepEqual(gone, ['gone']);
+});
+
+test('in-app list: everyone it is for, newest first, capped', () => {
+  const players = ['Daniel', 'Asher', 'Matt'];
+  const inbox = {};
+  addToInbox(inbox, { type: 'posted', actor: 'Asher', name: 'Sunday 3-leg', summary: '3 legs', amount: 10, url: '/?parlay=a' }, players, 1);
+  addToInbox(inbox, { type: 'joined', actor: 'Matt', name: 'Sunday 3-leg', amount: 5, total: 15, stakes: { Asher: 10, Matt: 5 }, url: '/?parlay=a' }, players, 2);
+  assert.deepEqual(Object.keys(inbox).sort(), ['Asher', 'Daniel', 'Matt']);
+  assert.equal(inbox.Daniel.length, 1); // not in the bet, so no "joined"
+  assert.equal(inbox.Asher[0].type, 'joined');
+  assert.equal(inbox.Asher[0].at, 2);
+  assert.equal(inbox.Asher[0].url, '/?parlay=a');
+  for (let i = 0; i < INBOX_SIZE + 5; i++) addToInbox(inbox, { type: 'posted', actor: 'Asher', name: `p${i}`, summary: 'x', amount: 1 }, players, 10 + i);
+  assert.equal(inbox.Daniel.length, INBOX_SIZE);
+  assert.equal(inbox.Daniel[0].title, `Asher posted p${INBOX_SIZE + 4}`);
 });

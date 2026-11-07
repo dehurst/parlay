@@ -104,8 +104,34 @@ document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible') clearBadge();
 });
 
-const bellHtml = () => `<button type="button" class="bell" id="push-open" aria-label="Notifications" title="Notifications">
-  <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg></button>`;
+const bellHtml = () => {
+  const unread = week?.unread ?? 0;
+  const label = unread ? `Notifications, ${unread} new` : 'Notifications';
+  return `<button type="button" class="bell" id="push-open" aria-label="${label}" title="${label}">
+  <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>${unread ? `<span class="bell-count">${unread > 9 ? '9+' : unread}</span>` : ''}</button>`;
+};
+
+// "5m ago", "3h ago", "Tue" for older ones.
+function timeAgo(ms) {
+  const mins = Math.round((Date.now() - ms) / 60e3);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  if (mins < 24 * 60) return `${Math.round(mins / 60)}h ago`;
+  if (mins < 6 * 24 * 60) return new Date(ms).toLocaleDateString(undefined, { weekday: 'short' });
+  return new Date(ms).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+
+// The recent list in the bell's panel. New ones (since you last looked) stand out.
+const INBOX_SHOWN = 20;
+function inboxHtml(items, seenAt) {
+  if (!items.length) return '<p class="small muted inbox-empty">No notifications yet. New bets, people joining yours, placed bets and payouts show up here.</p>';
+  return `<ul class="inbox">${items.slice(0, INBOX_SHOWN).map((n) => `
+    <li><a class="inbox-item${n.at > seenAt ? ' unread' : ''}" href="${esc(n.url || '/')}">
+      <span class="inbox-top"><b>${esc(n.title)}</b><span class="muted">${timeAgo(n.at)}</span></span>
+      <span class="small muted">${esc(n.body)}</span>
+    </a></li>`).join('')}</ul>`;
+}
+let pushSettingsOpen = null; // remembers if Settings was opened or closed
 
 // The server's public key, as the bytes PushManager wants.
 function keyBytes(base64url) {
@@ -142,7 +168,18 @@ async function renderPushPanel() {
       : `<p class="small">Get a notification when someone posts a bet, joins one you’re in, places it, or pays you out. Tapping one opens that bet.</p>
          <button type="button" class="primary" id="push-on">Turn on notifications</button>`;
   }
-  panel.innerHTML = `<div class="push-head"><b>Notifications</b><button type="button" class="link small" id="push-close">Close</button></div>${body}`;
+  // Settings start open until phone notifications are on, then tuck away.
+  const open = pushSettingsOpen ?? !body.includes('data-pref');
+  panel.innerHTML = `<div class="push-head"><b>Notifications</b><button type="button" class="link small" id="push-close">Close</button></div>
+    ${inboxHtml(pushInfo.inbox ?? [], pushInfo.seenAt ?? 0)}
+    <details class="push-settings"${open ? ' open' : ''}><summary>Settings</summary>${body}</details>`;
+  panel.querySelector('.push-settings').addEventListener('toggle', (e) => (pushSettingsOpen = e.target.open));
+  // Opening the list counts as reading it.
+  if (week?.unread) {
+    week.unread = 0;
+    renderWho();
+  }
+  api('/api/inbox/seen', { method: 'POST', body: { name: me } }).catch(() => {});
 }
 
 async function turnOnPush() {

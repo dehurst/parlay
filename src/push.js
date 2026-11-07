@@ -51,6 +51,20 @@ export function recipientsFor(event, players) {
   return pool.filter((p) => p !== event.actor && players.includes(p));
 }
 
+// The in-app list: one entry per person the event is for (whatever their
+// push settings), newest first, keeping the last INBOX_SIZE each.
+export const INBOX_SIZE = 50;
+export function addToInbox(inbox, event, players, at = Date.now()) {
+  for (const who of recipientsFor(event, players)) {
+    const msg = messageFor(event, who);
+    if (!msg) continue;
+    const list = (inbox[who] ??= []);
+    list.unshift({ ...msg, type: event.type, url: event.url, at });
+    list.length = Math.min(list.length, INBOX_SIZE);
+  }
+  return inbox;
+}
+
 // Send an event to everyone it's for, per their settings. `subs` is
 // { player: [subscription] }, `prefs` is { player: { posted: true, ... } }.
 // Returns the endpoints that are gone (uninstalled or turned off), to forget.

@@ -750,3 +750,18 @@ h3.section.first { margin-top: 4px; }
 .push-actions { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
 .push-steps { margin: 4px 0 0; padding-left: 20px; }
 body.viewer #push-open { display: none; }
+
+/* Notifications: the recent list and the bell's count */
+.bell { position: relative; }
+.bell-count { position: absolute; top: 1px; right: 0; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 999px; background: #e5484d; color: #fff; font-size: 10px; font-weight: 700; line-height: 16px; text-align: center; }
+.inbox { list-style: none; margin: 4px 0 10px; padding: 0; max-height: 50vh; overflow-y: auto; }
+.inbox li + li { border-top: 1px solid var(--line); }
+.inbox-item { display: flex; flex-direction: column; gap: 2px; padding: 8px 6px; color: inherit; text-decoration: none; border-radius: 6px; }
+.inbox-item:hover { background: rgba(127,127,127,.08); }
+.inbox-item.unread { background: rgba(59,130,246,.10); }
+.inbox-top { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; }
+.inbox-top b { font-size: 14px; }
+.inbox-top .muted { flex: none; font-size: 12px; }
+.inbox-empty { margin: 6px 0 10px; }
+.push-settings { border-top: 1px solid var(--line); padding-top: 8px; }
+.push-settings summary { cursor: pointer; font-weight: 600; font-size: 14px; margin-bottom: 6px; }

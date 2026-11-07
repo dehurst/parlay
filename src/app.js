@@ -11,7 +11,7 @@ import { tally, buildParlays, priceParlay, selectionLabel, MARKETS, sameGameProb
 import { gradeLeg, gradeParlay, actualDecimal } from './grading.js';
 import { fetchEspnScores, fetchOddsApiScores, fetchEspnPlayerStats } from './results.js';
 import { computeStats } from './stats.js';
-import { setupPush, sendEvent, defaultPrefs, EVENTS } from './push.js';
+import { setupPush, sendEvent, addToInbox, defaultPrefs, EVENTS } from './push.js';
 import { createHash } from 'node:crypto';
 import { parseLogins, checkLogin, makeToken, readToken, cookieValue, sessionCookie, COOKIE } from './auth.js';
 import { analyzeWeek } from './analysis.js';
@@ -70,6 +70,8 @@ async function loadPush() {
   await pushStore.load();
   pushStore.data.subs ??= {}; // { player: [subscription] }
   pushStore.data.pushPrefs ??= {}; // { player: { posted, joined, placed, paid } }
+  pushStore.data.inbox ??= {}; // the in-app list: { player: [{ title, body, url, type, at }] }
+  pushStore.data.inboxSeen ??= {}; // { player: ms } when they last opened the list
   return pushStore.data;
 }
 
@@ -80,16 +82,29 @@ const fmtAmerican = (a) => (a > 0 ? `+${a}` : `${a}`);
 // Tell the right people about something that just happened. Never fails the
 // request: a push problem is only logged.
 async function notify(event) {
-  if (!pushOn) return;
   try {
     const data = await loadPush();
-    const gone = await sendEvent({ ...event, league: sport().id }, { players, subs: data.subs, prefs: data.pushPrefs });
-    if (gone.length) {
+    const full = { ...event, league: sport().id };
+    // Always on the in-app list; pushed to phones when that's set up.
+    addToInbox(data.inbox, full, players);
+    if (pushOn) {
+      const gone = await sendEvent(full, { players, subs: data.subs, prefs: data.pushPrefs });
       for (const who of Object.keys(data.subs)) data.subs[who] = data.subs[who].filter((s) => !gone.includes(s.endpoint));
-      await pushStore.save();
     }
+    await pushStore.save();
   } catch (err) {
     console.error(`Notifications failed: ${err.message}`);
+  }
+}
+// How many notifications on someone's in-app list they haven't seen.
+async function unreadFor(who) {
+  if (!who || !players.includes(who)) return 0;
+  try {
+    const data = await loadPush();
+    const seen = data.inboxSeen[who] ?? 0;
+    return (data.inbox[who] ?? []).filter((n) => n.at > seen).length;
+  } catch {
+    return 0;
   }
 }
 const stakeEditors = STAKE_EDITORS.split(',').map((p) => p.trim().toLowerCase()).filter(Boolean);
@@ -504,6 +519,7 @@ app.get('/api/week', async (req, res, next) => {
       canEditStakes: !req.viewer && canEditStakes(me), // "Edit stakes" on the Bet Slip
       viewer: !!req.viewer, // a view-only login
       sgpAdjust: sgpAdjust(), // learned nudge for same-game parlay estimates
+      unread: await unreadFor(me), // the bell's red number
       limitHit,
     });
   } catch (err) {
@@ -848,8 +864,10 @@ app.post('/api/react', async (req, res, next) => {
 app.get('/api/push', async (req, res, next) => {
   try {
     const me = req.player ?? (players.includes(req.query.me) ? req.query.me : null);
-    const data = pushOn && me ? await loadPush() : { subs: {}, pushPrefs: {} };
+    const data = me ? await loadPush() : { subs: {}, pushPrefs: {}, inbox: {}, inboxSeen: {} };
     res.json({
+      inbox: data.inbox[me] ?? [], // recent notifications, newest first
+      seenAt: data.inboxSeen[me] ?? 0,
       enabled: pushOn && players.includes(me),
       publicKey: pushOn ? process.env.VAPID_PUBLIC_KEY : null,
       events: EVENTS,
@@ -903,6 +921,20 @@ app.post('/api/push/prefs', async (req, res, next) => {
     data.pushPrefs[name] = Object.fromEntries(Object.keys(EVENTS).map((k) => [k, req.body.prefs?.[k] !== false]));
     await pushStore.save();
     res.json({ prefs: data.pushPrefs[name] });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Opening the list marks everything in it as read.
+app.post('/api/inbox/seen', async (req, res, next) => {
+  try {
+    const name = checkPlayer(req, res);
+    if (!name) return;
+    const data = await loadPush();
+    data.inboxSeen[name] = Date.now();
+    await pushStore.save();
+    res.json({ ok: true });
   } catch (err) {
     next(err);
   }
