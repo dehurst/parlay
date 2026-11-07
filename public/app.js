@@ -88,6 +88,22 @@ const isStandalone = () => matchMedia('(display-mode: standalone)').matches || n
 const isIOS = () => /iPhone|iPad|iPod/.test(navigator.userAgent);
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
 
+// Opening the app counts as seeing what's new: clear the red number on the
+// icon and the waiting notifications behind it.
+async function clearBadge() {
+  try {
+    await navigator.clearAppBadge?.();
+    const reg = await navigator.serviceWorker?.getRegistration();
+    (await reg?.getNotifications?.())?.forEach((n) => n.close());
+  } catch {
+    // Not supported here: nothing to clear.
+  }
+}
+clearBadge();
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') clearBadge();
+});
+
 const bellHtml = () => `<button type="button" class="bell" id="push-open" aria-label="Notifications" title="Notifications">
   <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg></button>`;
 

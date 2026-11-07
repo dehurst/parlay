@@ -4,6 +4,20 @@
 self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('activate', (event) => event.waitUntil(self.clients.claim()));
 
+// The red number on the app icon: how many notifications are waiting in
+// Notification Center (a newer note about the same bet replaces the older one,
+// so it isn't counted twice). iPhone: iOS 16.4+, with notifications allowed.
+async function updateBadge() {
+  if (!('setAppBadge' in self.navigator)) return;
+  try {
+    const waiting = (await self.registration.getNotifications()).length;
+    if (waiting > 0) await self.navigator.setAppBadge(waiting);
+    else await self.navigator.clearAppBadge();
+  } catch {
+    // No count available: leave the badge as it is.
+  }
+}
+
 self.addEventListener('push', (event) => {
   let data = {};
   try {
@@ -17,11 +31,12 @@ self.addEventListener('push', (event) => {
     badge: '/icons/icon-192.png',
     tag: data.tag, // a newer note about the same bet replaces the older one
     data: { url: data.url || '/' },
-  }));
+  }).then(updateBadge));
 });
 
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
+  event.waitUntil(updateBadge());
   const url = new URL(event.notification.data?.url || '/', self.location.origin).href;
   event.waitUntil((async () => {
     const open = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
