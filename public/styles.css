@@ -563,7 +563,13 @@ h3.section.first { margin-top: 4px; }
   .wx-hr { flex: 1 1 0; min-width: 0; padding: 3px 0; }
 }
 .wx-dome svg { width: 28px; height: 28px; fill: none; stroke: #9be9a8; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
-.heat-title { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; margin: 0 0 2px; }
+.heat-title { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; margin: 0 0 6px; font-size: 24px; line-height: 1.2; }
+.heat-title-team { display: flex; align-items: center; }
+.heat-title-vs { font-size: 14px; font-weight: 600; padding-left: 38px; }
+/* Which team the players below belong to, above each side of a matchup. */
+.heat-side-team { display: flex; align-items: center; font-size: 15px; font-weight: 700; margin-bottom: 6px; }
+.heat-side-team .muted { font-weight: 500; margin-left: 5px; }
+.heat-side-team .team-logo.small { width: 20px; height: 20px; margin-right: 6px; }
 .heat-unit { display: grid; grid-template-columns: 1fr auto 1fr; gap: 10px; align-items: start; padding: 12px 0; border-top: 1px solid var(--line); margin-top: 10px; }
 .heat-label { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-height: 20px; font-size: 14px; font-weight: 700; letter-spacing: .04em; color: var(--text); margin-bottom: 6px; }
 /* A group's health (backups in) and rookie count, colored by how many. */

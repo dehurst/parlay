@@ -1856,14 +1856,19 @@ function heatMatchup(g, offHome, data, weather = '') {
   const [off, def] = offHome ? [data.home.offense, data.away.defense] : [data.away.offense, data.home.defense];
   const [offTeam, defTeam] = offHome ? [g.home, g.away] : [g.away, g.home];
   const [offShort, defShort] = offHome ? [g.homeShort, g.awayShort] : [g.awayShort, g.homeShort];
+  const sideTeam = (team, short, role) => `<div class="heat-side-team">${teamLogo(team, 'small')}${esc(short)} <span class="muted">${role}</span></div>`;
   const units = HEAT_UNITS.map(([id, oLabel, dLabel]) => `<div class="heat-unit">
-      <div class="heat-side"><div class="heat-label">${oLabel}${groupHealth(off[id], oLabel)}</div><div class="heat-row">${off[id].map(heatSquare).join('')}</div></div>
+      <div class="heat-side">${sideTeam(offTeam, offShort, 'offense')}<div class="heat-label">${oLabel}${groupHealth(off[id], oLabel)}</div><div class="heat-row">${off[id].map(heatSquare).join('')}</div></div>
       <div class="heat-vs">vs</div>
-      <div class="heat-side"><div class="heat-label">${dLabel}${groupHealth(def[id], dLabel)}</div><div class="heat-row">${def[id].map(heatSquare).join('')}</div></div>
+      <div class="heat-side">${sideTeam(defTeam, defShort, 'defense')}<div class="heat-label">${dLabel}${groupHealth(def[id], dLabel)}</div><div class="heat-row">${def[id].map(heatSquare).join('')}</div></div>
     </div>`).join('');
   return `<div class="card heat-card">
     <div class="heat-head"><div class="heat-head-text">
-      <h3 class="heat-title">${teamLogo(offTeam, 'small')}${esc(offShort)} offense <span class="muted">vs</span> ${teamLogo(defTeam, 'small')}${esc(defShort)} defense</h3>
+      <h3 class="heat-title">
+        <span class="heat-title-team">${teamLogo(offTeam, 'lg')}${esc(offShort)} offense</span>
+        <span class="heat-title-vs muted">vs</span>
+        <span class="heat-title-team">${teamLogo(defTeam, 'lg')}${esc(defShort)} defense</span>
+      </h3>
       <div class="small muted">${esc(offShort)}: ${heatSummary(off)} · ${esc(defShort)}: ${heatSummary(def)}</div>
     </div>${weather}</div>
     ${units}
