@@ -1516,11 +1516,13 @@ async function renderStats() {
   const all = addUp((p) => p.picks);
   const sumRec = (m) => addUp((p) => p.byMarket[m]);
   const allNet = data.players.reduce((t, p) => t + p.flatNet, 0);
-  const wlp = (r) => `<td class="num">${r.win}</td><td class="num">${r.loss}</td><td class="num">${r.push}</td>`;
+  // Win % leaves pushes out, like the records under each name.
+  const pctCell = (r) => `<td class="num">${r.win + r.loss ? `${Math.round(winPct(r) * 100)}%` : '–'}</td>`;
+  const wlp = (r) => `<td class="num">${r.win}</td><td class="num">${r.loss}</td><td class="num">${r.push}</td>${pctCell(r)}`;
   const picksCard = `<div class="card"><h3>Pick records</h3>
     <p class="small muted">Every submitted pick, graded win, loss, or push. "$10 a pick" is what you'd be up or down betting $10 on each one by itself.</p>
     <table class="slip">
-      <thead><tr><th>Who</th><th class="num">W</th><th class="num">L</th><th class="num">P</th><th class="num">$10 a pick</th></tr></thead>
+      <thead><tr><th>Who</th><th class="num">W</th><th class="num">L</th><th class="num">P</th><th class="num">Win %</th><th class="num">$10 a pick</th></tr></thead>
       <tbody>${[...data.players].sort((a, b) => winPct(b.picks) - winPct(a.picks) || b.picks.win - a.picks.win).map((p) => `<tr>
         <td>${esc(p.name)}<div class="small muted">ATS ${recordText(p.byMarket.spread)} · Totals ${recordText(p.byMarket.total)} · ML ${recordText(p.byMarket.ml)}${propsRec(p.byMarket.props)}</div></td>
         ${wlp(p.picks)}<td class="num ${netClass(p.flatNet)}">${signed(p.flatNet)}</td></tr>`).join('')}</tbody>
@@ -1538,7 +1540,7 @@ async function renderStats() {
   const locksCard = `<div class="card"><h3>${miniLock} Locked picks</h3>
     <p class="small muted">Picks marked as locks: the ones you were sure of. Same grading as above.</p>
     ${lockers.length ? `<table class="slip">
-      <thead><tr><th>Who</th><th class="num">W</th><th class="num">L</th><th class="num">P</th><th class="num">$10 a lock</th></tr></thead>
+      <thead><tr><th>Who</th><th class="num">W</th><th class="num">L</th><th class="num">P</th><th class="num">Win %</th><th class="num">$10 a lock</th></tr></thead>
       <tbody>${[...lockers].sort((a, b) => winPct(b.locks) - winPct(a.locks) || b.locks.win - a.locks.win).map((p) => `<tr>
         <td>${esc(p.name)}<div class="small muted">${recordText(p.locks)}${p.locks.pending ? ` · ${p.locks.pending} still to play` : ''}</div></td>
         ${wlp(p.locks)}<td class="num ${netClass(p.lockNet)}">${signed(p.lockNet)}</td></tr>`).join('')}</tbody>
