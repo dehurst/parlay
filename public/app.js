@@ -17,14 +17,29 @@ let me = storage.get('parlay.name');
 // Which league the site is showing: 'nfl' or 'cfb' (college, Power 5).
 // Each has its own weeks, picks, parlays, and stats.
 let league = storage.get('parlay.sport') === 'cfb' ? 'cfb' : 'nfl';
+{
+  const linkedSport = new URLSearchParams(location.search).get('sport');
+  if (linkedSport === 'cfb' || linkedSport === 'nfl') league = linkedSport;
+}
 let week = null;
 // The week on screen: null for this week, else a past week's key (YYYY-MM-DD).
 let viewKey = null;
+
+// A shared parlay link: /?parlay=<id>&week=<YYYY-MM-DD>&sport=<nfl|cfb>.
+// Opening one (after logging in, if needed) jumps to that parlay.
+let linked = null;
+{
+  const q = new URLSearchParams(location.search);
+  if (q.get('parlay')) {
+    linked = { id: q.get('parlay'), week: q.get('week'), sport: q.get('sport') };
+    if (/^\d{4}-\d{2}-\d{2}$/.test(linked.week ?? '')) viewKey = linked.week;
+  }
+}
 const isPast = () => !!week?.past;
 // Adds the viewed week to an API path (nothing for this week).
 const withWeek = (path) => (viewKey ? `${path}${path.includes('?') ? '&' : '?'}week=${viewKey}` : path);
 let statsScope = 'week'; // Stats tab: 'week' (the one picked up top) or 'season'
-let tab = 'picks';
+let tab = new URLSearchParams(location.search).get('parlay') ? 'parlays' : 'picks';
 // Payout calculator: a scratch parlay that's never saved or shared.
 let calc = false;
 const calcKeys = new Set();
@@ -61,6 +76,87 @@ async function api(path, opts = {}) {
 function notice(msg) {
   $('#notice').hidden = !msg;
   $('#notice').textContent = msg ?? '';
+}
+
+// ---- Notifications ---------------------------------------------------------
+// Push notifications for new bets, people joining yours, placed bets, and
+// payouts. On iPhone they work in the Home Screen app (iOS 16.4+), and only
+// after a tap on "Turn on" there.
+
+const pushSupported = () => 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+const isStandalone = () => matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+const isIOS = () => /iPhone|iPad|iPod/.test(navigator.userAgent);
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
+
+const bellHtml = () => `<button type="button" class="bell" id="push-open" aria-label="Notifications" title="Notifications">
+  <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg></button>`;
+
+// The server's public key, as the bytes PushManager wants.
+function keyBytes(base64url) {
+  const b64 = (base64url + '='.repeat((4 - (base64url.length % 4)) % 4)).replace(/-/g, '+').replace(/_/g, '/');
+  return Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+}
+
+let pushInfo = null;
+async function renderPushPanel() {
+  const panel = $('#push-panel');
+  panel.hidden = false;
+  panel.innerHTML = '<p class="muted small">Loading…</p>';
+  pushInfo = await api(`/api/push?me=${encodeURIComponent(me ?? '')}`).catch((err) => (notice(err.message), null));
+  if (!pushInfo) return (panel.hidden = true);
+  let body;
+  if (!pushInfo.enabled) {
+    body = '<p class="small muted">Notifications aren’t set up on the server yet.</p>';
+  } else if (!pushSupported()) {
+    body = isIOS() && !isStandalone()
+      ? `<p class="small">On iPhone, notifications work in the Home Screen app:</p>
+         <ol class="small push-steps"><li>In Safari, tap <b>Share</b>, then <b>Add to Home Screen</b>.</li>
+         <li>Open <b>Parlays</b> from your Home Screen and log in.</li><li>Tap the bell there and turn them on.</li></ol>`
+      : '<p class="small muted">This browser can’t show notifications.</p>';
+  } else if (Notification.permission === 'denied') {
+    body = '<p class="small">Notifications are blocked for this app. On iPhone: <b>Settings → Notifications → Parlays → Allow Notifications</b>, then come back here.</p>';
+  } else {
+    const reg = await navigator.serviceWorker.ready;
+    const sub = await reg.pushManager.getSubscription();
+    const on = !!sub && pushInfo.endpoints.includes(sub.endpoint);
+    body = on
+      ? `<p class="small muted">On for this ${isIOS() ? 'iPhone' : 'device'}. Let me know about:</p>
+         <div class="push-prefs">${Object.entries(pushInfo.events).map(([k, label]) => `<label><input type="checkbox" data-pref="${k}" ${pushInfo.prefs[k] ? 'checked' : ''}> ${esc(label)}</label>`).join('')}</div>
+         <div class="push-actions"><button type="button" id="push-test">Send a test</button><button type="button" class="link small danger" id="push-off">Turn off on this device</button></div>`
+      : `<p class="small">Get a notification when someone posts a bet, joins one you’re in, places it, or pays you out. Tapping one opens that bet.</p>
+         <button type="button" class="primary" id="push-on">Turn on notifications</button>`;
+  }
+  panel.innerHTML = `<div class="push-head"><b>Notifications</b><button type="button" class="link small" id="push-close">Close</button></div>${body}`;
+}
+
+async function turnOnPush() {
+  // Ask first, straight from the tap (iPhones only allow it then).
+  const permission = await Notification.requestPermission();
+  if (permission !== 'granted') return renderPushPanel();
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    const sub = (await reg.pushManager.getSubscription())
+      ?? await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: keyBytes(pushInfo.publicKey) });
+    await api('/api/push/subscribe', { method: 'POST', body: { name: me, subscription: sub.toJSON() } });
+    notice('Notifications are on. Tap “Send a test” to check.');
+  } catch (err) {
+    notice(`Couldn’t turn on notifications: ${err.message}`);
+  }
+  renderPushPanel();
+}
+
+async function turnOffPush() {
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    const sub = await reg.pushManager.getSubscription();
+    if (sub) {
+      await api('/api/push/unsubscribe', { method: 'POST', body: { name: me, endpoint: sub.endpoint } });
+      await sub.unsubscribe();
+    }
+  } catch (err) {
+    notice(err.message);
+  }
+  renderPushPanel();
 }
 
 // ---- Loading -------------------------------------------------------------
@@ -182,7 +278,7 @@ function renderWho() {
   // Who you are, as a small chip; tap it to switch.
   // With logins it's a log out button; without, tap to switch player.
   $('#who').innerHTML = week.auth
-    ? `${week.viewer ? '<span class="chip tag">View only</span>' : ''}<span class="me-chip static">${esc(me)}</span><button class="link small" id="logout" type="button">Log out</button>`
+    ? `${week.viewer ? '<span class="chip tag">View only</span>' : ''}${bellHtml()}<span class="me-chip static">${esc(me)}</span><button class="link small" id="logout" type="button">Log out</button>`
     : `<button class="me-chip" id="switch" type="button" title="Switch player">${esc(me)} <span class="muted">⇄</span></button>`;
 }
 
@@ -953,8 +1049,42 @@ const shownOdds = (p) => (p.placed?.payout || isEstimate(p) ? oddsFromMultiplier
 const copyable = new Map();
 const copyButton = (p) => {
   copyable.set(p.id, p);
-  return `<button type="button" class="copy-parlay" data-copy="${esc(p.id)}">Copy</button>`;
+  return `<button type="button" class="copy-parlay" data-copy="${esc(p.id)}">Copy</button>
+    <button type="button" class="share-parlay" data-share="${esc(p.id)}">Share</button>`;
 };
+
+// A link to one parlay, for the group (opening it needs a login).
+const parlayLink = (p) => `${location.origin}/?${new URLSearchParams({ parlay: p.id, week: week.key, sport: league })}`;
+
+async function shareParlay(btn) {
+  const p = copyable.get(btn.dataset.share);
+  if (!p) return;
+  const url = parlayLink(p);
+  // Phones: the share sheet (Messages, etc.). Elsewhere: copy the link.
+  if (navigator.share) {
+    try {
+      await navigator.share({ title: p.name, text: `${p.name} (${oddsText(p)})`, url });
+      return;
+    } catch (err) {
+      if (err?.name === 'AbortError') return; // closed the share sheet
+    }
+  }
+  const ok = await copyText(url);
+  btn.textContent = ok ? 'Link copied ✓' : "Couldn't copy";
+  setTimeout(() => (btn.textContent = 'Share'), 1800);
+}
+
+// After following a link: scroll to that parlay and flash it.
+function focusLinked() {
+  if (!linked) return;
+  const card = [...document.querySelectorAll('[data-parlay-id]')].find((c) => c.dataset.parlayId === linked.id);
+  if (!card) notice('That parlay isn’t here anymore. It may have been deleted, or the picks behind it changed.');
+  card?.scrollIntoView({ block: 'center' });
+  card?.classList.add('linked');
+  setTimeout(() => card?.classList.remove('linked'), 2500);
+  linked = null;
+  history.replaceState(null, '', location.pathname); // tidy the address bar
+}
 
 async function copyText(text) {
   try {
@@ -1165,7 +1295,7 @@ function deleteHtml(p, inline = false) {
 function inPlayHtml(data) {
   if (!data.inPlay?.length) return '';
   const cards = data.inPlay.map((p) => {
-    return `<div class="card parlay ${p.custom ? 'custom' : ''}">
+    return `<div class="card parlay ${p.custom ? 'custom' : ''}" data-parlay-id="${esc(p.id)}">
       <div class="head">
         <div>${p.placed ? '<span class="chip placed">✓ Placed</span>' : '<span class="chip pending">Not placed</span>'}
           ${titleHtml(p, !isPast())}<div class="small muted">${betKind(p, p.custom)}</div></div>
@@ -1185,7 +1315,7 @@ function settledHtml(data) {
   if (!data.settled?.length) return '';
   const cards = data.settled.map((p) => {
     const back = p.status === 'won' ? `paid ${money(p.returned)} (${money(p.returned - p.total)} profit)` : p.status === 'push' ? 'refunded' : 'paid $0.00';
-    return `<div class="card parlay done ${p.status}">
+    return `<div class="card parlay done ${p.status}" data-parlay-id="${esc(p.id)}">
       <div class="head">
         <div>${statusChip(p.status, p.returned, p.total)}${titleHtml(p, !isPast())}<div class="small muted">${betKind(p)}</div></div>
         <div class="odds-col"><div class="odds">${oddsText(p)}</div>${copyButton(p)}</div>
@@ -1203,7 +1333,7 @@ const majority = () => Math.floor(week.players.length / 2) + 1;
 
 function customHtml(data) {
   const cards = data.custom.map((p) => `
-    <div class="card parlay custom">
+    <div class="card parlay custom" data-parlay-id="${esc(p.id)}">
       <div class="head">
         <div>${likersOf(p).length >= majority() ? '<span class="badge">Group\'s pick</span>' : ''}
           ${titleHtml(p)}<div class="small muted">${betKind(p, true)}${p.sameGame ? ' · same-game' : ''}${p.basedOn ? ` · based on ${esc(p.basedOn)}` : ''}</div></div>
@@ -1234,6 +1364,7 @@ async function renderParlays(quiet = false) {
     // A past week: just the parlays that had money on them, and how they did.
     const html = inPlayHtml(data) + settledHtml(data);
     $('#parlays').innerHTML = html || `<div class="card muted">Nobody put money on a parlay in ${esc(week.label)}.</div>`;
+    focusLinked();
     if (quiet) window.scrollTo(0, y);
     return;
   }
@@ -1253,7 +1384,7 @@ async function renderParlays(quiet = false) {
     // A majority liking it (money counts as a like) makes it the group's pick.
     const groupPick = likersOf(p).length >= majority();
     return `
-    <div class="card parlay ${groupPick ? 'group-pick' : ''}">
+    <div class="card parlay ${groupPick ? 'group-pick' : ''}" data-parlay-id="${esc(p.id)}">
       <div class="head">
         <div>
           ${groupPick ? '<span class="badge">Group\'s pick</span>' : ''}
@@ -1286,6 +1417,7 @@ async function renderParlays(quiet = false) {
     Hit chance is a rough estimate that removes a typical book margin. A negative expected return is the house edge,
     and parlays stack it on every leg.</p>`;
   $('#parlays').innerHTML = html;
+  focusLinked();
   if (quiet) window.scrollTo(0, y);
 }
 
@@ -2115,7 +2247,7 @@ async function renderSlip(quiet = false) {
     const rows = Object.entries(p.stakes).map(([who, amt]) => `<tr>
         <td>${esc(who)}${who === me && !p.placed && !past ? ` <button type="button" class="link danger" data-slip-out="${esc(p.id)}">remove</button>` : ''}</td>
         <td class="num">${money(amt)}</td><td class="num">${money(amt * (payMultiplier(p) - 1))}</td><td class="num">${money(amt * payMultiplier(p))}</td></tr>`).join('');
-    return `<div class="card parlay ${p.placed ? 'placed' : ''} ${p.status !== 'pending' ? `done ${p.status}` : ''}">
+    return `<div class="card parlay ${p.placed ? 'placed' : ''} ${p.status !== 'pending' ? `done ${p.status}` : ''}" data-parlay-id="${esc(p.id)}">
       <div class="head">
         <div><span class="muted small">Bet ${i + 1}</span> ${p.placed ? '<span class="chip placed">✓ Placed</span>' : ''} ${statusChip(p.status, p.returned, p.total)} ${p.paidOut ? '<span class="chip paid">💵 Paid out</span>' : ''}${titleHtml(p, !past)}<div class="small muted">${betKind(p)}</div></div>
         <div class="odds-col"><div class="odds">${oddsText(p)}</div>${copyButton(p)}</div>
@@ -2418,6 +2550,8 @@ for (const el of ['#parlays', '#slip']) {
   $(el).addEventListener('click', (e) => {
     const btn = e.target.closest('.copy-parlay');
     if (btn) copyParlay(btn);
+    const share = e.target.closest('.share-parlay');
+    if (share) shareParlay(share);
   });
 }
 $('#parlays').addEventListener('click', (e) => {
@@ -2525,7 +2659,35 @@ $('#slip').addEventListener('click', async (e) => {
   const btn = e.target.closest('[data-slip-out]');
   if (btn) setStake(btn.dataset.slipOut, 0, () => renderSlip(true));
 });
+$('#push-panel').addEventListener('click', async (e) => {
+  if (e.target.closest('#push-close')) $('#push-panel').hidden = true;
+  if (e.target.closest('#push-on')) turnOnPush();
+  if (e.target.closest('#push-off')) turnOffPush();
+  if (e.target.closest('#push-test')) {
+    try {
+      await api('/api/push/test', { method: 'POST', body: { name: me } });
+      notice('Test sent. It should show up in a few seconds.');
+    } catch (err) {
+      notice(err.message);
+    }
+  }
+});
+$('#push-panel').addEventListener('change', async (e) => {
+  const box = e.target.closest('[data-pref]');
+  if (!box) return;
+  const prefs = Object.fromEntries([...document.querySelectorAll('[data-pref]')].map((b) => [b.dataset.pref, b.checked]));
+  try {
+    await api('/api/push/prefs', { method: 'POST', body: { name: me, prefs } });
+  } catch (err) {
+    notice(err.message);
+  }
+});
 $('#who').addEventListener('click', (e) => {
+  if (e.target.closest('#push-open')) {
+    if ($('#push-panel').hidden) renderPushPanel();
+    else $('#push-panel').hidden = true;
+    return;
+  }
   if (e.target.closest('#logout')) {
     api('/api/logout', { method: 'POST' }).catch(() => {});
     storage.del('parlay.name');

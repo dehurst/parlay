@@ -11,6 +11,7 @@ import { tally, buildParlays, priceParlay, selectionLabel, MARKETS, sameGameProb
 import { gradeLeg, gradeParlay, actualDecimal } from './grading.js';
 import { fetchEspnScores, fetchOddsApiScores, fetchEspnPlayerStats } from './results.js';
 import { computeStats } from './stats.js';
+import { setupPush, sendEvent, defaultPrefs, EVENTS } from './push.js';
 import { createHash } from 'node:crypto';
 import { parseLogins, checkLogin, makeToken, readToken, cookieValue, sessionCookie, COOKIE } from './auth.js';
 import { analyzeWeek } from './analysis.js';
@@ -31,6 +32,7 @@ const {
   SUNDAY_CREDIT_LIMIT = '30',
   PLAYERS = 'Daniel,Asher,Matt',
   VIEWERS = 'Robi', // view-only logins: can look at everything, change nothing (comma-separated)
+  PUSH_FILE = join(root, 'data', 'push.json'), // notification sign-ups (local runs)
   GROUP_CODE = '',
   LOGINS = '', // "matt:password,daniel:password,..." (set in Vercel, never in the code)
   SESSION_SECRET = '',
@@ -58,6 +60,38 @@ const BOOK_NAMES = { fanduel: 'FanDuel', draftkings: 'DraftKings', betmgm: 'BetM
 const bookName = BOOK_NAMES[BOOKMAKER] ?? BOOKMAKER;
 
 const players = PLAYERS.split(',').map((p) => p.trim()).filter(Boolean);
+
+// Push notifications: on once VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY are set.
+// Sign-ups are for both leagues, so they live in their own small document.
+const pushOn = setupPush(process.env);
+let pushStore;
+async function loadPush() {
+  pushStore ??= createStore(process.env, PUSH_FILE, 'parlay:push');
+  await pushStore.load();
+  pushStore.data.subs ??= {}; // { player: [subscription] }
+  pushStore.data.pushPrefs ??= {}; // { player: { posted, joined, placed, paid } }
+  return pushStore.data;
+}
+
+// A link that opens the app on one parlay (the same as its Share link).
+const parlayUrl = (id, weekKey) => `/?${new URLSearchParams({ parlay: id, week: weekKey, sport: sport().id })}`;
+const fmtAmerican = (a) => (a > 0 ? `+${a}` : `${a}`);
+
+// Tell the right people about something that just happened. Never fails the
+// request: a push problem is only logged.
+async function notify(event) {
+  if (!pushOn) return;
+  try {
+    const data = await loadPush();
+    const gone = await sendEvent({ ...event, league: sport().id }, { players, subs: data.subs, prefs: data.pushPrefs });
+    if (gone.length) {
+      for (const who of Object.keys(data.subs)) data.subs[who] = data.subs[who].filter((s) => !gone.includes(s.endpoint));
+      await pushStore.save();
+    }
+  } catch (err) {
+    console.error(`Notifications failed: ${err.message}`);
+  }
+}
 const stakeEditors = STAKE_EDITORS.split(',').map((p) => p.trim().toLowerCase()).filter(Boolean);
 const canEditStakes = (name) => !!name && stakeEditors.includes(name.toLowerCase());
 
@@ -540,10 +574,17 @@ app.post('/api/placed', async (req, res, next) => {
         }
       }
       // Editing the payout keeps who placed it and when.
+      const newlyPlaced = !saved.placed;
       saved.placed = { by: saved.placed?.by ?? name, at: saved.placed?.at ?? Date.now(), payout };
-    } else delete saved.placed;
+      await save();
+      if (newlyPlaced) {
+        await notify({ type: 'placed', actor: name, name: saved.name, id: saved.id, url: parlayUrl(saved.id, win.key), stakes: saved.stakes, payout });
+      }
+      return res.json({ placed: saved.placed });
+    }
+    delete saved.placed;
     await save();
-    res.json({ placed: saved.placed ?? null });
+    res.json({ placed: null });
   } catch (err) {
     next(err);
   }
@@ -566,9 +607,14 @@ app.post('/api/paidout', async (req, res, next) => {
         return res.status(409).json({ error: 'Only parlays that won or pushed have anything to pay out.' });
       }
       saved.paidOut = { by: name, at: Date.now() };
-    } else delete saved.paidOut;
+      await save();
+      const shares = Object.fromEntries(Object.entries(graded.stakes).map(([who, amt]) => [who, (graded.returned * amt) / graded.total]));
+      await notify({ type: 'paid', actor: name, name: saved.name, id, url: parlayUrl(id, win.key), stakes: graded.stakes, shares });
+      return res.json({ paidOut: saved.paidOut });
+    }
+    delete saved.paidOut;
     await save();
-    res.json({ paidOut: saved.paidOut ?? null });
+    res.json({ paidOut: null });
   } catch (err) {
     next(err);
   }
@@ -752,6 +798,11 @@ app.post('/api/custom', async (req, res, next) => {
       stakes: { [name]: amount },
     };
     await save();
+    await notify({
+      type: 'posted', actor: name, name: weekStakes[id].name, id, url: parlayUrl(id, win.key),
+      stakes: weekStakes[id].stakes, amount: amount,
+      summary: `${legs.length === 1 ? 'Straight bet' : `${legs.length}-leg parlay`} at ${fmtAmerican(priced.american)}`,
+    });
     res.json({ id, name: weekStakes[id].name });
   } catch (err) {
     next(err);
@@ -788,6 +839,88 @@ app.post('/api/react', async (req, res, next) => {
     }
     await save();
     res.json({ reactions: week });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Notifications: settings for this person, sign up a device, stop, test.
+app.get('/api/push', async (req, res, next) => {
+  try {
+    const me = req.player ?? (players.includes(req.query.me) ? req.query.me : null);
+    const data = pushOn && me ? await loadPush() : { subs: {}, pushPrefs: {} };
+    res.json({
+      enabled: pushOn && players.includes(me),
+      publicKey: pushOn ? process.env.VAPID_PUBLIC_KEY : null,
+      events: EVENTS,
+      prefs: { ...defaultPrefs(), ...data.pushPrefs[me] },
+      endpoints: (data.subs[me] ?? []).map((s) => s.endpoint),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+app.post('/api/push/subscribe', async (req, res, next) => {
+  try {
+    const name = checkPlayer(req, res);
+    if (!name) return;
+    if (!pushOn) return res.status(503).json({ error: 'Notifications aren’t set up on the server yet.' });
+    const sub = req.body.subscription;
+    const ok = sub && typeof sub.endpoint === 'string' && /^https:\/\//.test(sub.endpoint) && sub.endpoint.length < 1000
+      && typeof sub.keys?.p256dh === 'string' && typeof sub.keys?.auth === 'string';
+    if (!ok) return res.status(400).json({ error: 'That device didn’t give a usable subscription.' });
+    const data = await loadPush();
+    // One entry per device; a device moves to whoever signed up on it last.
+    for (const who of Object.keys(data.subs)) data.subs[who] = data.subs[who].filter((s) => s.endpoint !== sub.endpoint);
+    (data.subs[name] ??= []).push({ endpoint: sub.endpoint, keys: { p256dh: sub.keys.p256dh, auth: sub.keys.auth }, addedAt: Date.now() });
+    data.subs[name] = data.subs[name].slice(-5); // at most 5 devices each
+    await pushStore.save();
+    res.json({ ok: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
+app.post('/api/push/unsubscribe', async (req, res, next) => {
+  try {
+    const name = checkPlayer(req, res);
+    if (!name) return;
+    const data = await loadPush();
+    data.subs[name] = (data.subs[name] ?? []).filter((s) => s.endpoint !== req.body.endpoint);
+    await pushStore.save();
+    res.json({ ok: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
+app.post('/api/push/prefs', async (req, res, next) => {
+  try {
+    const name = checkPlayer(req, res);
+    if (!name) return;
+    const data = await loadPush();
+    data.pushPrefs[name] = Object.fromEntries(Object.keys(EVENTS).map((k) => [k, req.body.prefs?.[k] !== false]));
+    await pushStore.save();
+    res.json({ prefs: data.pushPrefs[name] });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// A test notification to your own devices.
+app.post('/api/push/test', async (req, res, next) => {
+  try {
+    const name = checkPlayer(req, res);
+    if (!name) return;
+    if (!pushOn) return res.status(503).json({ error: 'Notifications aren’t set up on the server yet.' });
+    const data = await loadPush();
+    const subs = data.subs[name] ?? [];
+    if (!subs.length) return res.status(409).json({ error: 'This device isn’t signed up yet.' });
+    const { sendNotification } = await import('web-push');
+    const payload = JSON.stringify({ title: 'Parlays notifications are on ✓', body: 'You’ll hear about new bets, people joining yours, placed bets, and payouts.', url: '/' });
+    await Promise.allSettled(subs.map((s) => sendNotification(s, payload, { TTL: 600 })));
+    res.json({ ok: true });
   } catch (err) {
     next(err);
   }
@@ -878,6 +1011,8 @@ app.post('/api/stake', async (req, res, next) => {
     const id = String(req.body.id ?? '');
     const saved = weekStakes[id];
     const option = result.options.find((o) => o.id === id);
+    const before = saved?.stakes?.[name] ?? 0;
+    const othersIn = Object.keys(saved?.stakes ?? {}).some((p) => p !== name);
     if (saved?.placed) {
       return res.status(409).json({ error: `${saved.placed.by} already placed this bet, so stakes are locked. They can undo "placed" on the Bet Slip.` });
     }
@@ -905,6 +1040,14 @@ app.post('/api/stake', async (req, res, next) => {
       if (!Object.keys(saved.stakes).length) delete weekStakes[id];
     }
     await save();
+    const now = weekStakes[id];
+    if (now && amount > before) {
+      const total = Object.values(now.stakes).reduce((a, b) => a + b, 0);
+      await notify(othersIn
+        ? { type: 'joined', actor: name, name: now.name, id, url: parlayUrl(id, win.key), stakes: now.stakes, amount, total }
+        : { type: 'posted', actor: name, name: now.name, id, url: parlayUrl(id, win.key), stakes: now.stakes, amount,
+          summary: `${now.legs.length}-leg suggested parlay at ${fmtAmerican(now.american)}` });
+    }
     res.json({ id, stakes: stakesFor(win, id) });
   } catch (err) {
     next(err);

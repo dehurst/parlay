@@ -423,7 +423,7 @@ h3.section.first { margin-top: 4px; }
 #build-custom { white-space: nowrap; padding: 6px 12px; font-size: 14px; flex: none; }
 
 .odds-col { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; flex: none; }
-.copy-parlay { padding: 4px 10px; font-size: 13px; white-space: nowrap; }
+.copy-parlay, .share-parlay { padding: 4px 10px; font-size: 13px; white-space: nowrap; }
 
 .place-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
 .chip.placed { background: rgba(47, 191, 113, .18); color: var(--accent); border: 1px solid var(--bar-line); }
@@ -736,3 +736,17 @@ h3.section.first { margin-top: 4px; }
 /* Same-game estimate: "(up to $X)" */
 .up-to { color: var(--muted); font-weight: 400; }
 .up-to-note { margin: 6px 0 0; }
+
+/* Share links */
+.parlay.linked { box-shadow: 0 0 0 2px var(--accent); transition: box-shadow .3s; }
+
+/* Notifications: the bell and its panel */
+.bell { display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; padding: 0; border-radius: 999px; background: none; color: var(--muted); }
+.bell:hover { color: var(--text); }
+.push-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+.push-prefs { display: flex; flex-direction: column; gap: 8px; margin: 8px 0 12px; }
+.push-prefs label { display: flex; align-items: center; gap: 10px; font-size: 15px; }
+.push-prefs input { flex: none; width: 18px; height: 18px; margin: 0; }
+.push-actions { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.push-steps { margin: 4px 0 0; padding-left: 20px; }
+body.viewer #push-open { display: none; }

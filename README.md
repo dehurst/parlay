@@ -69,6 +69,13 @@ the plays most of you agree on and builds a few parlays out of them.
   against the spread and on over/unders (tap one to open its page). Finished
   weeks are cached; weeks in progress re-check every 15 minutes
   during games, else every 6 hours.
+- **Share links**: every parlay has a **Share** button. The link opens the app
+  on that parlay (right week and league), after logging in: only people with
+  an account can see it.
+- **Notifications** (the bell by your name): on iPhone, from the Home Screen
+  app (iOS 16.4+). Pings you when someone posts a bet, joins one you're in,
+  places it, or pays you out; tap one to open that bet. Choose which ones in
+  the same panel.
 - **Analysis**: each of your open picks with its win chance (FanDuel's odds on
   both sides with the house's cut removed) and the other way to bet the same
   team (spread vs. moneyline); live parlays' hit chances and weakest leg;
@@ -145,6 +152,7 @@ Settings (in `.env` or as environment variables):
 | `SUNDAY_CREDIT_LIMIT` | `30` | The same, on Sundays |
 | `LOGINS` | _(empty)_ | Turns on the login page: `matt:pass,daniel:pass,asher:pass` (usernames match players). Set it in Vercel, not in the repo |
 | `STAKE_EDITORS` | `Daniel` | Who can set everyone's stakes with **Edit stakes** on the Bet Slip (comma-separated) |
+| `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` | _(empty)_ | Turn on push notifications (generate a pair with `npx web-push generate-vapid-keys`). Keep the private one secret |
 | `SESSION_SECRET` | _(from LOGINS)_ | Optional key that signs login sessions (60 days) |
 | `GROUP_CODE` | _(empty)_ | Optional shared code friends enter before they can use the site |
 | `SEASON_START` | Tuesday after Labor Day | Sets the "Week N" label (YYYY-MM-DD, a Tuesday) |
