@@ -268,7 +268,7 @@ function applyLive() {
     el.innerHTML = scoreHtml(g);
     el.hidden = false;
   }
-  for (const el of document.querySelectorAll('[data-leg-game]')) el.innerHTML = legWhen(el.dataset.legGame, el.dataset.kick);
+  for (const el of document.querySelectorAll('[data-leg-game]')) el.innerHTML = legLine(el.dataset.legGame, el.dataset.matchup, el.dataset.kick);
   for (const el of document.querySelectorAll('[data-leg-live]')) {
     const now = legLive({ key: el.dataset.legLive, point: el.dataset.point === '' ? null : Number(el.dataset.point) });
     el.hidden = !now;
@@ -1317,22 +1317,25 @@ async function submit() {
 // "San Francisco 49ers @ Atlanta Falcons" -> "49ers @ Falcons"
 const shortMatchup = (m) => String(m).split(' @ ').map((t) => (league === 'cfb' ? college(t)?.short ?? t : t.split(' ').pop())).join(' @ ');
 // A leg's matchup on its own small line under the bet.
-// Under each leg: the matchup and its kickoff ("Sun 1:00 PM"), in gray.
-// After the matchup: the kickoff time, then the score once it starts
-// ("Jaguars @ Ravens · 17–14 · 4:12 - 3rd", away first like the matchup).
-const legKick = (l) => {
-  const gameId = String(l.key ?? '').split('|')[0];
-  const t = l.commence ?? (l.key && gameOf(l.key)?.commence) ?? '';
-  return `<span data-leg-game="${esc(gameId)}" data-kick="${esc(t)}">${legWhen(gameId, t)}</span>`;
-};
-function legWhen(gameId, t) {
+// Under each leg, in gray, no logos: the matchup and kickoff ("BYU @ Utah ·
+// Sat 3:30 PM"), then each team's score once it starts ("BYU 20 @ Utah 28 ·
+// 3:27 - 4th", "... · Final"). Updated in place by the live scores.
+const legLine = (gameId, matchup, t) => {
+  const [away, home] = shortMatchup(matchup ?? '').split(' @ ').map(esc);
   const s = liveNow[gameId];
   const final = gameById(gameId)?.result ?? (s?.state === 'post' ? s : null);
-  if (final) return ` · Final <b class="leg-score">${final.awayScore}–${final.homeScore}</b>`;
-  if (s?.state === 'in') return ` · <b class="leg-score">${s.awayScore}–${s.homeScore}</b> · ${esc(s.detail)}`;
-  return t ? ` · ${new Date(t).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' })}` : '';
-}
-const legSub = (l, extra = '') => `<div class="small muted leg-sub">${matchupHtml(l.matchup)}${legKick(l)}${extra}</div>${legLiveHtml(l)}`;
+  const scored = (r) => `${away} <b class="leg-score">${r.awayScore}</b> @ ${home} <b class="leg-score">${r.homeScore}</b>`;
+  if (final) return `${scored(final)} · Final`;
+  if (s?.state === 'in') return `${scored(s)} · ${esc(s.detail)}`;
+  const when = t ? ` · ${new Date(t).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' })}` : '';
+  return `${home ? `${away} @ ${home}` : esc(matchup ?? '')}${when}`;
+};
+const legMatchup = (l) => {
+  const gameId = String(l.key ?? '').split('|')[0];
+  const t = l.commence ?? (l.key && gameOf(l.key)?.commence) ?? '';
+  return `<span data-leg-game="${esc(gameId)}" data-matchup="${esc(l.matchup ?? '')}" data-kick="${esc(t)}">${legLine(gameId, l.matchup, t)}</span>`;
+};
+const legSub = (l, extra = '') => `<div class="small muted leg-sub">${legMatchup(l)}${extra}</div>${legLiveHtml(l)}`;
 
 // Note when the book's line has moved off the one the group took.
 function lineMoved(s, book) {
