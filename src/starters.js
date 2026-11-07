@@ -272,15 +272,22 @@ export function outsnapped(teams, code, a, b, bLast = 0) {
 // week, a day or two after the games). `back` = 1 for last season.
 const snaps = new Map();
 const SNAPS_TTL = 6 * 3600e3;
+// Downloads in progress, so both teams of a game share one (the file is big).
+const loading = new Map();
 
 export async function seasonSnaps(now = new Date(), back = 0) {
   // The season is named for the year it starts (September).
   const season = (now.getMonth() >= 8 ? now.getFullYear() : now.getFullYear() - 1) - back;
   const cached = snaps.get(season);
   if (cached && now - cached.at < SNAPS_TTL) return cached.teams;
-  const res = await fetch(SNAPS_URL(season), { signal: AbortSignal.timeout(8000) });
-  if (!res.ok) throw new Error(`nflverse snap counts returned ${res.status}`);
-  const teams = parseSnaps(await res.text());
-  snaps.set(season, { at: now.getTime(), teams });
-  return teams;
+  if (!loading.has(season)) {
+    loading.set(season, (async () => {
+      const res = await fetch(SNAPS_URL(season), { signal: AbortSignal.timeout(30000) });
+      if (!res.ok) throw new Error(`nflverse snap counts returned ${res.status}`);
+      const teams = parseSnaps(await res.text());
+      snaps.set(season, { at: now.getTime(), teams });
+      return teams;
+    })().finally(() => loading.delete(season)));
+  }
+  return loading.get(season);
 }

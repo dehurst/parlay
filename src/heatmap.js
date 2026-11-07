@@ -216,6 +216,8 @@ export async function teamHeatmap(name, now = Date.now()) {
     addExtras(sides.offense, teams, teamCode(name), { injuries, roster: names });
     for (const slot of Object.values(sides.offense).flat()) slot.rookie = rookies.has(slot.name);
   }
-  charts.set(id, { at: now, sides });
+  // Without snap counts the RB2/WR4/TE2 squares and tags are missing, so
+  // don't keep that version: the next load tries again.
+  if (snaps.status === 'fulfilled' && lastSnaps.status === 'fulfilled') charts.set(id, { at: now, sides });
   return sides;
 }
