@@ -1045,12 +1045,11 @@ const oddsFromMultiplier = (d) => (d >= 2 ? Math.trunc((d - 1) * 100) : Math.tru
 // Odds to show: what the sportsbook actually gave once a payout is entered.
 const shownOdds = (p) => (p.placed?.payout || isEstimate(p) ? oddsFromMultiplier(payMultiplier(p)) : p.american);
 
-// Parlays on screen, by id, for their Copy buttons.
+// Parlays on screen, by id, for their Share buttons.
 const copyable = new Map();
 const copyButton = (p) => {
   copyable.set(p.id, p);
-  return `<button type="button" class="copy-parlay" data-copy="${esc(p.id)}">Copy</button>
-    <button type="button" class="share-parlay" data-share="${esc(p.id)}">Share</button>`;
+  return `<button type="button" class="share-parlay" data-share="${esc(p.id)}">Share</button>`;
 };
 
 // A link to one parlay, for the group (opening it needs a login).
@@ -1059,18 +1058,20 @@ const parlayLink = (p) => `${location.origin}/?${new URLSearchParams({ parlay: p
 async function shareParlay(btn) {
   const p = copyable.get(btn.dataset.share);
   if (!p) return;
-  const url = parlayLink(p);
-  // Phones: the share sheet (Messages, etc.). Elsewhere: copy the link.
+  // The bet as text (legs, odds, payout), then the link. The link goes in the
+  // text so the share sheet's Copy takes both.
+  const text = `${p.name}\n${parlayText(p)}\n\n${parlayLink(p)}`;
+  // Phones: the share sheet (Messages, Copy, etc.). Elsewhere: copy it.
   if (navigator.share) {
     try {
-      await navigator.share({ title: p.name, text: `${p.name} (${oddsText(p)})`, url });
+      await navigator.share({ text });
       return;
     } catch (err) {
       if (err?.name === 'AbortError') return; // closed the share sheet
     }
   }
-  const ok = await copyText(url);
-  btn.textContent = ok ? 'Link copied ✓' : "Couldn't copy";
+  const ok = await copyText(text);
+  btn.textContent = ok ? 'Copied ✓' : "Couldn't copy";
   setTimeout(() => (btn.textContent = 'Share'), 1800);
 }
 
@@ -1103,14 +1104,6 @@ async function copyText(text) {
     box.remove();
     return ok;
   }
-}
-
-async function copyParlay(btn) {
-  const parlay = copyable.get(btn.dataset.copy);
-  if (!parlay) return;
-  const ok = await copyText(parlayText(parlay));
-  btn.textContent = ok ? 'Copied ✓' : "Couldn't copy";
-  setTimeout(() => (btn.textContent = 'Copy'), 1800);
 }
 
 async function copyPicks(btn) {
@@ -2548,8 +2541,6 @@ $('#parlays').addEventListener('submit', (e) => {
 });
 for (const el of ['#parlays', '#slip']) {
   $(el).addEventListener('click', (e) => {
-    const btn = e.target.closest('.copy-parlay');
-    if (btn) copyParlay(btn);
     const share = e.target.closest('.share-parlay');
     if (share) shareParlay(share);
   });
