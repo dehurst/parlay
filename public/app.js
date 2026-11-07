@@ -1004,26 +1004,6 @@ function picksText(day) {
     .join('\n');
 }
 
-// A parlay's legs as text, in kickoff order. Legs carry their matchup
-// ("Away @ Home"), so this works for past games too.
-// Followed by the odds, the payout on $10, and (if anyone's in) the total
-// bet and what it pays.
-function parlayText(p) {
-  const legs = [...p.legs]
-    .sort((a, b) => (a.commence ?? '').localeCompare(b.commence ?? ''))
-    .map((l) => {
-      const [away, home] = l.matchup.split(' @ ');
-      return betText(l.key, l.point, away, home);
-    });
-  const total = Object.values(p.stakes ?? {}).reduce((sum, amt) => sum + amt, 0);
-  const mult = payMultiplier(p);
-  const est = isEstimate(p) ? '≈' : '';
-  const lines = [...legs, '', `Odds: ${oddsText(p)}`, `$10 pays ${est}${money(10 * mult)}`];
-  if (total > 0) lines.push(`Total bet: ${money(total)}, pays ${est}${money(total * mult)}`);
-  if (est) lines.push(`(same-game estimate; up to ${money((total > 0 ? total : 10) * p.decimal)})`);
-  return lines.join('\n');
-}
-
 // What the parlay really pays per $1: the payout entered when it was placed,
 // else the estimate from its legs' odds.
 function payMultiplier(p) {
@@ -1058,20 +1038,20 @@ const parlayLink = (p) => `${location.origin}/?${new URLSearchParams({ parlay: p
 async function shareParlay(btn) {
   const p = copyable.get(btn.dataset.share);
   if (!p) return;
-  // The bet as text (legs, odds, payout), then the link. The link goes in the
-  // text so the share sheet's Copy takes both.
-  const text = `${p.name}\n${parlayText(p)}\n\n${parlayLink(p)}`;
-  // Phones: the share sheet (Messages, Copy, etc.). Elsewhere: copy it.
+  // Just the link (Messages shows it as a preview card). The title only
+  // labels the share sheet; it isn't pasted.
+  const url = parlayLink(p);
+  // Phones: the share sheet (Messages, Copy, etc.). Elsewhere: copy the link.
   if (navigator.share) {
     try {
-      await navigator.share({ text });
+      await navigator.share({ title: p.name, url });
       return;
     } catch (err) {
       if (err?.name === 'AbortError') return; // closed the share sheet
     }
   }
-  const ok = await copyText(text);
-  btn.textContent = ok ? 'Copied ✓' : "Couldn't copy";
+  const ok = await copyText(url);
+  btn.textContent = ok ? 'Link copied ✓' : "Couldn't copy";
   setTimeout(() => (btn.textContent = 'Share'), 1800);
 }
 
