@@ -168,6 +168,16 @@ async function espnTeamId(name) {
   return teamIds.get(teamKey(name)) ?? null;
 }
 
+// A player's college from ESPN's roster: its abbreviation and a small logo
+// (the dark-background version when there is one). Null without both.
+export function collegeOf(c) {
+  if (!c?.abbrev) return null;
+  const logo = c.logos?.find((l) => l.rel?.includes('dark')) ?? c.logos?.[0];
+  const path = logo?.href?.match(/^https:\/\/a\.espncdn\.com(\/i\/[\w/-]+\.png)$/)?.[1];
+  if (!path) return null;
+  return { abbrev: c.abbrev, name: c.name ?? c.abbrev, logo: `https://a.espncdn.com/combiner/i?img=${path}&w=40&h=40` };
+}
+
 export async function teamHeatmap(name, now = Date.now()) {
   const id = await espnTeamId(name);
   if (!id) return null;
@@ -185,6 +195,11 @@ export async function teamHeatmap(name, now = Date.now()) {
   const names = athletes?.map((a) => a.displayName) ?? null;
   // Rookies: ESPN lists them with 0 years in the league.
   const rookies = new Set((athletes ?? []).filter((a) => a.experience?.years === 0).map((a) => a.displayName));
+  const colleges = new Map((athletes ?? []).map((a) => [a.displayName, collegeOf(a.college)]).filter(([, c]) => c));
+  const tagPlayer = (slot) => {
+    slot.rookie = rookies.has(slot.name);
+    slot.college = colleges.get(slot.name) ?? null;
+  };
   const code = teamCode(name);
   // Last season tells us about veterans only; rookies have none.
   const last = (n) => (rookies.has(n) || lastSnaps.status !== 'fulfilled' ? null : lastSnaps.value);
@@ -195,7 +210,7 @@ export async function teamHeatmap(name, now = Date.now()) {
   };
   for (const side of Object.values(sides)) {
     const slots = Object.values(side).flat();
-    for (const slot of slots) slot.rookie = rookies.has(slot.name);
+    for (const slot of slots) tagPlayer(slot);
     const starters = slots.map((s) => s.name).filter(Boolean);
     const opts = { injuries, roster: names, starters, proven };
     // Each job lost goes to one replacement: whoever took over first.
@@ -214,7 +229,7 @@ export async function teamHeatmap(name, now = Date.now()) {
   }
   if (teams) {
     addExtras(sides.offense, teams, teamCode(name), { injuries, roster: names });
-    for (const slot of Object.values(sides.offense).flat()) slot.rookie = rookies.has(slot.name);
+    for (const slot of Object.values(sides.offense).flat()) tagPlayer(slot);
   }
   // Without snap counts the RB2/WR4/TE2 squares and tags are missing, so
   // don't keep that version: the next load tries again.

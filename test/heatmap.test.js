@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { fillSlot, teamSides, markFillIns } from '../src/heatmap.js';
+import { fillSlot, teamSides, markFillIns, collegeOf } from '../src/heatmap.js';
 
 const athlete = (name, status) => ({ displayName: name, injuries: status ? [{ status }] : [] });
 const slot = (abbr, ...athletes) => ({ position: { abbreviation: abbr }, athletes });
@@ -68,4 +68,20 @@ test('a hurt player who out-snapped a starter ranks ahead of him, whatever their
   assert.equal(samuel.history.tag, 'earned');
   assert.equal(watkins.history.tag, 'fillin');
   assert.equal(watkins.history.deep, 3);
+});
+
+test('a player\'s college: abbreviation and a small dark logo, or nothing', () => {
+  const miami = {
+    name: 'Miami', abbrev: 'MIA',
+    logos: [
+      { href: 'https://a.espncdn.com/i/teamlogos/ncaa/500/2390.png', rel: ['full', 'default'] },
+      { href: 'https://a.espncdn.com/i/teamlogos/ncaa/500-dark/2390.png', rel: ['full', 'dark'] },
+    ],
+  };
+  assert.deepEqual(collegeOf(miami), {
+    abbrev: 'MIA', name: 'Miami', logo: 'https://a.espncdn.com/combiner/i?img=/i/teamlogos/ncaa/500-dark/2390.png&w=40&h=40',
+  });
+  assert.equal(collegeOf(undefined), null);
+  assert.equal(collegeOf({ name: 'Miami', abbrev: 'MIA', logos: [] }), null);
+  assert.equal(collegeOf({ name: 'Miami', logos: miami.logos }), null);
 });
