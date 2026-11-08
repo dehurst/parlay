@@ -253,10 +253,26 @@ html { touch-action: manipulation; -webkit-text-size-adjust: 100%; }
 
 .notice { background: #3a2e0d; border: 1px solid var(--warn); border-radius: var(--radius); padding: 10px 12px; margin-bottom: 12px; }
 
-.tabs { display: flex; gap: 6px; margin-bottom: 14px; border-bottom: 1px solid var(--line); overflow-x: auto; scrollbar-width: none; }
+/* Tabs are boxes like the heat map squares; the one you're on is green. */
+.tabs { display: flex; gap: 6px; margin-bottom: 14px; padding: 2px 2px 12px; border-bottom: 1px solid var(--line); overflow-x: auto; scrollbar-width: none; }
 .tabs button { white-space: nowrap; flex: none; }
-.tabs button { border: none; background: none; border-bottom: 2px solid transparent; border-radius: 0; color: var(--muted); padding: 10px 12px; }
-.tabs button.active { color: var(--text); border-bottom-color: var(--accent); }
+.tabs button { border: 1px solid var(--line); background: var(--card); border-radius: 8px; color: var(--muted); padding: 8px 12px; }
+.tabs button:hover { color: var(--text); border-color: var(--muted); }
+.tabs button.active { background: rgba(47, 191, 113, .28); border-color: #2fbf71; color: #d9ffe9; font-weight: 600; }
+/* The heat map tab always pulses green to yellow to red and back. */
+.tabs button[data-tab="heatmap"] { animation: heat-pulse 6s ease-in-out infinite; color: var(--text); }
+.tabs button[data-tab="heatmap"].active { font-weight: 700; color: #fff; box-shadow: inset 0 0 0 1px currentColor; }
+@keyframes heat-pulse {
+  0%, 100% { background-color: rgba(47, 191, 113, .28); border-color: #2fbf71; }
+  12% { background-color: rgba(34, 160, 90, .32); border-color: #22a05a; }
+  24% { background-color: rgba(126, 210, 80, .3); border-color: #7ed250; }
+  36% { background-color: rgba(232, 196, 40, .26); border-color: #e8c428; }
+  46% { background-color: rgba(245, 170, 30, .3); border-color: #f5aa1e; }
+  56% { background-color: rgba(240, 130, 40, .3); border-color: #f08228; }
+  68% { background-color: rgba(229, 72, 77, .28); border-color: #e5484d; }
+  78% { background-color: rgba(190, 40, 50, .34); border-color: #be2832; }
+  88% { background-color: rgba(240, 120, 60, .28); border-color: #f0783c; }
+}
 
 /* Phones: the tabs become a grid of buttons (four, then three), all visible
    and easy to tap, instead of a row that runs off the screen. */
