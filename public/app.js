@@ -2439,8 +2439,15 @@ async function renderSlip(quiet = false) {
       </div>` : ''}
     </div>`;
   };
-  const cards = active.map((p, i) => card(p, i)).join('')
-    + (finished.length ? `<h3 class="section">Completed</h3>${finished.map((p, i) => card(p, active.length + i)).join('')}` : '');
+  // Bets that hit (and pushes, which also pay back) on top, then the ones
+  // still in play, then the ones that didn't hit.
+  const hit = finished.filter((p) => p.status !== 'lost');
+  const missed = finished.filter((p) => p.status === 'lost');
+  let n = 0;
+  const section = (title, list) => (list.length ? `${title ? `<h3 class="section">${title}</h3>` : ''}${list.map((p) => card(p, n++)).join('')}` : '');
+  const cards = section(hit.length ? 'Hit ✓' : '', hit)
+    + section(hit.length && active.length ? 'Still in play' : '', active)
+    + section('Didn’t hit', missed);
   const totals = Object.entries(data.totals).map(([who, amt]) => `<tr><td>${esc(who)}</td><td class="num">${money(amt)}</td></tr>`).join('');
   $('#slip').innerHTML = `
     <div class="card"><b>${past ? `${esc(week.label)} bet slip` : toPlace.length

@@ -782,3 +782,6 @@ body.viewer #push-open { display: none; }
 @media (display-mode: standalone) {
   header { padding-top: 40px; }
 }
+/* Bet Slip: bets that hit sit on top, at full brightness */
+.parlay.done.won h3, .parlay.done.won .odds, .parlay.done.won ul, .parlay.done.won table { opacity: 1; }
+.parlay.done.won { background: var(--card); }
