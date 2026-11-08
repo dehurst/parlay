@@ -777,3 +777,8 @@ body.viewer #push-open { display: none; }
 .inbox-item { padding-right: 34px; }
 .inbox-x { position: absolute; top: 4px; right: 0; width: 30px; height: 30px; padding: 0; border: 0; background: none; color: var(--muted); font-size: 20px; line-height: 1; border-radius: 999px; }
 .inbox-x:hover { color: var(--text); background: rgba(127,127,127,.12); }
+/* Home Screen app: iPhone blurs a strip along the top edge, so start the
+   header a little lower to keep the title and bell sharp. */
+@media (display-mode: standalone) {
+  header { padding-top: 40px; }
+}
