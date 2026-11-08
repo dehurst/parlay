@@ -233,6 +233,8 @@ export async function teamHeatmap(name, now = Date.now()) {
   }
   // Without snap counts the RB2/WR4/TE2 squares and tags are missing, so
   // don't keep that version: the next load tries again.
-  if (snaps.status === 'fulfilled' && lastSnaps.status === 'fulfilled') charts.set(id, { at: now, sides });
+  // Same without the roster: no colleges, rookies or injuries.
+  if (roster.status === 'rejected') console.error(`Roster failed: ${roster.reason?.message ?? roster.reason}`);
+  if (snaps.status === 'fulfilled' && lastSnaps.status === 'fulfilled' && roster.status === 'fulfilled') charts.set(id, { at: now, sides });
   return sides;
 }

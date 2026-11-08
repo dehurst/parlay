@@ -19,7 +19,7 @@ import { espnSite } from './sport.js';
 const WEEKLY_TAGS = ['Questionable', 'Doubtful', 'Out'];
 
 export async function fetchTeamRoster(teamId) {
-  const res = await fetch(`${espnSite('teams')}/${teamId}/roster`, { signal: AbortSignal.timeout(8000) });
+  const res = await fetch(`${espnSite('teams')}/${teamId}/roster`, { signal: AbortSignal.timeout(15000) });
   if (!res.ok) throw new Error(`ESPN roster returned ${res.status}`);
   return res.json();
 }
