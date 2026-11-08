@@ -724,6 +724,31 @@ h3.section.first { margin-top: 4px; }
   background: var(--warn); color: #1a1300; text-align: center;
 }
 .heat-sq .heat-tag { position: absolute; top: -6px; right: -5px; }
+/* Hot and cold streaks, in the square's top-left corner: a flickering flame
+   or a frosty, twinkling snowflake. */
+.heat-streak {
+  position: absolute; top: -9px; left: -7px; z-index: 1; font-size: 17px; line-height: 1;
+  pointer-events: none; font-family: 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', sans-serif;
+}
+.heat-streak.in-key { position: relative; top: 0; left: 0; font-size: 14px; }
+/* The offensive line's streak, by the OL label: the whole unit's. */
+.heat-streak.in-label { position: relative; top: 0; left: 0; font-size: 16px; pointer-events: auto; cursor: default; }
+.streak-hot { transform-origin: 50% 90%; animation: flame-flicker 1.1s ease-in-out infinite; filter: drop-shadow(0 0 3px rgba(255, 140, 0, .95)) drop-shadow(0 0 7px rgba(255, 70, 0, .7)); }
+.streak-cold { animation: frost-twinkle 2.6s ease-in-out infinite; filter: drop-shadow(0 0 3px rgba(160, 225, 255, .95)) drop-shadow(0 0 7px rgba(90, 180, 255, .7)); }
+@keyframes flame-flicker {
+  0%, 100% { transform: scale(1) rotate(-2deg); filter: drop-shadow(0 0 3px rgba(255, 140, 0, .95)) drop-shadow(0 0 7px rgba(255, 70, 0, .7)); }
+  25% { transform: scale(1.08, 1.14) rotate(2deg); }
+  50% { transform: scale(.96, 1.04) rotate(-1deg); filter: drop-shadow(0 0 5px rgba(255, 190, 40, 1)) drop-shadow(0 0 11px rgba(255, 80, 0, .9)); }
+  75% { transform: scale(1.06, 1.1) rotate(1.5deg); }
+}
+@keyframes frost-twinkle {
+  0%, 100% { transform: rotate(0deg) scale(1); opacity: 1; }
+  50% { transform: rotate(20deg) scale(1.08); opacity: .85; filter: drop-shadow(0 0 5px rgba(220, 245, 255, 1)) drop-shadow(0 0 11px rgba(120, 200, 255, .9)); }
+}
+@media (prefers-reduced-motion: reduce) { .streak-hot, .streak-cold { animation: none; } }
+.pop-streak { font-weight: 700; }
+.pop-streak.streak-hot { color: #ffb347; animation: none; filter: none; }
+.pop-streak.streak-cold { color: #9fdcff; animation: none; filter: none; }
 /* Phones: offense on top, defense under it. */
 @media (max-width: 600px) {
   .heat-unit { grid-template-columns: 1fr; gap: 6px; }

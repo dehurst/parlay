@@ -8,6 +8,14 @@ import { teamKey } from './schedule.js';
 import { fetchTeamDepthChart, fetchTeamRoster } from './injuries.js';
 import { seasonSnaps, teamCode, starterHistory, nextUp, positionGroup, usualShare, gamesPlayed, lastSeason, outsnapped, findPlayer, fullKey } from './starters.js';
 import { seasonFile, injuryHistory, statRanks, honorsFor } from './honors.js';
+import { streakBook, streakFor } from './streaks.js';
+
+// The weekly rankings behind the streaks, built once per download of the data.
+const books = new WeakMap();
+const bookFor = (teams, weekly, qbr) => {
+  if (!books.has(weekly) || books.get(weekly).teams !== teams || books.get(weekly).qbr !== qbr) books.set(weekly, { teams, qbr, book: streakBook(teams, weekly, qbr) });
+  return books.get(weekly).book;
+};
 
 // Tags that keep a player off the field; Questionable players still count.
 const SIDELINED = ['Out', 'Doubtful', 'Injured Reserve', 'Suspension'];
@@ -205,8 +213,9 @@ export async function teamHeatmap(name, now = Date.now()) {
   if (cached && now - cached.at < CHART_TTL) return cached.sides;
   // The roster (for injuries, IR included) and snap counts only add the
   // "how they got the job" tags, so the heat map still works without them.
-  const [chart, roster, snaps, lastSnaps, stats, injuryReports] = await Promise.allSettled([fetchTeamDepthChart(id), fetchTeamRoster(id),
-    seasonSnaps(new Date(now)), seasonSnaps(new Date(now), 1), seasonFile('stats', new Date(now)), seasonFile('injuries', new Date(now))]);
+  const [chart, roster, snaps, lastSnaps, stats, injuryReports, weekly, qbr] = await Promise.allSettled([fetchTeamDepthChart(id), fetchTeamRoster(id),
+    seasonSnaps(new Date(now)), seasonSnaps(new Date(now), 1), seasonFile('stats', new Date(now)), seasonFile('injuries', new Date(now)),
+    seasonFile('weekly', new Date(now)), seasonFile('qbr', new Date(now))]);
   if (chart.status === 'rejected') throw chart.reason;
   const sides = teamSides(chart.value);
   const teams = snaps.status === 'fulfilled' ? snaps.value : null;
@@ -283,11 +292,21 @@ export async function teamHeatmap(name, now = Date.now()) {
   const reports = injuryReports.status === 'fulfilled' ? injuryReports.value : null;
   if (stats.status === 'rejected') console.error(`Season stats failed: ${stats.reason?.message ?? stats.reason}`);
   if (injuryReports.status === 'rejected') console.error(`Injury reports failed: ${injuryReports.reason?.message ?? injuryReports.reason}`);
+  // Hot and cold streaks: top or bottom 10 at his position 2 games running
+  // (offense) or 3 (defense).
+  if (weekly.status === 'rejected') console.error(`Weekly stats failed: ${weekly.reason?.message ?? weekly.reason}`);
+  if (qbr.status === 'rejected') console.error(`QBR failed: ${qbr.reason?.message ?? qbr.reason}`);
+  const book = teams && weekly.status === 'fulfilled' ? bookFor(teams, weekly.value, qbr.status === 'fulfilled' ? qbr.value : []) : null;
   for (const [sideName, side] of Object.entries(sides)) {
     const s = sideName === 'offense' ? 'O' : 'D';
     for (const slot of Object.values(side).flat()) {
       if (!slot.name) continue;
       const a = byAthlete.get(slot.name);
+      // Linemen aren't rated one by one (no free data says which one gave up
+      // a sack); the line's streak goes on its header instead.
+      slot.streak = book && slotGroup(slot.slot) !== 'OL' ? streakFor(book, teams, {
+        group: slotGroup(slot.slot), code, name: slot.name, espnId: a?.id, snapsPlayer: findPlayer(teams[code] ?? { players: [] }, slot.name),
+      }) : null;
       const teamsHere = [code, slot.history?.from].filter(Boolean);
       const mine = reports?.get(fullKey(slot.name))?.filter((r) => teamsHere.includes(r.team)) ?? [];
       slot.card = {
@@ -298,6 +317,9 @@ export async function teamHeatmap(name, now = Date.now()) {
       };
     }
   }
+  // The offensive line's streak, as a unit (its sack rate allowed). Set
+  // after the loops over the sides above, which expect only offense/defense.
+  sides.lineStreak = book ? streakFor(book, teams, { group: 'OL', code }) : null;
   // Without snap counts the RB2/WR4/TE2 squares and tags are missing, so
   // don't keep that version: the next load tries again.
   // Same without the roster: no colleges, rookies or injuries.

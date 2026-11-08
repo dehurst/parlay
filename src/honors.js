@@ -91,8 +91,26 @@ const NFLVERSE = 'https://github.com/nflverse/nflverse-data/releases/download';
 const FILES = {
   stats: (season) => `${NFLVERSE}/stats_player/stats_player_reg_${season}.csv`,
   injuries: (season) => `${NFLVERSE}/injuries/injuries_${season}.csv`,
+  weekly: (season) => `${NFLVERSE}/stats_player/stats_player_week_${season}.csv`,
+  qbr: () => `${NFLVERSE}/espn_data/qbr_week_level.csv`, // every season since 2006
 };
-const PARSE = { stats: parseStats, injuries: parseInjuries };
+const PARSE = { stats: parseStats, injuries: parseInjuries, weekly: parseWeekly, qbr: parseQbr };
+// Each regular-season game's stat line, for the hot and cold streaks.
+function parseWeekly(text) {
+  const n = (r, k) => Number(r[k]) || 0;
+  return parseCsv(text).filter((r) => r.season_type === 'REG').map((r) => ({
+    week: Number(r.week), team: r.team, name: r.player_display_name, group: r.position_group,
+    rushYds: n(r, 'rushing_yards'), recYds: n(r, 'receiving_yards'),
+    pressure: n(r, 'def_sacks') + n(r, 'def_qb_hits'), tackles: n(r, 'def_tackles_solo') + n(r, 'def_tackle_assists'),
+    coverage: n(r, 'def_pass_defended') + n(r, 'def_interceptions'),
+    dropbacks: n(r, 'attempts') + n(r, 'sacks_suffered'), sacked: n(r, 'sacks_suffered'),
+  }));
+}
+// ESPN's QBR for each qualified quarterback each week this season, by ESPN player id.
+function parseQbr(text, season) {
+  return parseCsv(text).filter((r) => Number(r.season) === season && r.season_type === 'Regular' && r.qualified === 'TRUE')
+    .map((r) => ({ week: Number(r.game_week), espnId: r.player_id, qbr: Number(r.qbr_total) }));
+}
 const cache = new Map();
 const loading = new Map();
 const TTL = 6 * 3600e3;
@@ -105,7 +123,7 @@ export async function seasonFile(kind, now = new Date()) {
     loading.set(key, (async () => {
       const res = await fetch(FILES[kind](season), { signal: AbortSignal.timeout(30000) });
       if (!res.ok) throw new Error(`nflverse ${kind} returned ${res.status}`);
-      const data = PARSE[kind](await res.text());
+      const data = PARSE[kind](await res.text(), season);
       cache.set(key, { at: now.getTime(), data });
       return data;
     })().finally(() => loading.delete(key)));

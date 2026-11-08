@@ -1792,7 +1792,9 @@ function heatDetails(s) {
       <span class="pop-bar">${t.pct == null ? '<i class="none"></i>' : `<i class="${t.pct >= 50 ? 'hi' : 'lo'}" style="height:${Math.max(6, t.pct)}%"></i>`}</span>
       <span class="pop-wkn">${t.week}</span></div>`).join('')}</div>
     <div class="pop-caption">% of snaps by week</div>` : '';
+  const streak = s.streak && STREAK[s.streak.kind] ? `<div class="pop-row pop-streak streak-${s.streak.kind}">${STREAK[s.streak.kind].icon} ${esc(streakText(s.streak))}</div>` : '';
   return `${popTop(s)}
+    ${streak}
     ${rows.map((r) => `<div class="pop-row">${esc(r)}</div>`).join('')}
     ${chart}`;
 }
@@ -1873,7 +1875,21 @@ function heatSquare(s) {
     ${back ? backBadge() : ''}
     ${s.rookie ? '<span class="rookie" title="Rookie">R</span>' : ''}
     ${s.status === 'Questionable' ? '<span class="heat-tag">Q</span>' : ''}
+    ${streakBadge(s.streak)}
   </div>`;
+}
+
+// On fire (top 10 at his position 2 games running on offense, 3 on defense)
+// or ice cold (bottom
+// 10), in the square's top-left corner.
+const STREAK = { hot: { icon: '🔥', label: 'On fire', where: 'top 10' }, cold: { icon: '❄️', label: 'Ice cold', where: 'bottom 10' } };
+const streakBadge = (st, cls = '') => (st && STREAK[st.kind] ? `<span class="heat-streak streak-${st.kind}${cls}" title="${esc(streakText(st))}" aria-label="${STREAK[st.kind].label}">${STREAK[st.kind].icon}</span>` : '');
+function streakText(st) {
+  const k = STREAK[st.kind];
+  const ol = st.metric === 'sack rate allowed';
+  const games = st.games.map((g) => `#${g.rank} of ${g.of} (${g.value}${ol ? '%' : ''})`).join(', ');
+  if (ol) return `Line ${k.label.toLowerCase()}: ${k.where} of all teams in sack rate allowed, ${st.games.length} games straight: ${games}`;
+  return `${k.label}: ${k.where} in ${st.metric}, ${st.games.length} games straight: ${games}`;
 }
 
 // How many spots a side is filling below its starters, and how its starters
@@ -1952,9 +1968,11 @@ function heatMatchup(g, offHome, data, weather = '') {
   const [off, def] = offHome ? [data.home.offense, data.away.defense] : [data.away.offense, data.home.defense];
   const [offTeam, defTeam] = offHome ? [g.home, g.away] : [g.away, g.home];
   const [offShort, defShort] = offHome ? [g.homeShort, g.awayShort] : [g.awayShort, g.homeShort];
+  // The offensive line's hot or cold streak is the unit's, so it sits by the OL label.
+  const lineStreak = (offHome ? data.home : data.away).lineStreak;
   const sideTeam = (team, short, role) => `<div class="heat-side-team">${teamLogo(team, 'small')}${esc(short)} <span class="muted">${role}</span></div>`;
   const units = HEAT_UNITS.map(([id, oLabel, dLabel]) => `<div class="heat-unit">
-      <div class="heat-side">${sideTeam(offTeam, offShort, 'offense')}<div class="heat-label">${oLabel}${groupHealth(off[id], oLabel)}</div><div class="heat-row">${off[id].map(heatSquare).join('')}</div></div>
+      <div class="heat-side">${sideTeam(offTeam, offShort, 'offense')}<div class="heat-label">${oLabel}${id === 'line' ? streakBadge(lineStreak, ' in-label') : ''}${groupHealth(off[id], oLabel)}</div><div class="heat-row">${off[id].map(heatSquare).join('')}</div></div>
       <div class="heat-side">${sideTeam(defTeam, defShort, 'defense')}<div class="heat-label">${dLabel}${groupHealth(def[id], dLabel)}</div><div class="heat-row">${def[id].map(heatSquare).join('')}</div></div>
     </div>`).join('');
   return `<div class="card heat-card">
@@ -1999,6 +2017,8 @@ async function renderHeatmap() {
         ${heatTerm(`${backBadge(' in-key')} Back`, 'Returning this week after missing the last game')}
         ${heatTerm('<span class="rookie in-key">R</span> Rookie', 'First season in the NFL')}
         ${heatTerm('<span class="heat-tag">Q</span> Questionable', 'Listed as questionable for this game')}
+        ${heatTerm('<span class="heat-streak streak-hot in-key">🔥</span> On fire', 'Top 10 at his position 2 games straight on offense, 3 on defense: QBR (QB), rush yds (RB), rec yds (WR, TE), the whole line’s sack rate (OL, shown by the OL label), sacks + QB hits (DL, OLB), tackles (LB), passes defended + INTs (DB)')}
+        ${heatTerm('<span class="heat-streak streak-cold in-key">❄️</span> Ice cold', 'Bottom 10 at his position, in the same stats and games straight')}
       </div>
       <div class="key-group">
         ${heatTerm('<span class="heat-weeks"><i class="hi" style="height:90%"></i><i class="lo" style="height:35%"></i><i class="none"></i><i class="hi" style="height:100%"></i></span> Snaps', 'One bar per game: bright = 50% of snaps or more, dim = under 50%, dot = didn’t play')}
