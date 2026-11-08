@@ -1938,8 +1938,12 @@ function showHeatPop(sq, by) {
   heatPopFor = sq;
   heatPopBy = by;
   heatPopY = scrollY;
-  heatPop.className = `heat-pop heat-${heatLevel(s)}`;
-  heatPop.innerHTML = heatDetails(s);
+  heatPop.className = `heat-pop heat-${heatLevel(s)}${by === 'touch' ? ' by-touch' : ''}`;
+  // Two sides, like a card: the details in front, the back blank for now.
+  heatPop.innerHTML = `<div class="pop-card">
+      <div class="pop-face pop-front">${heatDetails(s)}</div>
+      <div class="pop-face pop-back" aria-hidden="true"></div>
+    </div>`;
   heatPop.hidden = false;
   placeHeatPop();
 }
@@ -1948,6 +1952,25 @@ function hideHeatPop() {
   heatPopFor = null;
   heatPopBy = null;
 }
+// Turns the card over: a second click on the square (computers), a tap on
+// the card (phones), or Enter/Space on a focused square.
+function flipHeatPop() {
+  const flipped = heatPop.classList.toggle('flipped');
+  heatPop.querySelector('.pop-front')?.setAttribute('aria-hidden', String(flipped));
+  heatPop.querySelector('.pop-back')?.setAttribute('aria-hidden', String(!flipped));
+}
+$('#heatmap').addEventListener('click', (e) => {
+  if (heatPopBy === 'mouse' && heatSq(e) && heatSq(e) === heatPopFor) flipHeatPop();
+});
+$('#heatmap').addEventListener('keydown', (e) => {
+  if ((e.key === 'Enter' || e.key === ' ') && heatPopFor && heatSq(e) === heatPopFor) {
+    e.preventDefault();
+    flipHeatPop();
+  }
+});
+heatPop.addEventListener('click', () => heatPopBy === 'touch' && flipHeatPop());
+// Long-pressing the card shouldn't open the browser's menu either.
+heatPop.addEventListener('contextmenu', (e) => e.preventDefault());
 const heatSq = (e) => e.target.closest?.('.heat-sq[data-i]');
 $('#heatmap').addEventListener('pointerover', (e) => {
   if (e.pointerType === 'mouse' && heatSq(e)) showHeatPop(heatSq(e), 'mouse');
@@ -1988,7 +2011,7 @@ $('#heatmap').addEventListener('pointercancel', endPress);
 // A long press would otherwise open the browser's own menu.
 $('#heatmap').addEventListener('contextmenu', (e) => heatSq(e) && e.preventDefault());
 document.addEventListener('pointerdown', (e) => {
-  if (e.pointerType !== 'mouse' && heatPopFor && !heatPopFor.contains(e.target)) hideHeatPop();
+  if (e.pointerType !== 'mouse' && heatPopFor && !heatPopFor.contains(e.target) && !heatPop.contains(e.target)) hideHeatPop();
 });
 // Phones scroll a little on their own (the address bar sliding away), so the
 // pop-up follows its square, and closes only once the page really scrolls.
