@@ -580,6 +580,50 @@ function lockSound(closing) {
   }
 }
 
+// A playing card turning over: a quick swish of air as it spins, then a
+// soft papery tick as it lands. Made on the fly like the lock sound.
+function flipSound() {
+  try {
+    audio ??= new (window.AudioContext || window.webkitAudioContext)();
+    if (audio.state === 'suspended') audio.resume();
+    playFlipSound(audio);
+  } catch {
+    // No sound support: the card still flips.
+  }
+}
+
+function playFlipSound(ctx) {
+  const t = ctx.currentTime + 0.005;
+  const burst = (len, shape) => {
+    const buf = ctx.createBuffer(1, Math.ceil(ctx.sampleRate * len), ctx.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * shape(i / d.length);
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    return src;
+  };
+  // The swish: rises and falls, its pitch sweeping up as the card turns.
+  const swish = burst(0.16, (x) => Math.sin(Math.PI * x) ** 2);
+  const band = ctx.createBiquadFilter();
+  band.type = 'bandpass';
+  band.Q.value = 1.4;
+  band.frequency.setValueAtTime(900, t);
+  band.frequency.exponentialRampToValueAtTime(3800, t + 0.14);
+  const swishGain = ctx.createGain();
+  swishGain.gain.value = 0.32;
+  swish.connect(band).connect(swishGain).connect(ctx.destination);
+  swish.start(t);
+  // The tick: a very short, bright snap as it lands.
+  const tick = burst(0.03, (x) => (1 - x) ** 6);
+  const high = ctx.createBiquadFilter();
+  high.type = 'highpass';
+  high.frequency.value = 2500;
+  const tickGain = ctx.createGain();
+  tickGain.gain.value = 0.45;
+  tick.connect(high).connect(tickGain).connect(ctx.destination);
+  tick.start(t + 0.15);
+}
+
 function playLockSound(ctx, closing) {
   const t = ctx.currentTime + 0.01;
   // The snap plays as is. The bolt goes through a limiter, plus a short echo
@@ -1956,6 +2000,7 @@ function hideHeatPop() {
 // the card (phones), or Enter/Space on a focused square.
 function flipHeatPop() {
   const flipped = heatPop.classList.toggle('flipped');
+  flipSound();
   heatPop.querySelector('.pop-front')?.setAttribute('aria-hidden', String(flipped));
   heatPop.querySelector('.pop-back')?.setAttribute('aria-hidden', String(!flipped));
 }
