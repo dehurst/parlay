@@ -1778,10 +1778,7 @@ let heatSquares = [];
 // A square's details, shown on hover (or a long press on phones): who, how
 // deep, how he got the job, and each week's snaps as a little chart.
 function heatDetails(s) {
-  const level = heatLevel(s);
-  const note = s.rank > 3 ? ` (#${s.rank} on the depth chart)` : s.rank === 1 && level === 2 ? ' (listed first, filling in)' : '';
   const { text, recent } = historyText(s.history) ?? {};
-  const tag = HEAT_TAGS[s.history?.tag];
   const rows = [
     text,
     recent,
@@ -1795,6 +1792,17 @@ function heatDetails(s) {
       <span class="pop-bar">${t.pct == null ? '<i class="none"></i>' : `<i class="${t.pct >= 50 ? 'hi' : 'lo'}" style="height:${Math.max(6, t.pct)}%"></i>`}</span>
       <span class="pop-wkn">${t.week}</span></div>`).join('')}</div>
     <div class="pop-caption">% of snaps by week</div>` : '';
+  return `${popTop(s)}
+    ${rows.map((r) => `<div class="pop-row">${esc(r)}</div>`).join('')}
+    ${chart}`;
+}
+
+// The top of both sides of the card: position, name and college, then
+// starter or backup and how he got the job.
+function popTop(s) {
+  const level = heatLevel(s);
+  const note = s.rank > 3 ? ` (#${s.rank} on the depth chart)` : s.rank === 1 && level === 2 ? ' (listed first, filling in)' : '';
+  const tag = HEAT_TAGS[s.history?.tag];
   return `<div class="pop-head">
       <span class="pop-pos">${esc(s.pos)}</span>
       <span class="pop-name">${esc(s.name ?? 'Nobody healthy')}</span>
@@ -1802,9 +1810,53 @@ function heatDetails(s) {
       ${s.college ? `<span class="pop-college" title="${esc(s.college.name)}"><img src="${esc(s.college.logo)}" alt="" loading="lazy">${esc(s.college.abbrev)}</span>` : ''}
       ${s.status === 'Questionable' ? '<span class="heat-tag">Q</span>' : ''}
     </div>
-    <div class="pop-level">${HEAT_LEVELS[level]}${esc(note)}${s.rookie ? ' <span class="rookie in-key" title="Rookie">R</span>' : ''}${tag ? ` <span class="heat-how how-${s.history.tag}">${tag}</span>` : ''}</div>
-    ${rows.map((r) => `<div class="pop-row">${esc(r)}</div>`).join('')}
-    ${chart}`;
+    <div class="pop-level">${HEAT_LEVELS[level]}${esc(note)}${s.rookie ? ' <span class="rookie in-key" title="Rookie">R</span>' : ''}${tag ? ` <span class="heat-how how-${s.history.tag}">${tag}</span>` : ''}</div>`;
+}
+
+// The back of the card: age, injuries that cost games this season, honors
+// (All-Pro teams, awards), the NFL Top 100, and stat leaders.
+const yr = (y) => `’${String(y).slice(-2)}`;
+const times = (n) => (n > 1 ? `<span class="honor-x">${n}X</span>` : '');
+const MED_BADGE = '<span class="med-badge" aria-hidden="true"><svg viewBox="0 0 16 16"><path d="M6 2.5h4v3.5h3.5v4H10v3.5H6V10H2.5V6H6z"/></svg></span>';
+const AWARD_ORDER = ['MVP', 'SB MVP', 'OPOY', 'DPOY', 'OROY', 'DROY'];
+function heatBack(s) {
+  const c = s.card ?? {};
+  const lines = [];
+  if (c.born) {
+    const age = (Date.now() - new Date(c.born)) / (365.2425 * 864e5);
+    lines.push(`<div class="back-age">Age ${age.toFixed(1)}</div>`);
+  }
+  // Injuries: one medical badge per kind, with the games each stretch cost.
+  if (c.injuries?.length) {
+    lines.push(`<div class="back-row">${c.injuries.map((i) => `<span class="back-item" title="${esc(i.type)}: missed ${i.weeks.join(' + ')} game${i.weeks.reduce((a, b) => a + b, 0) === 1 ? '' : 's'}${i.out ? ', still out' : ''}">${MED_BADGE}${esc(i.type)} · ${i.weeks.map((w) => `${w} wk${w === 1 ? '' : 's'}`).join(', ')}${i.out ? ' (out)' : ''}</span>`).join('')}</div>`);
+  }
+  // Honors: All-Pro first teams and awards, how many times, with the years on hover.
+  const honors = [];
+  if (c.ap?.length) honors.push(`<span class="back-item" title="AP first-team All-Pro: ${c.ap.join(', ')}"><span class="honor honor-ap">AP All-Pro</span>${times(c.ap.length)}</span>`);
+  if (c.nflpa?.length) honors.push(`<span class="back-item" title="NFLPA Players’ All-Pro first team: ${c.nflpa.join(', ')}"><span class="honor honor-nflpa">NFLPA All-Pro</span>${times(c.nflpa.length)}</span>`);
+  const won = new Map();
+  for (const a of c.awards ?? []) won.set(a.award, [...(won.get(a.award) ?? []), a.season]);
+  for (const award of AWARD_ORDER.filter((a) => won.has(a))) {
+    const seasons = won.get(award);
+    const badge = award === 'MVP' ? '<span class="honor-mvp">MVP</span>' : `<span class="honor honor-award">${award}</span>`;
+    honors.push(`<span class="back-item" title="${award}: ${seasons.join(', ')}">${badge}${times(seasons.length)}</span>`);
+  }
+  if (honors.length) lines.push(`<div class="back-row">${honors.join('')}</div>`);
+  // The NFL Top 100, newest list first.
+  if (c.top100?.length) {
+    const ranks = [...c.top100].sort((a, b) => b.year - a.year).map((t) => `<span class="top100-rank">#${t.rank} <span class="muted">${yr(t.year)}</span></span>`).join('');
+    lines.push(`<div class="back-row" title="NFL Top 100 Players (voted by players), the last 4 lists"><span class="honor honor-top100">Top 100</span>${ranks}</div>`);
+  }
+  // Stat leaders: this season's top 10, then league titles from the last 5 seasons.
+  if (c.ranks?.length) {
+    lines.push(`<div class="back-label">This season</div><div class="back-row">${c.ranks.map((r) => `<span class="stat-rank${r.rank === 1 ? ' lead' : ''}">${r.tied ? 'T-' : '#'}${r.rank} ${esc(r.stat)} <span class="muted">${r.value}</span></span>`).join('')}</div>`);
+  }
+  if (c.titles?.length) {
+    const byStat = new Map();
+    for (const t of c.titles) byStat.set(t.stat, [...(byStat.get(t.stat) ?? []), t.season]);
+    lines.push(`<div class="back-label">Led the NFL</div><div class="back-row">${[...byStat].map(([stat, seasons]) => `<span class="stat-rank lead">${esc(stat)} <span class="muted">${seasons.sort().map(yr).join(', ')}</span></span>`).join('')}</div>`);
+  }
+  return `${popTop(s)}<div class="pop-back-body">${lines.join('')}</div>`;
 }
 
 function heatSquare(s) {
@@ -1983,10 +2035,11 @@ function showHeatPop(sq, by) {
   heatPopBy = by;
   heatPopY = scrollY;
   heatPop.className = `heat-pop heat-${heatLevel(s)}${by === 'touch' ? ' by-touch' : ''}`;
-  // Two sides, like a card: the details in front, the back blank for now.
+  // Two sides, like a card: this season's details in front, his age,
+  // injuries, honors and stat leaders on the back.
   heatPop.innerHTML = `<div class="pop-card">
       <div class="pop-face pop-front">${heatDetails(s)}</div>
-      <div class="pop-face pop-back" aria-hidden="true"></div>
+      <div class="pop-face pop-back" aria-hidden="true">${heatBack(s)}</div>
     </div>`;
   heatPop.hidden = false;
   placeHeatPop();

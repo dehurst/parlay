@@ -6,7 +6,8 @@
 import { espnSite } from './sport.js';
 import { teamKey } from './schedule.js';
 import { fetchTeamDepthChart, fetchTeamRoster } from './injuries.js';
-import { seasonSnaps, teamCode, starterHistory, nextUp, positionGroup, usualShare, gamesPlayed, lastSeason, outsnapped, findPlayer } from './starters.js';
+import { seasonSnaps, teamCode, starterHistory, nextUp, positionGroup, usualShare, gamesPlayed, lastSeason, outsnapped, findPlayer, fullKey } from './starters.js';
+import { seasonFile, injuryHistory, statRanks, honorsFor } from './honors.js';
 
 // Tags that keep a player off the field; Questionable players still count.
 const SIDELINED = ['Out', 'Doubtful', 'Injured Reserve', 'Suspension'];
@@ -204,7 +205,8 @@ export async function teamHeatmap(name, now = Date.now()) {
   if (cached && now - cached.at < CHART_TTL) return cached.sides;
   // The roster (for injuries, IR included) and snap counts only add the
   // "how they got the job" tags, so the heat map still works without them.
-  const [chart, roster, snaps, lastSnaps] = await Promise.allSettled([fetchTeamDepthChart(id), fetchTeamRoster(id), seasonSnaps(new Date(now)), seasonSnaps(new Date(now), 1)]);
+  const [chart, roster, snaps, lastSnaps, stats, injuryReports] = await Promise.allSettled([fetchTeamDepthChart(id), fetchTeamRoster(id),
+    seasonSnaps(new Date(now)), seasonSnaps(new Date(now), 1), seasonFile('stats', new Date(now)), seasonFile('injuries', new Date(now))]);
   if (chart.status === 'rejected') throw chart.reason;
   const sides = teamSides(chart.value);
   const teams = snaps.status === 'fulfilled' ? snaps.value : null;
@@ -272,6 +274,29 @@ export async function teamHeatmap(name, now = Date.now()) {
   if (teams) {
     addExtras(sides.offense, teams, teamCode(name), { injuries, roster: names });
     for (const slot of Object.values(sides.offense).flat()) tagPlayer(slot);
+  }
+  // The back of each card: birthday (for his age), injuries that cost games
+  // this season, honors, and stat leaders. Each part is extra: a source
+  // that's down just leaves it out.
+  const byAthlete = new Map((athletes ?? []).map((a) => [a.displayName, a]));
+  const statRows = stats.status === 'fulfilled' ? stats.value : null;
+  const reports = injuryReports.status === 'fulfilled' ? injuryReports.value : null;
+  if (stats.status === 'rejected') console.error(`Season stats failed: ${stats.reason?.message ?? stats.reason}`);
+  if (injuryReports.status === 'rejected') console.error(`Injury reports failed: ${injuryReports.reason?.message ?? injuryReports.reason}`);
+  for (const [sideName, side] of Object.entries(sides)) {
+    const s = sideName === 'offense' ? 'O' : 'D';
+    for (const slot of Object.values(side).flat()) {
+      if (!slot.name) continue;
+      const a = byAthlete.get(slot.name);
+      const teamsHere = [code, slot.history?.from].filter(Boolean);
+      const mine = reports?.get(fullKey(slot.name))?.filter((r) => teamsHere.includes(r.team)) ?? [];
+      slot.card = {
+        born: a?.dateOfBirth ?? null,
+        injuries: reports ? injuryHistory(slot.history?.timeline, mine) : [],
+        ranks: statRows ? statRanks(statRows, slot.name, s) : [],
+        ...honorsFor(slot.name, s, a?.id),
+      };
+    }
   }
   // Without snap counts the RB2/WR4/TE2 squares and tags are missing, so
   // don't keep that version: the next load tries again.

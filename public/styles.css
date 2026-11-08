@@ -652,6 +652,53 @@ h3.section.first { margin-top: 4px; }
   border-radius: 50%; background: #fff; box-shadow: 0 0 0 1px rgba(0, 0, 0, .25);
 }
 .pop-level { font-weight: 700; margin-bottom: 4px; }
+
+/* The back of the card. */
+.pop-back-body { display: flex; flex-direction: column; gap: 5px; }
+.back-age { font-weight: 700; }
+.back-label { margin-top: 2px; font-size: 10px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; opacity: .7; margin-bottom: -2px; }
+.back-row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
+.back-item { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+.honor-x { font-weight: 800; }
+/* Square badges: All-Pro teams, awards and the Top 100. */
+.honor {
+  display: inline-block; padding: 1px 4px; border-radius: 3px; border: 1px solid; font-size: 9.5px; font-weight: 800;
+  line-height: 13px; letter-spacing: .03em; text-transform: uppercase; white-space: nowrap;
+}
+.honor-ap { background: #1d3a6e; border-color: #7fa6ea; color: #fff; }
+.honor-nflpa { background: #3b1d5c; border-color: #b58ce6; color: #fff; }
+.honor-award { background: #2a2f36; border-color: #c4ccd6; color: #fff; }
+.honor-top100 { background: #4a1414; border-color: #e5484d; color: #fff; }
+.top100-rank { font-weight: 700; white-space: nowrap; }
+.stat-rank { font-weight: 700; white-space: nowrap; }
+.stat-rank.lead { color: #ffd76a; }
+/* The MVP: a glimmering gold coin. */
+.honor-mvp {
+  position: relative; display: grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; overflow: hidden;
+  font-size: 8px; font-weight: 900; letter-spacing: 0; color: #3d2600;
+  background: radial-gradient(circle at 35% 30%, #fff6c4, #f5c542 45%, #b8860b 100%);
+  border: 1px solid #fff1b0; box-shadow: 0 0 8px rgba(245, 197, 66, .75);
+  animation: mvp-glow 2.4s ease-in-out infinite;
+}
+.honor-mvp::after {
+  content: ''; position: absolute; inset: -40%;
+  background: linear-gradient(115deg, transparent 40%, rgba(255, 255, 255, .9) 50%, transparent 60%);
+  animation: holo-sheen 2.2s ease-in-out infinite;
+}
+@keyframes mvp-glow { 0%, 100% { box-shadow: 0 0 6px rgba(245, 197, 66, .6); } 50% { box-shadow: 0 0 12px rgba(255, 215, 90, 1); } }
+/* An injury: a red cross on a glistening white circle, the rookie badge's size. */
+.med-badge {
+  position: relative; display: inline-grid; place-items: center; flex: none; width: 16px; height: 16px; border-radius: 50%; overflow: hidden;
+  background: radial-gradient(circle at 35% 30%, #fff, #e9edf2 70%, #c9d0d8 100%); border: 1px solid rgba(255, 255, 255, .9);
+  box-shadow: 0 0 5px rgba(255, 255, 255, .55);
+}
+.med-badge svg { width: 12px; height: 12px; fill: #e5484d; position: relative; z-index: 1; }
+.med-badge::after {
+  content: ''; position: absolute; inset: -40%; z-index: 2;
+  background: linear-gradient(115deg, transparent 40%, rgba(255, 255, 255, .9) 50%, transparent 60%);
+  animation: holo-sheen 2.8s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) { .honor-mvp, .honor-mvp::after, .med-badge::after { animation: none; } }
 .pop-level .heat-how { margin-left: 4px; vertical-align: 1px; }
 /* The rookie badge sits beside "Starter"/"Backup". */
 .pop-level .rookie.in-key { display: inline-grid; margin-left: 4px; vertical-align: -3px; }
