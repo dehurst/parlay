@@ -638,6 +638,8 @@ h3.section.first { margin-top: 4px; }
 .pop-college img { width: 16px; height: 16px; object-fit: contain; }
 .pop-level { font-weight: 700; margin-bottom: 4px; }
 .pop-level .heat-how { margin-left: 4px; vertical-align: 1px; }
+/* The rookie badge sits beside "Starter"/"Backup". */
+.pop-level .rookie.in-key { display: inline-grid; margin-left: 4px; vertical-align: -3px; }
 .pop-row { opacity: .92; }
 .pop-row + .pop-row { margin-top: 2px; }
 .pop-snaps { display: flex; gap: 4px; margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(255, 255, 255, .15); }

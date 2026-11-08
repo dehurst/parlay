@@ -1755,11 +1755,10 @@ function heatDetails(s) {
       <span class="pop-pos">${esc(s.pos)}</span>
       <span class="pop-name">${esc(s.name ?? 'Nobody healthy')}</span>
       ${s.history?.tag === 'back' ? backBadge(' in-key') : ''}
-      ${s.rookie ? '<span class="rookie in-key" title="Rookie">R</span>' : ''}
       ${s.college ? `<span class="pop-college" title="${esc(s.college.name)}"><img src="${esc(s.college.logo)}" alt="" loading="lazy">${esc(s.college.abbrev)}</span>` : ''}
       ${s.status === 'Questionable' ? '<span class="heat-tag">Q</span>' : ''}
     </div>
-    <div class="pop-level">${HEAT_LEVELS[level]}${esc(note)}${tag ? ` <span class="heat-how how-${s.history.tag}">${tag}</span>` : ''}</div>
+    <div class="pop-level">${HEAT_LEVELS[level]}${esc(note)}${s.rookie ? ' <span class="rookie in-key" title="Rookie">R</span>' : ''}${tag ? ` <span class="heat-how how-${s.history.tag}">${tag}</span>` : ''}</div>
     ${rows.map((r) => `<div class="pop-row">${esc(r)}</div>`).join('')}
     ${chart}`;
 }
