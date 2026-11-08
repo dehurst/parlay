@@ -85,3 +85,32 @@ test('a player\'s college: abbreviation and a small logo, or nothing', () => {
   assert.equal(collegeOf({ name: 'Miami', abbrev: 'MIA', logos: [] }), null);
   assert.equal(collegeOf({ name: 'Miami', logos: miami.logos }), null);
 });
+
+test('a starter who would start at full strength isn\'t a fill-in, whatever his snaps alone said', () => {
+  // Snaps alone said each took over for someone now hurt; at full strength
+  // the first still starts, the second doesn't, and the third is listed
+  // behind a sidelined player on the depth chart.
+  const fill = { tag: 'fillin', since: 4, replaced: 'Slot Guy', replacedStatus: 'Injured Reserve', timeline: [] };
+  const side = { pass: [
+    { slot: 'wr1', name: 'Star Wideout', rank: 1, skipped: [], history: { ...fill } },
+    { slot: 'wr2', name: 'Fill Wideout', rank: 1, skipped: [], history: { ...fill, replaced: 'Big Wideout' } },
+    { slot: 'wr3', name: 'Listed Behind', rank: 1, skipped: [{ name: 'Slot Guy', status: 'Injured Reserve' }], history: { ...fill } },
+  ] };
+  const share = { 'Star Wideout': 0.67, 'Fill Wideout': 0.3, 'Listed Behind': 0.55, 'Slot Guy': 0.38, 'Big Wideout': 0.8 };
+  const sidelined = ['Slot Guy', 'Big Wideout'].map((name) => ({ name, status: 'Injured Reserve', group: 'WR' }));
+  markFillIns(side, sidelined, { share: (n) => share[n] ?? null });
+  const [star, fillIn, listed] = side.pass;
+  assert.deepEqual(star.history, { tag: 'week1', since: 4, timeline: [] });
+  assert.equal(fillIn.history.tag, 'fillin');
+  assert.equal(listed.history.tag, 'fillin');
+});
+
+test('a clear starter last season is scored on that, not a few limited games this season', () => {
+  const sq = (slotId, name) => ({ slot: slotId, name, rank: 1, skipped: [], history: { tag: 'week1', since: 1 } });
+  const side = { pass: [sq('wr1', 'Proven Wideout'), sq('wr2', 'Other Wideout')] };
+  const share = { 'Proven Wideout': 0.53, 'Other Wideout': 0.7, 'Hurt Backup': 0.55 };
+  const sidelined = [{ name: 'Hurt Backup', status: 'Out', group: 'WR' }];
+  markFillIns(side, sidelined, { share: (n) => share[n] ?? null, starterShare: (n) => (n === 'Proven Wideout' ? 0.78 : share[n]) });
+  assert.equal(side.pass[0].history.tag, 'week1');
+  assert.equal(side.pass[1].history.tag, 'week1');
+});

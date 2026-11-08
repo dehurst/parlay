@@ -6,7 +6,7 @@
 import { espnSite } from './sport.js';
 import { teamKey } from './schedule.js';
 import { fetchTeamDepthChart, fetchTeamRoster } from './injuries.js';
-import { seasonSnaps, teamCode, starterHistory, nextUp, positionGroup, usualShare, gamesPlayed, lastSeason, outsnapped } from './starters.js';
+import { seasonSnaps, teamCode, starterHistory, nextUp, positionGroup, usualShare, gamesPlayed, lastSeason, outsnapped, findPlayer } from './starters.js';
 
 // Tags that keep a player off the field; Questionable players still count.
 const SIDELINED = ['Out', 'Doubtful', 'Injured Reserve', 'Suspension'];
@@ -114,7 +114,17 @@ const PROVEN = { share: 0.6, games: 6 };
 // earlier this season ranks ahead of him. `sidelined` is [{ name, status,
 // group }], `share(name)` a usual snap share (or null), and `ahead(a, b)`
 // whether hurt player `a` played ahead of starter `b`.
-export function markFillIns(side, sidelined, { share, ahead = () => false }) {
+// `starterShare(name)` scores today's starters (default: `share`), so a clear
+// starter last season isn't judged on a few limited games this season, and
+// a hurt player has to beat a starter by EDGE to rank ahead of him (a near
+// tie isn't enough to call the starter a fill-in).
+// A starter who makes that full-strength lineup isn't a fill-in, even if his
+// snaps alone said he took over for someone hurt (he missed the opener, was
+// eased back in, or was just traded), as long as he plays more than that
+// player and `settled(name)` (enough games to go on); the depth chart listing
+// him behind someone sidelined still decides.
+const EDGE = 0.05;
+export function markFillIns(side, sidelined, { share, starterShare = share, ahead = () => false, settled = () => true }) {
   const slots = Object.values(side).flat().filter((s) => s.name && !s.extra);
   const names = new Set(slots.map((s) => s.name));
   const groups = new Map();
@@ -125,7 +135,7 @@ export function markFillIns(side, sidelined, { share, ahead = () => false }) {
   for (const [group, mine] of groups) {
     const out = sidelined.filter((p) => p.group === group && !names.has(p.name))
       .map((p) => ({ ...p, score: share(p.name) ?? 0 })).filter((p) => p.score >= STARTER_SHARE);
-    const starters = mine.map((slot) => ({ slot, name: slot.name, score: share(slot.name) ?? 0 }));
+    const starters = mine.map((slot) => ({ slot, name: slot.name, score: (starterShare(slot.name) ?? 0) + EDGE }));
     for (const x of out) {
       for (const y of [...starters].sort((a, b) => b.score - a.score)) {
         if (x.score <= y.score && ahead(x.name, y.name)) x.score = y.score + 1e-6;
@@ -133,7 +143,16 @@ export function markFillIns(side, sidelined, { share, ahead = () => false }) {
     }
     const pool = [...starters, ...out].sort((a, b) => b.score - a.score);
     for (const [i, p] of pool.entries()) {
-      if (!p.slot || i < mine.length) continue;
+      if (!p.slot) continue;
+      if (i < mine.length) {
+        const h = p.slot.history;
+        const mineNow = starterShare(p.name) ?? 0;
+        if (h?.tag === 'fillin' && !p.slot.skipped?.length && settled(p.name) && (!h.replaced || (share(h.replaced) ?? 0) < mineNow)) {
+          const { replaced, replacedStatus, replacedRecent, deep, ahead: _, ...rest } = h;
+          p.slot.history = { ...rest, tag: 'week1' };
+        }
+        continue;
+      }
       const above = pool.slice(0, i).filter((q) => !q.slot);
       const deep = i - mine.length + 1;
       const { name, status } = above.at(-1);
@@ -224,7 +243,30 @@ export async function teamHeatmap(name, now = Date.now()) {
       // starter last season; otherwise the team has built around his absence.
       const sidelined = athletes.filter((a) => SIDELINED.includes(a.injuries?.[0]?.status) && (gamesPlayed(teams, code, a.displayName) > 0 || proven(a.displayName)))
         .map((a) => ({ name: a.displayName, status: a.injuries[0].status, group: positionGroup(a.position?.abbreviation) }));
-      markFillIns(side, sidelined, { share: (n) => usualShare(teams, last(n), code, n), ahead: (a, b) => outsnapped(teams, code, a, b, lastSeason(last(b), code, b)?.share) });
+      const share = (n) => usualShare(teams, last(n), code, n);
+      // A clear starter for this team last season who's starting now keeps
+      // that standing, however few or light his games this season (hurt,
+      // eased back in). Only this team: a starter elsewhere last season may
+      // be a backup here (traded players are handled by the trade rule).
+      const provenHere = (n) => {
+        const lastTeam = last(n)?.[code];
+        const p = lastTeam && findPlayer(lastTeam, n);
+        const played = p ? lastTeam.weeks.filter((w) => p.pct[w] != null) : [];
+        const avg = played.length ? played.reduce((t, w) => t + p.pct[w], 0) / played.length : 0;
+        return played.length >= PROVEN.games && avg >= PROVEN.share ? avg : null;
+      };
+      // Only over a small sample: after a few games, this season's role decides.
+      const starterShare = (n) => {
+        const before = gamesPlayed(teams, code, n) < 4 ? provenHere(n) : null;
+        return before == null ? share(n) : Math.max(share(n) ?? 0, before);
+      };
+      markFillIns(side, sidelined, {
+        share, starterShare,
+        // One or two games here can't overrule a fill-in, unless he was a
+        // clear starter here last season.
+        settled: (n) => gamesPlayed(teams, code, n) >= 3 || provenHere(n) != null,
+        ahead: (a, b) => provenHere(b) == null && outsnapped(teams, code, a, b, lastSeason(last(b), code, b)?.share),
+      });
     }
   }
   if (teams) {

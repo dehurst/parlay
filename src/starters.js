@@ -126,6 +126,14 @@ export function starterHistory(teams, code, slot, { injuries = new Map(), roster
     while (out > 0 && me.pct[weeks[out - 1]] == null) out--;
     return { tag: 'back', missed: weeks.slice(out), ...base };
   }
+  // Traded in this season: a trade, whatever his snaps here so far (he's
+  // often eased in), with his old team's games filled into the chart.
+  const traded = tradedFrom(teams, code, slot.name);
+  if (traded) {
+    const old = traded.player.pct;
+    const timeline = base.timeline.map((t) => (t.pct == null && old[t.week] != null ? { ...t, pct: pctOf(old[t.week]) } : t));
+    return { tag: 'trade', since: weeks.find((w) => me.pct[w] != null), from: traded.code, ...base, timeline };
+  }
   // Part-time: well under half the snaps in a typical recent game, and not a
   // regular in the latest one either (that's someone just taking over).
   if (last < 0 || (played.length && typical < bar(me) && !regular(me, latest))) return { tag: 'part', ...base };
@@ -212,6 +220,26 @@ export function gamesPlayed(teams, code, name) {
   return me ? team.weeks.filter((w) => me.pct[w] != null).length : 0;
 }
 
+// A player traded (or signed) in this season: the team he played for before
+// his first game for team `code`, as { code, team, player }. Only the exact
+// name, the same position group, and every game there before his first one
+// here, so a namesake isn't mistaken for him. Null if he's been here all along.
+export function tradedFrom(teams, code, name) {
+  const team = teams?.[code];
+  const me = team && findPlayer(team, name);
+  if (!me) return null;
+  const first = team.weeks.find((w) => me.pct[w] != null);
+  if (first == null || first === team.weeks[0]) return null;
+  for (const [c, t] of Object.entries(teams)) {
+    if (c === code) continue;
+    const p = t.players.find((q) => [...q.names].some((n) => fullKey(n) === fullKey(name)));
+    if (!p || p.group !== me.group) continue;
+    const there = t.weeks.filter((w) => p.pct[w] != null);
+    if (there.length && there.every((w) => w < first)) return { code: c, team: t, player: p };
+  }
+  return null;
+}
+
 // A player's snap record in a season's `teams`: on team `code`, or else
 // (traded, or signed since) the one other team with that exact name, or the
 // one with a close match ("D.J." / "DJ"). [team, player], or [] if unclear.
@@ -242,6 +270,13 @@ export function usualShare(teams, lastTeams, code, name) {
   const [team, me] = findAnywhere(teams, code, name);
   const played = me ? team.weeks.filter((w) => me.pct[w] != null) : [];
   const now = played.length ? avg(me, played) : null;
+  // Traded in: his role on the old team counts too, since he's often eased
+  // in for a game or two while learning the new offense.
+  const traded = tradedFrom(teams, code, name);
+  if (traded) {
+    const there = traded.team.weeks.filter((w) => traded.player.pct[w] != null);
+    return Math.max(now ?? 0, avg(traded.player, there));
+  }
   if (played.length >= 2) return now;
   const before = lastSeason(lastTeams, code, name)?.share ?? null;
   return now == null && before == null ? null : Math.max(now ?? 0, before ?? 0);
@@ -255,6 +290,10 @@ export function usualShare(teams, lastTeams, code, name) {
 // later, which are left out.
 export function outsnapped(teams, code, a, b, bLast = 0) {
   const team = teams?.[code];
+  // Traded in: his first games here, while learning the offense, don't count.
+  if (tradedFrom(teams, code, b)) return false;
+  // Traded in and hasn't played here yet: nothing here to compare.
+  if (team && !findPlayer(team, b) && findAnywhere(teams, code, b).length) return false;
   const pa = team && findPlayer(team, a);
   if (!pa) return false;
   const pb = findPlayer(team, b);

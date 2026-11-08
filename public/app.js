@@ -1686,7 +1686,7 @@ async function renderStats() {
 // green for a starter, yellow for a backup, red for third string or deeper.
 
 let heatGame = null; // the game shown
-const HEAT_UNITS = [['line', 'OL', 'DL'], ['back', 'QB/RB', 'LB'], ['pass', 'WR/TE', 'DB']];
+const HEAT_UNITS = [['back', 'QB/RB', 'LB'], ['pass', 'WR/TE', 'DB'], ['line', 'OL', 'DL']];
 const HEAT_LEVELS = ['Nobody healthy', 'Starter', 'Backup', '3rd string or deeper'];
 
 // How the player got the job, from every week's snap counts this season.
@@ -1698,7 +1698,7 @@ function historyText(h) {
   const who = (name, status) => `${name}${status ? ` (${status})` : ''}`;
   const since = h.since ? ` since Week ${h.since}` : '';
   const text = {
-    week1: h.missed?.length ? `Starter again since Week ${h.since} (missed ${weekList(h.missed)})` : `Starter every game since Week ${h.since}`,
+    week1: !h.since ? 'Starter' : h.missed?.length ? `Starter again since Week ${h.since} (missed ${weekList(h.missed)})` : `Starter every game since Week ${h.since}`,
     back: h.missed?.length ? `Back this week after missing ${weekList(h.missed)}` : 'Back this week',
     fillin: h.deep >= 2 && h.ahead?.length >= 2
       ? `Deep fill-in: ${listText(h.ahead.map((p) => who(p.name, p.status)))} would all play ahead of him`
@@ -1859,7 +1859,6 @@ function heatMatchup(g, offHome, data, weather = '') {
   const sideTeam = (team, short, role) => `<div class="heat-side-team">${teamLogo(team, 'small')}${esc(short)} <span class="muted">${role}</span></div>`;
   const units = HEAT_UNITS.map(([id, oLabel, dLabel]) => `<div class="heat-unit">
       <div class="heat-side">${sideTeam(offTeam, offShort, 'offense')}<div class="heat-label">${oLabel}${groupHealth(off[id], oLabel)}</div><div class="heat-row">${off[id].map(heatSquare).join('')}</div></div>
-      <div class="heat-vs">vs</div>
       <div class="heat-side">${sideTeam(defTeam, defShort, 'defense')}<div class="heat-label">${dLabel}${groupHealth(def[id], dLabel)}</div><div class="heat-row">${def[id].map(heatSquare).join('')}</div></div>
     </div>`).join('');
   return `<div class="card heat-card">

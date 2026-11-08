@@ -203,3 +203,29 @@ test('a clear starter last season who left the opener hurt and took the job back
   // Without last season to go on, he looks like the backup taking over.
   assert.notEqual(starterHistory(t, 'SEA', slot).tag, 'week1');
 });
+
+test('a starter traded in and eased in on light snaps is a trade, not a part-timer or fill-in', () => {
+  const t = parseSnaps(csv([
+    // Starter for Arizona Weeks 1-3, traded to Houston, 20% there Weeks 4-5.
+    [1, 'Star Wideout', 'sw', 'WR', 'ARI', 0.9, 0], [2, 'Star Wideout', 'sw', 'WR', 'ARI', 0.85, 0], [3, 'Star Wideout', 'sw', 'WR', 'ARI', 0.9, 0],
+    [4, 'Star Wideout', 'sw', 'WR', 'HOU', 0.2, 0], [5, 'Star Wideout', 'sw', 'WR', 'HOU', 0.2, 0],
+    // Houston's receiver who's now hurt: more snaps than him there.
+    [1, 'Hurt Wideout', 'hw', 'WR', 'HOU', 0.7, 0], [2, 'Hurt Wideout', 'hw', 'WR', 'HOU', 0.7, 0], [3, 'Hurt Wideout', 'hw', 'WR', 'HOU', 0.7, 0],
+    [4, 'Hurt Wideout', 'hw', 'WR', 'HOU', 0.7, 0], [5, 'Hurt Wideout', 'hw', 'WR', 'HOU', 0.7, 0],
+  ]));
+  const h = starterHistory(t, 'HOU', { name: 'Star Wideout', skipped: [] });
+  assert.equal(h.tag, 'trade');
+  assert.equal(h.from, 'ARI');
+  assert.equal(h.since, 4);
+  assert.deepEqual(h.timeline.map((w) => w.pct), [90, 85, 90, 20, 20]);
+  assert.ok(Math.abs(usualShare(t, null, 'HOU', 'Star Wideout') - (0.9 + 0.85 + 0.9) / 3) < 1e-9);
+  assert.equal(outsnapped(t, 'HOU', 'Hurt Wideout', 'Star Wideout'), false);
+});
+
+test('nobody out-snaps a player traded in who hasn\'t played for his new team yet', () => {
+  const t = parseSnaps(csv([
+    [1, 'New Nickel', 'nn', 'CB', 'LAC', 0, 0.7], [2, 'New Nickel', 'nn', 'CB', 'LAC', 0, 0.65],
+    [1, 'Hurt Corner', 'hc', 'CB', 'NYG', 0, 0.34], [2, 'Hurt Corner', 'hc', 'CB', 'NYG', 0, 0.34],
+  ]));
+  assert.equal(outsnapped(t, 'NYG', 'Hurt Corner', 'New Nickel'), false);
+});
