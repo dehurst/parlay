@@ -30,6 +30,17 @@ export function setupPush({ VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, VAPID_SUBJECT }
 
 const money = (n) => `$${Number(n).toFixed(2)}`;
 
+// What one person's stake pays if a bet hits: their part of the sportsbook's
+// payout, or of the estimate (stake × odds) when no payout was entered.
+function yourShare(event, who) {
+  const mine = event.stakes?.[who];
+  const total = Object.values(event.stakes ?? {}).reduce((a, b) => a + b, 0);
+  if (!mine || !total) return '';
+  const pays = event.payout ? (event.payout * mine) / total : event.decimal ? mine * event.decimal : null;
+  if (!pays) return '';
+  return ` Your ${money(mine)} pays ${event.payout ? '' : 'about '}${money(pays)} if it hits (${money(pays - mine)} profit).`;
+}
+
 // The notification for an event: { title, body }. `who` is the person it's
 // for (paid shows their share). `league` is 'nfl' or 'cfb'.
 export function messageFor(event, who) {
@@ -41,7 +52,7 @@ export function messageFor(event, who) {
     case 'joined':
       return { title: `${tag}${actor} is in on ${name}`, body: `${money(event.amount)} from ${actor} · ${money(event.total)} total now.` };
     case 'placed':
-      return { title: `${tag}${name} is placed`, body: event.payout ? `${actor} placed it: pays ${money(event.payout)} if it hits.` : `${actor} placed it.` };
+      return { title: `${tag}${name} is placed`, body: `${actor} placed it.${yourShare(event, who)}` };
     case 'reminder': {
       const unplaced = event.bets.filter((b) => !b.placed).map((b) => b.name);
       const placed = event.bets.filter((b) => b.placed).map((b) => b.name);

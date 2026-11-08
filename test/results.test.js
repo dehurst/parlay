@@ -69,11 +69,15 @@ test('season stats add up picks, consensus, and parlay money', () => {
       p1: { name: 'Crowd Favorites', american: 264, legs: [
         { key: `${kc}|spread|home`, gameId: kc, point: -3.5, price: -110 },
         { key: `${phi}|spread|home`, gameId: phi, point: -4, price: -110 },
-      ], stakes: { Daniel: 20, Asher: 10 } },
+      ], stakes: { Daniel: 20, Asher: 10 }, placed: { by: 'Daniel', at: 1 } },
       p2: { name: 'Safest Majority', american: 100, legs: [
         { key: `${kc}|spread|home`, gameId: kc, point: -3.5, price: -110 },
         { key: `${sf}|ml|home`, gameId: sf, point: null, price: -150 },
-      ], stakes: { Matt: 5 } },
+      ], stakes: { Matt: 5 }, placed: { by: 'Daniel', at: 1 } },
+      // Money pledged but never placed: no money moved, so it doesn't count.
+      p3: { name: 'Never placed', american: 100, legs: [
+        { key: `${kc}|spread|home`, gameId: kc, point: -3.5, price: -110 },
+      ], stakes: { Daniel: 50, Matt: 50 } },
     } },
   };
   const stats = computeStats(data, ['Daniel', 'Asher', 'Matt']);

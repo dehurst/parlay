@@ -67,8 +67,9 @@ export function computeStats(data, players, { week = null } = {}) {
       return { label: s.label, price: s.price, pickers: s.pickers, grade: g };
     });
 
-    // Parlays with money on them.
-    const parlays = Object.values(data.stakes[key] ?? {}).map((p) => {
+    // Parlays with money on them that were placed at the sportsbook. Ones
+    // never placed didn't cost or pay anyone anything.
+    const parlays = Object.values(data.stakes[key] ?? {}).filter((p) => p.placed).map((p) => {
       const legs = p.legs.map((l) => ({ ...l, grade: grade(l) }));
       const stakes = Object.fromEntries(Object.entries(p.stakes).filter(([who]) => people[who]));
       const total = Object.values(stakes).reduce((a, b) => a + b, 0);

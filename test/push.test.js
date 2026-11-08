@@ -18,7 +18,11 @@ test('what the notifications say', () => {
   assert.equal(posted.title, "Matt posted Matt's Parlay 2");
   assert.match(posted.body, /3-leg parlay at \+450\. \$10\.00 in so far/);
   assert.equal(messageFor({ type: 'joined', actor: 'Asher', name: 'X', amount: 5, total: 15, league: 'cfb' }).title, 'CFB · Asher is in on X');
-  assert.match(messageFor({ type: 'placed', actor: 'Daniel', name: 'X', payout: 126.56 }).body, /pays \$126\.56/);
+  // Each person sees what their own stake pays.
+  const placed = { type: 'placed', actor: 'Daniel', name: 'X', stakes: { Daniel: 10, Matt: 10, Asher: 5 }, payout: 125 };
+  assert.equal(messageFor(placed, 'Matt').body, 'Daniel placed it. Your $10.00 pays $50.00 if it hits ($40.00 profit).');
+  assert.equal(messageFor(placed, 'Asher').body, 'Daniel placed it. Your $5.00 pays $25.00 if it hits ($20.00 profit).');
+  assert.equal(messageFor({ ...placed, payout: null, decimal: 2.5 }, 'Matt').body, 'Daniel placed it. Your $10.00 pays about $25.00 if it hits ($15.00 profit).');
   assert.match(messageFor({ type: 'paid', actor: 'Daniel', name: 'X', shares: { Matt: 42.19 } }, 'Matt').body, /Your share: \$42\.19/);
 });
 

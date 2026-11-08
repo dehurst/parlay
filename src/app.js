@@ -654,7 +654,7 @@ app.post('/api/placed', async (req, res, next) => {
       saved.placed = { by: saved.placed?.by ?? name, at: saved.placed?.at ?? Date.now(), payout };
       await save();
       if (newlyPlaced) {
-        await notify({ type: 'placed', actor: name, name: saved.name, id: saved.id, url: parlayUrl(saved.id, win.key), stakes: saved.stakes, payout });
+        await notify({ type: 'placed', actor: name, name: saved.name, id: saved.id, url: parlayUrl(saved.id, win.key), stakes: stakesFor(win, saved.id), payout, decimal: saved.decimal });
       }
       return res.json({ placed: saved.placed });
     }

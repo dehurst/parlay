@@ -1644,7 +1644,7 @@ async function renderStats() {
   const pr = data.parlays;
   const people = [...data.players].sort((a, b) => b.net - a.net);
   const money_ = `<div class="card"><h3>${byWeek ? `${esc(week.label)} money` : 'Season money'}</h3>
-    <p class="small muted">Parlays you put money on that have been decided. Net = paid back minus staked.</p>
+    <p class="small muted">Parlays placed at the sportsbook that have been decided. Net = paid back minus staked. Bets never marked placed don't count.</p>
     <table class="slip">
       <thead><tr><th>Who</th><th class="num">Staked</th><th class="num">Paid back</th><th class="num">Net</th></tr></thead>
       <tbody>${people.map((p) => `<tr><td>${esc(p.name)}${p.inPlay ? `<div class="small muted">${money(p.inPlay)} in play</div>` : ''}</td>
@@ -2520,7 +2520,18 @@ async function renderSlip(quiet = false) {
   const cards = section(hit.length ? 'Hit ✓' : '', hit)
     + section(hit.length && active.length ? 'Still in play' : '', active)
     + section('Didn’t hit', missed);
-  const totals = Object.entries(data.totals).map(([who, amt]) => `<tr><td>${esc(who)}</td><td class="num">${money(amt)}</td></tr>`).join('');
+  // What each person has in: placed bets (real money at the sportsbook), and
+  // money on bets not placed yet.
+  const owes = {};
+  for (const p of data.parlays) {
+    for (const [who, amt] of Object.entries(p.stakes)) {
+      const o = (owes[who] ??= { placed: 0, waiting: 0 });
+      o[p.placed ? 'placed' : 'waiting'] += amt;
+    }
+  }
+  const sum = (k) => Object.values(owes).reduce((a, o) => a + o[k], 0);
+  const anyWaiting = sum('waiting') > 0.004;
+  const totals = Object.entries(owes).map(([who, o]) => `<tr><td>${esc(who)}</td><td class="num">${money(o.placed)}</td>${anyWaiting ? `<td class="num muted">${money(o.waiting)}</td>` : ''}</tr>`).join('');
   $('#slip').innerHTML = `
     <div class="card"><b>${past ? `${esc(week.label)} bet slip` : toPlace.length
         ? `${toPlace.length} parlay${toPlace.length === 1 ? '' : 's'} left to place, ${money(left)}.`
@@ -2532,8 +2543,11 @@ async function renderSlip(quiet = false) {
     </div>
     ${cards}
     <div class="card"><b>Who owes what</b>
-      <table class="slip"><tbody>${totals}</tbody>
-        <tfoot><tr><th>Total</th><th class="num">${money(grand)}</th></tr></tfoot></table>
+      <p class="small muted">Money in placed bets${anyWaiting ? ', and on bets not placed yet (owed only once they’re placed)' : ''}.</p>
+      <table class="slip">
+        <thead><tr><th>Who</th><th class="num">Placed</th>${anyWaiting ? '<th class="num">Not placed yet</th>' : ''}</tr></thead>
+        <tbody>${totals}</tbody>
+        <tfoot><tr><th>Total</th><th class="num">${money(sum('placed'))}</th>${anyWaiting ? `<th class="num muted">${money(sum('waiting'))}</th>` : ''}</tr></tfoot></table>
     </div>`;
   if (quiet) window.scrollTo(0, y);
 }
