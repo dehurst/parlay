@@ -70,7 +70,7 @@ test('a hurt player who out-snapped a starter ranks ahead of him, whatever their
   assert.equal(watkins.history.deep, 3);
 });
 
-test('a player\'s college: abbreviation and a small dark logo, or nothing', () => {
+test('a player\'s college: abbreviation and a small logo, or nothing', () => {
   const miami = {
     name: 'Miami', abbrev: 'MIA',
     logos: [
@@ -79,7 +79,7 @@ test('a player\'s college: abbreviation and a small dark logo, or nothing', () =
     ],
   };
   assert.deepEqual(collegeOf(miami), {
-    abbrev: 'MIA', name: 'Miami', logo: 'https://a.espncdn.com/combiner/i?img=/i/teamlogos/ncaa/500-dark/2390.png&w=40&h=40',
+    abbrev: 'MIA', name: 'Miami', logo: 'https://a.espncdn.com/combiner/i?img=/i/teamlogos/ncaa/500/2390.png&w=40&h=40',
   });
   assert.equal(collegeOf(undefined), null);
   assert.equal(collegeOf({ name: 'Miami', abbrev: 'MIA', logos: [] }), null);

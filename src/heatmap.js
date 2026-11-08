@@ -169,10 +169,10 @@ async function espnTeamId(name) {
 }
 
 // A player's college from ESPN's roster: its abbreviation and a small logo
-// (the dark-background version when there is one). Null without both.
+// (the regular one, since it's shown on a white circle). Null without both.
 export function collegeOf(c) {
   if (!c?.abbrev) return null;
-  const logo = c.logos?.find((l) => l.rel?.includes('dark')) ?? c.logos?.[0];
+  const logo = c.logos?.find((l) => l.rel?.includes('default')) ?? c.logos?.[0];
   const path = logo?.href?.match(/^https:\/\/a\.espncdn\.com(\/i\/[\w/-]+\.png)$/)?.[1];
   if (!path) return null;
   return { abbrev: c.abbrev, name: c.name ?? c.abbrev, logo: `https://a.espncdn.com/combiner/i?img=${path}&w=40&h=40` };
