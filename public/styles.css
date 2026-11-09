@@ -724,8 +724,6 @@ h3.section.first { margin-top: 4px; }
 .honor-ap { background: #1d3a6e; border-color: #7fa6ea; color: #fff; }
 .honor-nflpa { background: #3b1d5c; border-color: #b58ce6; color: #fff; }
 .honor-award { background: #2a2f36; border-color: #c4ccd6; color: #fff; }
-.honor-top100 { background: #4a1414; border-color: #e5484d; color: #fff; }
-.top100-rank { font-weight: 700; white-space: nowrap; }
 .stat-rank { font-weight: 700; white-space: nowrap; }
 .stat-rank.lead { color: #ffd76a; }
 /* The MVP: a glimmering gold coin. */

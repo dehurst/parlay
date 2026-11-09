@@ -1785,6 +1785,15 @@ let heatSquares = [];
 
 // A square's details, shown on hover (or a long press on phones): who, how
 // deep, how he got the job, and each week's snaps as a little chart.
+// Age, then height and weight (ESPN's "6' 2\"" and "215 lbs"), on one line.
+function bioLine(c = {}) {
+  const bio = [];
+  if (c.born) bio.push(`Age ${((Date.now() - new Date(c.born)) / (365.2425 * 864e5)).toFixed(1)}`);
+  if (c.height) bio.push(esc(c.height.replace(/' /, "'")));
+  if (c.weight) bio.push(esc(c.weight));
+  return bio.length ? `<div class="back-age">${bio.join(' · ')}</div>` : '';
+}
+
 function heatDetails(s) {
   const { text, recent } = historyText(s.history) ?? {};
   const rows = [
@@ -1802,6 +1811,7 @@ function heatDetails(s) {
     <div class="pop-caption">% of snaps by week</div>` : '';
   const streak = s.streak && STREAK[s.streak.kind] ? `<div class="pop-row pop-streak streak-${s.streak.kind}">${STREAK[s.streak.kind].icon} ${esc(streakText(s.streak))}</div>` : '';
   return `${popTop(s)}
+    ${bioLine(s.card)}
     ${streak}
     ${rows.map((r) => `<div class="pop-row">${esc(r)}</div>`).join('')}
     ${chart}`;
@@ -1823,21 +1833,14 @@ function popTop(s) {
     <div class="pop-level">${HEAT_LEVELS[level]}${esc(note)}${s.rookie ? ' <span class="rookie in-key" title="Rookie">R</span>' : ''}${tag ? ` <span class="heat-how how-${s.history.tag}">${tag}</span>` : ''}</div>`;
 }
 
-// The back of the card: age, injuries that cost games this season, honors
-// (All-Pro teams, awards), the NFL Top 100, and stat leaders.
-const yr = (y) => `’${String(y).slice(-2)}`;
+// The back of the card: yards by game, injuries that cost games this
+// season, honors (All-Pro teams, awards), and this season's stat leaders.
 const times = (n) => (n > 1 ? `<span class="honor-x">${n}X</span>` : '');
 const MED_BADGE = '<span class="med-badge" aria-hidden="true"><svg viewBox="0 0 16 16"><path d="M6 2.5h4v3.5h3.5v4H10v3.5H6V10H2.5V6H6z"/></svg></span>';
 const AWARD_ORDER = ['MVP', 'SB MVP', 'OPOY', 'DPOY', 'OROY', 'DROY'];
 function heatBack(s) {
   const c = s.card ?? {};
   const lines = [];
-  // Age, then height and weight (ESPN's "6' 2\"" and "215 lbs"), on one line.
-  const bio = [];
-  if (c.born) bio.push(`Age ${((Date.now() - new Date(c.born)) / (365.2425 * 864e5)).toFixed(1)}`);
-  if (c.height) bio.push(esc(c.height.replace(/' /, "'")));
-  if (c.weight) bio.push(esc(c.weight));
-  if (bio.length) lines.push(`<div class="back-age">${bio.join(' · ')}</div>`);
   // Yards in each of the team's last 7 games, drawn like the snap chart on
   // the front: bars scaled to his best game, a dot where he had none.
   if (c.yards) {
@@ -1864,19 +1867,9 @@ function heatBack(s) {
     honors.push(`<span class="back-item" title="${award}: ${seasons.join(', ')}">${badge}${times(seasons.length)}</span>`);
   }
   if (honors.length) lines.push(`<div class="back-row">${honors.join('')}</div>`);
-  // The NFL Top 100, newest list first.
-  if (c.top100?.length) {
-    const ranks = [...c.top100].sort((a, b) => b.year - a.year).map((t) => `<span class="top100-rank">#${t.rank} <span class="muted">${yr(t.year)}</span></span>`).join('');
-    lines.push(`<div class="back-row" title="NFL Top 100 Players (voted by players), the last 4 lists"><span class="honor honor-top100">Top 100</span>${ranks}</div>`);
-  }
-  // Stat leaders: this season's top 10, then league titles from the last 5 seasons.
+  // Stat leaders: this season's top 10.
   if (c.ranks?.length) {
     lines.push(`<div class="back-label">This season</div><div class="back-row">${c.ranks.map((r) => `<span class="stat-rank${r.rank === 1 ? ' lead' : ''}">${r.tied ? 'T-' : '#'}${r.rank} ${esc(r.stat)} <span class="muted">${r.value}</span></span>`).join('')}</div>`);
-  }
-  if (c.titles?.length) {
-    const byStat = new Map();
-    for (const t of c.titles) byStat.set(t.stat, [...(byStat.get(t.stat) ?? []), t.season]);
-    lines.push(`<div class="back-label">Led the NFL</div><div class="back-row">${[...byStat].map(([stat, seasons]) => `<span class="stat-rank lead">${esc(stat)} <span class="muted">${seasons.sort().map(yr).join(', ')}</span></span>`).join('')}</div>`);
   }
   return `${popTop(s)}<div class="pop-back-body">${lines.join('')}</div>`;
 }
