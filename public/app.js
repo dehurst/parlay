@@ -1838,6 +1838,16 @@ function heatBack(s) {
   if (c.height) bio.push(esc(c.height.replace(/' /, "'")));
   if (c.weight) bio.push(esc(c.weight));
   if (bio.length) lines.push(`<div class="back-age">${bio.join(' · ')}</div>`);
+  // Yards in each of the team's last 7 games, drawn like the snap chart on
+  // the front: bars scaled to his best game, a dot where he had none.
+  if (c.yards) {
+    const top = Math.max(...c.yards.games.map((g) => g.yds ?? 0), 1);
+    lines.push(`<div class="pop-snaps back-yards" aria-label="${esc(c.yards.label)} yards by week">${c.yards.games.map((g) => `<div class="pop-wk">
+      <span class="pop-pct">${g.yds == null ? '–' : g.yds}</span>
+      <span class="pop-bar">${g.yds == null ? '<i class="none"></i>' : `<i class="hi" style="height:${Math.max(6, Math.round((Math.max(g.yds, 0) / top) * 100))}%"></i>`}</span>
+      <span class="pop-wkn">${g.week}</span></div>`).join('')}</div>
+    <div class="pop-caption">${esc(c.yards.label)} yds by week</div>`);
+  }
   // Injuries: one medical badge per kind, with the games each stretch cost.
   if (c.injuries?.length) {
     lines.push(`<div class="back-row">${c.injuries.map((i) => `<span class="back-item" title="${esc(i.type)}: missed ${i.weeks.join(' + ')} game${i.weeks.reduce((a, b) => a + b, 0) === 1 ? '' : 's'}${i.out ? ', still out' : ''}">${MED_BADGE}${esc(i.type)} · ${i.weeks.map((w) => `${w} wk${w === 1 ? '' : 's'}`).join(', ')}${i.out ? ' (out)' : ''}</span>`).join('')}</div>`);

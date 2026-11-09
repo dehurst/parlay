@@ -6,7 +6,7 @@
 import { espnSite } from './sport.js';
 import { teamKey } from './schedule.js';
 import { fetchTeamDepthChart, fetchTeamRoster } from './injuries.js';
-import { seasonSnaps, teamCode, starterHistory, nextUp, positionGroup, usualShare, gamesPlayed, lastSeason, outsnapped, findPlayer, fullKey } from './starters.js';
+import { seasonSnaps, teamCode, starterHistory, nextUp, positionGroup, usualShare, gamesPlayed, lastSeason, outsnapped, findPlayer, fullKey, shortKey } from './starters.js';
 import { seasonFile, injuryHistory, statRanks, honorsFor } from './honors.js';
 import { streakBook, streakFor } from './streaks.js';
 
@@ -186,7 +186,7 @@ let teamIds = null;
 const charts = new Map();
 const CHART_TTL = 30 * 60e3;
 
-async function espnTeamId(name) {
+export async function espnTeamId(name) {
   if (!teamIds) {
     const res = await fetch(espnSite('teams'), { signal: AbortSignal.timeout(8000) });
     if (!res.ok) throw new Error(`ESPN teams returned ${res.status}`);
@@ -254,6 +254,39 @@ export function formTable(weekly, n = FORM_GAMES) {
   }
   forms.set(weekly, table);
   return table;
+}
+
+// A QB's, RB's, WR's or TE's yards in each of his team's last `n` games
+// (byes skipped): passing (QB), rushing (RB), receiving (WR, TE). Null for a
+// game he has no stat line in (didn't play, or a back or receiver with no
+// touches, which the snap bars tell apart).
+const YARDS = { QB: ['passYds', 'Passing'], RB: ['rushYds', 'Rushing'], WR: ['recYds', 'Receiving'], TE: ['recYds', 'Receiving'] };
+const byTeamWeek = new WeakMap();
+function teamLines(weekly) {
+  if (!byTeamWeek.has(weekly)) {
+    const teams = new Map(); // team -> { weeks: Set, full: Map, short: Map }
+    for (const r of weekly) {
+      const t = teams.get(r.team) ?? { weeks: new Set(), full: new Map(), short: new Map() };
+      teams.set(r.team, t);
+      t.weeks.add(r.week);
+      t.full.set(`${r.week}|${fullKey(r.name)}`, r);
+      const k = `${r.week}|${shortKey(r.name)}`;
+      t.short.set(k, t.short.has(k) ? null : r);
+    }
+    byTeamWeek.set(weekly, teams);
+  }
+  return byTeamWeek.get(weekly);
+}
+export function playerYards(weekly, code, name, group, n = 7) {
+  const [stat, label] = YARDS[group] ?? [];
+  const t = stat && teamLines(weekly).get(code);
+  if (!t || !name) return null;
+  const weeks = [...t.weeks].sort((a, b) => a - b).slice(-n);
+  const games = weeks.map((week) => {
+    const r = t.full.get(`${week}|${fullKey(name)}`) ?? t.short.get(`${week}|${shortKey(name)}`);
+    return { week, yds: r ? Math.round(r[stat]) : null };
+  });
+  return games.some((g) => g.yds != null) ? { label, games } : null;
 }
 
 export async function teamHeatmap(name, now = Date.now()) {
@@ -365,6 +398,7 @@ export async function teamHeatmap(name, now = Date.now()) {
       slot.card = {
         born: a?.dateOfBirth ?? null,
         height: a?.displayHeight ?? null, weight: a?.displayWeight ?? null,
+        yards: weekly.status === 'fulfilled' ? playerYards(weekly.value, code, slot.name, slotGroup(slot.slot)) : null,
         injuries: reports ? injuryHistory(slot.history?.timeline, mine) : [],
         ranks: statRows ? statRanks(statRows, slot.name, s) : [],
         ...honorsFor(slot.name, s, a?.id),

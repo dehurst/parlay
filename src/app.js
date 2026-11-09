@@ -18,7 +18,9 @@ import { analyzeWeek } from './analysis.js';
 import { sgpDecimal, learnAdjust, isSameGameKeys } from '../public/sgp.js';
 import { seasonYear, fetchSeasonWeek, parseSeasonWeek, mergeWeek, fetchGameLine, buildTeams, fetchGameTeamStats, regularSeasonWeeks } from './research.js';
 import { fetchTeamRoster, fetchTeamDepthChart, teamInjuries, dropStaleHistory, weekOf } from './injuries.js';
-import { teamHeatmap } from './heatmap.js';
+import { teamHeatmap, espnTeamId } from './heatmap.js';
+import { tileNames, watchList, fetchInactives, decide, DECIDE_AT, WATCH_FROM } from './gameday.js';
+import { propParts } from './props.js';
 import { gameWeather } from './weather.js';
 import { canSpend, spend, limitFor, easternDate, easternWeekday, LINES_COST, SCORES_COST } from './credits.js';
 import { sport, runInSport, inSlate, SPORTS } from './sport.js';
@@ -75,6 +77,7 @@ async function loadPush() {
   pushStore.data.inbox ??= {}; // the in-app list: { player: [{ title, body, url, type, at }] }
   pushStore.data.inboxSeen ??= {}; // { player: ms } when they last opened the list
   pushStore.data.reminded ??= {}; // { "nfl:gameId": ms } games already reminded about
+  pushStore.data.gameday ??= {}; // { "nfl:gameId": { at, watch: { espnId: { name, team, status, done } } } } Q/D players to call
   return pushStore.data;
 }
 
@@ -183,6 +186,11 @@ app.all('/api/reminders', async (req, res, next) => {
     const sent = [];
     for (const id of Object.keys(SPORTS)) {
       await new Promise((resolve, reject) => runInSport(id, () => remindLeague().then((r) => (r && sent.push({ league: id, ...r }), resolve()), reject)));
+      if (id === 'nfl') {
+        await new Promise((resolve) => runInSport(id, () => gamedayAlerts()
+          .then((r) => (r?.length && sent.push({ league: id, status: r }), resolve()))
+          .catch((err) => (console.error(`Game-day alerts failed: ${describe(err)}`), resolve()))));
+      }
     }
     res.json({ ok: true, sent });
   } catch (err) {
@@ -215,6 +223,64 @@ async function remindLeague() {
   const first = due.bets.find((b) => !b.placed) ?? due.bets[0];
   await notify({ type: 'reminder', to: reminderPlayers, ...due, id: due.gameIds.join(','), url: parlayUrl(first.id, win.key) });
   return { games: due.games, bets: due.bets.length };
+}
+
+// Game-day alerts (NFL): from 6 hours before kickoff, note who's Questionable
+// or Doubtful among the players that matter to a live bet in that game
+// (props on them, and both teams' heat map starters); once the inactives
+// are out (85 min before), tell everyone who's active and who isn't.
+async function gamedayAlerts() {
+  await store.load();
+  const win = weekWindow();
+  const sched = store.data.schedule[win.key];
+  if (!sched?.games?.length || sched.demo) return null;
+  const now = Date.now();
+  const soon = sched.games.filter((g) => {
+    const until = new Date(g.commence).getTime() - now;
+    return until > 0 && until <= WATCH_FROM;
+  });
+  if (!soon.length) return null;
+  const bets = gradedParlays(win, new Map(), new Set()).filter((b) => b.status === 'pending');
+  const games = soon.filter((g) => bets.some((b) => b.legs.some((l) => l.gameId === g.id)));
+  if (!games.length) return null;
+  const data = await loadPush();
+  const sent = [];
+  let board = null;
+  for (const g of games) {
+    const key = `${sport().id}:${g.id}`;
+    const entry = (data.gameday[key] ??= { at: now, watch: {} });
+    const teams = await Promise.all([g.away, g.home].map(async (name) => ({ name, id: await espnTeamId(name) })));
+    // Who to watch: re-checked each time, so a player added to the injury
+    // report (or a new prop) is picked up; a status already noted is kept.
+    const props = bets.flatMap((b) => b.legs).filter((l) => l.gameId === g.id && isProp(l.market)).map((l) => propParts(l.market).player);
+    for (const t of teams) {
+      if (!t.id) continue;
+      const [roster, sides] = await Promise.all([fetchTeamRoster(t.id), teamHeatmap(t.name).catch(() => null)]);
+      const found = watchList(roster, new Set([...tileNames(sides), ...props]), t.name);
+      for (const [id, p] of Object.entries(found)) entry.watch[id] ??= p;
+    }
+    if (new Date(g.commence).getTime() - now > DECIDE_AT || !Object.values(entry.watch).some((p) => !p.done)) continue;
+    board ??= await fetchEspnLive(win.key, games);
+    const eventId = board[g.id]?.espnId;
+    if (!eventId) continue;
+    const inactives = {};
+    for (const t of teams) {
+      const list = t.id ? await fetchInactives(eventId, t.id) : null;
+      if (list) inactives[t.name] = list;
+    }
+    const calls = decide(entry.watch, inactives);
+    if (!calls.length) continue;
+    // Mark them first, so a retried or overlapping check can't send twice.
+    for (const c of calls) entry.watch[c.id].done = true;
+    await pushStore.save();
+    const label = `${g.awayShort ?? g.away} @ ${g.homeShort ?? g.home}`;
+    const bet = bets.find((b) => b.legs.some((l) => l.gameId === g.id));
+    await notify({ type: 'status', to: players, game: label, players: calls, id: `${g.id}:${calls.map((c) => c.id).join(',')}`, url: parlayUrl(bet.id, win.key) });
+    sent.push({ game: label, players: calls.map((c) => `${c.name} ${c.now}`) });
+  }
+  for (const [k, e] of Object.entries(data.gameday)) if (now - e.at > 7 * 24 * 3600e3) delete data.gameday[k];
+  await pushStore.save();
+  return sent;
 }
 
 // Every API request is for one league, set by the page's NFL/CFB switch.

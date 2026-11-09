@@ -7,6 +7,8 @@ import { setVapidDetails, sendNotification } from 'web-push';
 //   joined  - someone puts money on a bet you're in (the others in it)
 //   placed  - a bet you're in is marked placed (the others in it)
 //   paid    - you've been paid out on a bet (the others in it)
+//   status  - a Q/D player in a game we bet on is ruled active or inactive
+//              (everyone)
 //   reminder - a game in a bet with money on it starts in ~30 min (only the
 //              people in REMINDER_PLAYERS; sent by the /api/reminders check)
 
@@ -15,6 +17,7 @@ export const EVENTS = {
   joined: 'Someone joins a bet you’re in',
   placed: 'A bet you’re in gets placed',
   paid: 'You’ve been paid out',
+  status: 'Questionable/Doubtful players ruled active or inactive (games we bet on)',
 };
 
 // Only shown to the people who get game reminders.
@@ -63,6 +66,14 @@ export function messageFor(event, who) {
       if (unplaced.length) parts.push(`Not placed yet: ${unplaced.join(', ')}.`);
       if (placed.length) parts.push(`Placed: ${placed.join(', ')}.`);
       return { title, body: parts.join(' ') };
+    }
+    case 'status': {
+      // One per game: who's in, who's out.
+      const line = (now) => event.players.filter((p) => p.now === now).map((p) => `${p.name} (${p.was[0]})`).join(', ');
+      const out = line('Inactive');
+      const active = line('Active');
+      const title = `${tag}${event.game}: ${out ? `${event.players.filter((p) => p.now === 'Inactive').length} out` : 'all active'}`;
+      return { title, body: [out && `Inactive: ${out}.`, active && `Active: ${active}.`].filter(Boolean).join(' ') };
     }
     case 'paid':
       return { title: `${tag}Paid out: ${name}`, body: `${actor} marked it paid.${event.shares?.[who] ? ` Your share: ${money(event.shares[who])}.` : ''}` };

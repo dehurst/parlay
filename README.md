@@ -265,6 +265,12 @@ checks in every 5 minutes. Any game kicking off within 35 minutes that's in a
 bet with money on it (and not already lost) sends one notification to
 `REMINDER_PLAYERS`, saying which of those bets aren't placed yet.
 
+The same check sends game-day status alerts (NFL) to everyone (each person can
+turn them off in their notification settings). For a game in a live bet, any
+Questionable or Doubtful player who matters to it (a prop on him, or a heat map
+starter on either team) gets called active or inactive once ESPN has the
+inactives list, from 85 minutes before kickoff.
+
 1. Make up a long random password and add it in Vercel as `CRON_SECRET`, then
    redeploy.
 2. In the Upstash console, open **QStash → Schedules → Create**:
