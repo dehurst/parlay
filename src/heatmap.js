@@ -364,6 +364,7 @@ export async function teamHeatmap(name, now = Date.now()) {
       const mine = reports?.get(fullKey(slot.name))?.filter((r) => teamsHere.includes(r.team)) ?? [];
       slot.card = {
         born: a?.dateOfBirth ?? null,
+        height: a?.displayHeight ?? null, weight: a?.displayWeight ?? null,
         injuries: reports ? injuryHistory(slot.history?.timeline, mine) : [],
         ranks: statRows ? statRanks(statRows, slot.name, s) : [],
         ...honorsFor(slot.name, s, a?.id),

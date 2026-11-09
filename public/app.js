@@ -1832,10 +1832,12 @@ const AWARD_ORDER = ['MVP', 'SB MVP', 'OPOY', 'DPOY', 'OROY', 'DROY'];
 function heatBack(s) {
   const c = s.card ?? {};
   const lines = [];
-  if (c.born) {
-    const age = (Date.now() - new Date(c.born)) / (365.2425 * 864e5);
-    lines.push(`<div class="back-age">Age ${age.toFixed(1)}</div>`);
-  }
+  // Age, then height and weight (ESPN's "6' 2\"" and "215 lbs"), on one line.
+  const bio = [];
+  if (c.born) bio.push(`Age ${((Date.now() - new Date(c.born)) / (365.2425 * 864e5)).toFixed(1)}`);
+  if (c.height) bio.push(esc(c.height.replace(/' /, "'")));
+  if (c.weight) bio.push(esc(c.weight));
+  if (bio.length) lines.push(`<div class="back-age">${bio.join(' · ')}</div>`);
   // Injuries: one medical badge per kind, with the games each stretch cost.
   if (c.injuries?.length) {
     lines.push(`<div class="back-row">${c.injuries.map((i) => `<span class="back-item" title="${esc(i.type)}: missed ${i.weeks.join(' + ')} game${i.weeks.reduce((a, b) => a + b, 0) === 1 ? '' : 's'}${i.out ? ', still out' : ''}">${MED_BADGE}${esc(i.type)} · ${i.weeks.map((w) => `${w} wk${w === 1 ? '' : 's'}`).join(', ')}${i.out ? ' (out)' : ''}</span>`).join('')}</div>`);
