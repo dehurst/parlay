@@ -666,6 +666,70 @@ h3.section.first { margin-top: 4px; }
   .alert-4 { box-shadow: 0 0 8px var(--glow); }
 }
 .heat-row { display: flex; flex-wrap: wrap; gap: 6px; }
+/* By position / On the field, next to the game picker. */
+.heat-pick { flex-wrap: wrap; }
+.heat-pick .heat-select { min-width: min(100%, 240px); }
+.heat-view { margin-bottom: 0; }
+/* "On the field": a dark turf, the defense above a dashed line of
+   scrimmage and the offense below, both in formation. */
+.field { position: relative; margin-top: 10px; }
+.field-turf {
+  padding: 12px 8px;
+  background: repeating-linear-gradient(0deg, #12291b 0 38px, #142e1e 38px 76px);
+}
+.field-def .field-turf { border-radius: 10px 10px 0 0; }
+.field-off .field-turf { border-radius: 0 0 10px 10px; }
+.field-side { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; margin: 8px 0; }
+.field-side .heat-side-team { margin: 0; }
+.field-pills { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; }
+.field-group { display: inline-flex; align-items: center; gap: 5px; font-size: 13px; }
+.field-group > b { font-weight: 800; letter-spacing: .03em; }
+.field-row { display: flex; justify-content: center; gap: 6px; }
+.field-row + .field-row { margin-top: 10px; }
+.field-safeties { gap: 120px; }
+.field-corners {
+  display: grid; gap: 6px; grid-template-columns: repeat(11, minmax(0, 1fr));
+  grid-template-areas: "rcb nb . . . . . . . . lcb";
+}
+.field-los { height: 0; border-top: 2px dashed rgba(255, 255, 255, .6); }
+.field .heat-sq { width: auto; min-width: 0; }
+.field-row .heat-sq { flex: 0 1 86px; }
+/* The offense: receivers wide on the line, the slot just off it, QB under
+   center, RB behind. */
+.field-formation {
+  display: grid; gap: 6px;
+  grid-template-columns: repeat(11, minmax(0, 1fr));
+  grid-template-areas:
+    "wr1 . . lt lg c rg rt te . wr2"
+    ". wr3 . . . qb . . . . ."
+    ". . . . . rb . . . . .";
+}
+.field-formation .heat-sq.field-wr3 { margin-top: -10px; }
+.field-bench { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin-top: 4px; }
+.field-bench-label { font-size: 12px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
+.field-switch { display: none; }
+@media (max-width: 600px) {
+  /* One side at a time, picked with the switch above the field. */
+  .field-switch { display: inline-flex; }
+  .field[data-show="offense"] .field-def, .field[data-show="defense"] .field-off, .field-los { display: none; }
+  .field .field-turf { border-radius: 10px; }
+  .field-formation {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    grid-template-areas:
+      "wr1 wr3 . . . wr2"
+      "lt lg c rg rt te"
+      ". . qb . . ."
+      ". . rb . . .";
+  }
+  .field-formation .heat-sq.field-wr3 { margin-top: 0; }
+  .field-corners { gap: 3px; grid-template-columns: repeat(6, minmax(0, 1fr)); grid-template-areas: "rcb nb . . . lcb"; }
+  .field-safeties { gap: 40px; }
+  .field-row { gap: 4px; }
+  .field .heat-sq { padding: 5px 0; }
+  .field-formation { gap: 3px; }
+  /* Narrow tiles: smaller names that wrap between words, never inside one. */
+  .field .heat-name { font-size: 9.5px; letter-spacing: -.02em; overflow-wrap: normal; }
+}
 .heat-sq {
   position: relative; width: 86px; min-height: 50px; padding: 6px 3px; border-radius: 8px; border: 1px solid;
   display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; cursor: default;

@@ -1730,6 +1730,9 @@ async function renderStats() {
 // green for a starter, yellow for a backup, red for third string or deeper.
 
 let heatGame = null; // the game shown
+// 'position' (rows by position group) or 'field' (lined up as at the snap).
+let heatView = storage.get('heatView') === 'field' ? 'field' : 'position';
+let heatShown = null; // { g, data } last drawn, to redraw on a view switch
 // Offense rows top to bottom (QB, RB, WR/TE, OL), each with the defense
 // unit across from it: none across from the QB, linebackers across from the
 // backs. `slots` picks this row's squares out of the server's unit.
@@ -2009,6 +2012,64 @@ function formBadge(f) {
   </span>`;
 }
 
+// "On the field": both sides lined up as at the snap, the defense above the
+// line of scrimmage and the offense below it, seen from behind the offense
+// (so the defense's right end is on the left). The offense is an 11-personnel
+// look from the depth chart: OL with the TE on the right end, WR1 and WR2
+// split wide, WR3 in the left slot, QB under center, RB behind him; WR4, RB2
+// and TE2 sit on the bench strip. On phones one side shows at a time.
+const FIELD_OFFENSE = ['wr1', 'wr3', 'lt', 'lg', 'c', 'rg', 'rt', 'te', 'wr2', 'qb', 'rb'];
+const FIELD_ROWS = {
+  // Defense rows, deepest first; each lists slots left to right as seen from
+  // behind the offense. Slots not listed join their group's row at the end.
+  safeties: ['fs', 's', 'ss'],
+  corners: ['rcb', 'nb', 'cb', 'lcb'],
+  backers: ['wlb', 'olb', 'rilb', 'mlb', 'ilb', 'lb', 'lilb', 'slb'],
+  front: ['rde', 'rdt', 'nt', 'dt', 'de', 'ldt', 'lde'],
+};
+const fieldRowOf = (slot) => Object.keys(FIELD_ROWS).find((r) => FIELD_ROWS[r].includes(slot))
+  ?? (/(de|dt|nt)$/.test(slot) ? 'front' : /lb$/.test(slot) ? 'backers' : 'corners');
+const fieldTile = (s) => heatSquare(s).replace('<div class="heat-sq', `<div style="grid-area:${s.slot}" class="field-${s.slot} heat-sq`);
+function heatField({ off, def, offTeam, defTeam, offShort, defShort, lineStreak, form, sideTeam }) {
+  const offense = Object.values(off).flat();
+  const onField = offense.filter((s) => FIELD_OFFENSE.includes(s.slot));
+  const bench = offense.filter((s) => !FIELD_OFFENSE.includes(s.slot));
+  const defense = Object.values(def).flat();
+  const defRow = (r) => {
+    const at = (s) => (FIELD_ROWS[r].includes(s.slot) ? FIELD_ROWS[r].indexOf(s.slot) : 99);
+    const mine = defense.filter((s) => fieldRowOf(s.slot) === r).sort((a, b) => at(a) - at(b));
+    // The corners and nickel share the offense's columns, so each covers his
+    // receiver: RCB over WR1, the nickel over WR3 (the slot), LCB over WR2.
+    const tile = (s) => (r === 'corners' && ['rcb', 'nb', 'lcb'].includes(s.slot) ? fieldTile(s) : heatSquare(s));
+    return mine.length ? `<div class="field-row field-${r}">${mine.map(tile).join('')}</div>` : '';
+  };
+  // The group pills (Health, Form) for each side, as in the other view.
+  const group = (label, slots, extra = '') => (slots.length ? `<span class="field-group"><b>${label}</b>${groupHealth(slots, label)}${extra}</span>` : '');
+  const offPills = [
+    group('QB', off.back.filter((s) => s.slot === 'qb'), formBadge(form.QB)),
+    group('RB', off.back.filter((s) => s.slot !== 'qb'), formBadge(form.RB)),
+    group('WR/TE', off.pass, formBadge(form['WR/TE'])),
+    group('OL', off.line, streakBadge(lineStreak, ' in-label')),
+  ].join('');
+  const defPills = [group('DL', def.line), group('LB', def.back), group('DB', def.pass)].join('');
+  return `<div class="field" data-show="offense">
+    <div class="mode-switch field-switch" role="group" aria-label="Side">
+      <button type="button" data-field-side="offense" class="active">${esc(offShort)} offense</button>
+      <button type="button" data-field-side="defense">${esc(defShort)} defense</button>
+    </div>
+    <div class="field-half field-def">
+      <div class="field-side">${sideTeam(defTeam, defShort, 'defense')}<div class="field-pills">${defPills}</div></div>
+      <div class="field-turf">${['safeties', 'corners', 'backers', 'front'].map(defRow).join('')}</div>
+    </div>
+    <div class="field-los" aria-hidden="true"></div>
+    <div class="field-half field-off">
+      <div class="field-turf"><div class="field-formation">${onField.map(fieldTile).join('')}</div></div>
+      <div class="field-side">${sideTeam(offTeam, offShort, 'offense')}<div class="field-pills">${offPills}</div></div>
+      ${bench.length ? `<div class="field-bench"><span class="field-bench-label">Bench</span><div class="heat-row">${bench.map(heatSquare).join('')}</div></div>` : ''}
+    </div>
+  </div>`;
+}
+
 function heatMatchup(g, offHome, data, weather = '') {
   const [off, def] = offHome ? [data.home.offense, data.away.defense] : [data.away.offense, data.home.defense];
   const [offTeam, defTeam] = offHome ? [g.home, g.away] : [g.away, g.home];
@@ -2017,7 +2078,7 @@ function heatMatchup(g, offHome, data, weather = '') {
   const lineStreak = (offHome ? data.home : data.away).lineStreak;
   const sideTeam = (team, short, role) => `<div class="heat-side-team">${teamLogo(team, 'small')}${esc(short)} <span class="muted">${role}</span></div>`;
   const form = (offHome ? data.home : data.away).form ?? {};
-  const units = HEAT_UNITS.map((u) => {
+  const units = heatView === 'field' ? heatField({ off, def, offTeam, defTeam, offShort, defShort, lineStreak, form, sideTeam }) : HEAT_UNITS.map((u) => {
     const mine = u.slots ? off[u.o].filter(u.slots) : off[u.o];
     const defense = u.d ? `<div class="heat-side">${sideTeam(defTeam, defShort, 'defense')}<div class="heat-label">${u.dLabel}${groupHealth(def[u.d], u.dLabel)}</div><div class="heat-row">${def[u.d].map(heatSquare).join('')}</div></div>` : '<div></div>';
     return `<div class="heat-unit">
@@ -2052,7 +2113,11 @@ async function renderHeatmap() {
   const g = games.find((x) => x.id === heatGame);
   const kick = (x) => new Date(x.commence).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' });
   const head = `<p class="small muted">Beta: who lines up for each team, from ESPN's current depth charts. Hurt players (Out, Doubtful, IR, suspended) are skipped, so a backup filling in shows up yellow. Tags and the little bars show how a starter got the job, from every week's snap counts this season (nflverse, updated weekly). Hover over a square (or tap it on a phone) for details.</p>
-    <div class="heat-pick"><span class="heat-select"><select id="heat-game" aria-label="Game">${games.map((x) => `<option value="${esc(x.id)}" ${x.id === heatGame ? 'selected' : ''}>${esc(shortMatchup(`${x.away} @ ${x.home}`))} · ${esc(kick(x))}</option>`).join('')}</select></span></div>
+    <div class="heat-pick"><span class="heat-select"><select id="heat-game" aria-label="Game">${games.map((x) => `<option value="${esc(x.id)}" ${x.id === heatGame ? 'selected' : ''}>${esc(shortMatchup(`${x.away} @ ${x.home}`))} · ${esc(kick(x))}</option>`).join('')}</select></span>
+      <div class="mode-switch heat-view" role="group" aria-label="Layout">
+        <button type="button" data-heat-view="position" class="${heatView === 'position' ? 'active' : ''}">By position</button>
+        <button type="button" data-heat-view="field" class="${heatView === 'field' ? 'active' : ''}">On the field</button>
+      </div></div>
     <div class="heat-legend">
       <div class="key-group">${[1, 2, 3].map((l) => `<span class="heat-key heat-${l}">${HEAT_LEVELS[l]}</span>`).join('')}</div>
       <div class="key-group">
@@ -2077,8 +2142,15 @@ async function renderHeatmap() {
   box.innerHTML = head + '<p class="muted">Loading depth charts…</p>';
   const data = await api(withWeek(`/api/heatmap?game=${encodeURIComponent(heatGame)}`)).catch((err) => (notice(err.message), null));
   if (!data || tab !== 'heatmap' || g.id !== heatGame) return;
+  heatShown = { g, data };
+  box.innerHTML = head + '<div id="heat-matchups"></div>';
+  drawHeatMatchups();
+}
+function drawHeatMatchups() {
+  const { g, data } = heatShown;
+  hideHeatPop();
   heatSquares = [];
-  box.innerHTML = head + heatMatchup(g, false, data, heatWeather(data.weather)) + heatMatchup(g, true, data);
+  $('#heat-matchups').innerHTML = heatMatchup(g, false, data, heatWeather(data.weather)) + heatMatchup(g, true, data);
 }
 
 // The details pop-up: one box, moved to whichever square is hovered,
@@ -2787,6 +2859,22 @@ $('#week-next').addEventListener('click', () => {
   if (i > 0) goWeek(week.weeks[i - 1].key);
 });
 $('#week-select').addEventListener('change', (e) => goWeek(e.target.value));
+$('#heatmap').addEventListener('click', (e) => {
+  const view = e.target.closest('[data-heat-view]')?.dataset.heatView;
+  if (view && view !== heatView) {
+    heatView = view;
+    storage.set('heatView', view);
+    for (const b of document.querySelectorAll('[data-heat-view]')) b.classList.toggle('active', b.dataset.heatView === view);
+    if (heatShown && $('#heat-matchups')) drawHeatMatchups();
+  }
+  // Phones: which side of the field to show.
+  const side = e.target.closest('[data-field-side]');
+  if (side) {
+    const field = side.closest('.field');
+    field.dataset.show = side.dataset.fieldSide;
+    for (const b of field.querySelectorAll('[data-field-side]')) b.classList.toggle('active', b === side);
+  }
+});
 $('#heatmap').addEventListener('change', (e) => {
   if (e.target.id !== 'heat-game') return;
   heatGame = e.target.value;
