@@ -1991,20 +1991,28 @@ function heatWeather(w) {
 const ord = (n) => `${n}${[11, 12, 13].includes(n % 100) ? 'th' : ['th', 'st', 'nd', 'rd'][n % 10] ?? 'th'}`;
 function formBadge(f) {
   if (!f) return '';
-  const top = Math.max(...f.games.map((g) => g.yds), 1);
-  const bars = f.games.map((g) => `<span class="form-game">
-      <span class="form-yds">${g.yds}</span>
-      <span class="form-bar"><i style="height:${Math.max(4, Math.round((g.yds / top) * 100))}%"></i></span>
-      <span class="form-wk">Wk ${g.week}</span>
-    </span>`).join('');
-  const label = `${f.stat[0].toUpperCase()}${f.stat.slice(1)} per game, last ${f.games.length} game${f.games.length === 1 ? '' : 's'}`;
-  return `<span class="form-wrap" tabindex="0" aria-label="${esc(`Form: ${f.avg} yards per game. ${label}: ${f.games.map((g) => `week ${g.week} ${g.yds}`).join(', ')}. ${ord(f.rank)} of ${f.of} teams`)}">
+  const name = `${f.stat[0].toUpperCase()}${f.stat.slice(1)}`;
+  // One side of the card: a big number, what it is, and a bar per game.
+  const face = (side, word, avg, rank, sub, games) => {
+    const top = Math.max(...games.map((g) => g.yds), 1);
+    const bars = games.map((g) => `<span class="form-game">
+        <span class="form-yds">${g.yds}</span>
+        <span class="form-bar"><i style="height:${Math.max(4, Math.round((Math.max(g.yds, 0) / top) * 100))}%"></i></span>
+        <span class="form-wk">${games.length > 8 ? g.week : `Wk ${g.week}`}</span>
+      </span>`).join('');
+    return `<span class="form-face form-${side}"><span class="form-tint form-${f.ninth}"></span>
+      <span class="form-pop-head"><span class="group-word">${word}</span> <b>${avg}</b> yds/g <span class="form-rank">${ord(rank)} of ${f.of}</span></span>
+      <span class="form-pop-sub">${esc(sub)}</span>
+      <span class="form-games${games.length > 8 ? ' many' : ''}">${bars}</span>
+    </span>`;
+  };
+  const n = f.games.length;
+  const s = f.season;
+  const front = face('front', 'Form', f.avg, f.rank, `${name} per game, last ${n} game${n === 1 ? '' : 's'}`, f.games);
+  const back = s ? face('back', 'Season', s.avg, s.rank, `${name} per game, all ${s.games.length} games (byes skipped)`, s.games) : '';
+  return `<span class="form-wrap" tabindex="0" aria-label="${esc(`Form: ${f.avg} yards per game. ${name} per game, last ${n}: ${f.games.map((g) => `week ${g.week} ${g.yds}`).join(', ')}. ${ord(f.rank)} of ${f.of} teams.${s ? ` Season: ${s.avg} per game, ${ord(s.rank)} of ${f.of}.` : ''}`)}">
     <span class="group-alert form-${f.ninth}"><span class="group-word">Form</span> ${f.avg} yds/g</span>
-    <span class="form-pop" aria-hidden="true"><span class="form-tint form-${f.ninth}"></span>
-      <span class="form-pop-head"><span class="group-word">Form</span> <b>${f.avg}</b> yds/g <span class="form-rank">${ord(f.rank)} of ${f.of}</span></span>
-      <span class="form-pop-sub">${esc(label)}</span>
-      <span class="form-games">${bars}</span>
-    </span>
+    <span class="form-pop" aria-hidden="true"><span class="form-card">${front}${back}</span></span>
   </span>`;
 }
 
@@ -2136,6 +2144,37 @@ $('#heatmap').addEventListener('keydown', (e) => {
   }
 });
 heatPop.addEventListener('click', () => heatPopBy === 'touch' && flipHeatPop());
+// The Form pill's pop-out flips the same way as a player's card: click the
+// pill again (computers), tap the pop-out (phones), or Enter/Space, with
+// the same sound. It's back on its front each time it opens.
+const formWrap = (e) => e.target.closest?.('.form-wrap');
+function flipForm(wrap) {
+  if (!wrap.querySelector('.form-back')) return;
+  wrap.classList.toggle('flipped');
+  flipSound();
+}
+$('#heatmap').addEventListener('click', (e) => {
+  const wrap = formWrap(e);
+  if (!wrap) return;
+  // Phones: the first tap on the pill opens it (focus); taps on the pop-out flip it.
+  const mouse = e.pointerType ? e.pointerType === 'mouse' : matchMedia('(hover: hover)').matches;
+  if (mouse || e.target.closest('.form-pop')) flipForm(wrap);
+});
+$('#heatmap').addEventListener('keydown', (e) => {
+  const wrap = formWrap(e);
+  if (wrap && e.target === wrap && (e.key === 'Enter' || e.key === ' ')) {
+    e.preventDefault();
+    flipForm(wrap);
+  }
+});
+$('#heatmap').addEventListener('pointerout', (e) => {
+  const wrap = formWrap(e);
+  if (e.pointerType === 'mouse' && wrap && !wrap.contains(e.relatedTarget) && document.activeElement !== wrap) wrap.classList.remove('flipped');
+});
+$('#heatmap').addEventListener('focusout', (e) => {
+  const wrap = formWrap(e);
+  if (wrap && !wrap.contains(e.relatedTarget)) wrap.classList.remove('flipped');
+});
 // Long-pressing the card shouldn't open the browser's menu either.
 heatPop.addEventListener('contextmenu', (e) => e.preventDefault());
 const heatSq = (e) => e.target.closest?.('.heat-sq[data-i]');

@@ -242,14 +242,19 @@ export function formTable(weekly, n = FORM_GAMES) {
   const table = {};
   for (const k of Object.keys(FORM)) {
     const rows = [...byTeam].map(([team, weeks]) => {
-      const games = [...weeks].sort(([a], [b]) => a - b).slice(-n).map(([week, w]) => ({ week, yds: Math.round(w[k]) }));
-      return { team, games, avg: games.reduce((t, g) => t + g.yds, 0) / games.length, score: weightedAvg(games.map((g) => g.yds)).avg };
+      const season = [...weeks].sort(([a], [b]) => a - b).map(([week, w]) => ({ week, yds: Math.round(w[k]) }));
+      const games = season.slice(-n);
+      const mean = (list) => list.reduce((t, g) => t + g.yds, 0) / list.length;
+      return { team, games, avg: mean(games), score: weightedAvg(games.map((g) => g.yds)).avg, season, seasonAvg: mean(season) };
     });
     for (const row of rows) {
       const rank = rows.filter((x) => x.score > row.score).length + 1;
       // Ninths of the league, 1 (best) to 9 (worst).
       const ninth = Math.min(9, Math.ceil((rank / rows.length) * 9));
-      (table[row.team] ??= {})[k] = { stat: FORM[k].stat, avg: Math.round(row.avg), games: row.games, rank, of: rows.length, ninth };
+      // The back of the pill: every game this season (byes skipped), a plain
+      // average with nothing thrown out, and its own rank.
+      const season = { avg: Math.round(row.seasonAvg), games: row.season, rank: rows.filter((x) => x.seasonAvg > row.seasonAvg).length + 1 };
+      (table[row.team] ??= {})[k] = { stat: FORM[k].stat, avg: Math.round(row.avg), games: row.games, rank, of: rows.length, ninth, season };
     }
   }
   forms.set(weekly, table);

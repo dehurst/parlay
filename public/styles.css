@@ -610,35 +610,50 @@ h3.section.first { margin-top: 4px; }
 .form-7 { background: rgba(240, 110, 70, .25); border-color: #f06e46; color: #ffe6dc; }
 .form-8 { background: rgba(229, 72, 77, .32); border-color: #e5484d; color: #ffe0e1; }
 .form-9 { background: rgba(190, 18, 40, .5); border-color: #ff3b4f; color: #ffe0e3; }
-/* Hovering or tapping a Form pill opens a bigger one above it, with a bar
-   per game (snap-bar cyan) and the yards on top. */
+/* Hovering or tapping a Form pill opens a bigger one above it: a card with
+   the last 5 games in front and the whole season on the back, each with a
+   bar per game (snap-bar cyan) and the yards on top. It turns over with the
+   same 3D flip as a player's card. */
 .form-wrap { position: relative; display: inline-flex; outline: none; cursor: default; }
 .form-wrap:focus-visible > .group-alert { box-shadow: 0 0 0 2px #8cc8ff; }
 .form-pop {
-  position: absolute; z-index: 30; left: 0; bottom: calc(100% + 8px); display: none; flex-direction: column; gap: 6px;
-  min-width: 220px; padding: 10px 12px; border-radius: 16px; font-size: 12px; font-weight: 600; letter-spacing: 0;
-  white-space: nowrap; box-shadow: 0 8px 24px rgba(0, 0, 0, .5); background: #161b22; isolation: isolate;
+  position: absolute; z-index: 30; left: 0; bottom: calc(100% + 8px); display: none; perspective: 900px;
+  min-width: 220px; font-size: 12px; font-weight: 600; letter-spacing: 0; white-space: nowrap;
+  cursor: pointer; -webkit-tap-highlight-color: transparent; user-select: none;
 }
+.form-wrap:hover > .form-pop, .form-wrap:focus > .form-pop { display: block; }
+.form-card { display: grid; transform-style: preserve-3d; transition: transform .45s cubic-bezier(.2, .7, .2, 1); }
+.form-wrap.flipped .form-card { transform: rotateY(180deg); }
+.form-face {
+  grid-area: 1 / 1; position: relative; display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 16px;
+  background: #161b22; isolation: isolate; box-shadow: 0 8px 24px rgba(0, 0, 0, .5);
+  -webkit-backface-visibility: hidden; backface-visibility: hidden;
+}
+.form-back { transform: rotateY(180deg); }
+@media (prefers-reduced-motion: reduce) { .form-card { transition: none; } }
 /* The pill's color, laid over a solid backing so the page doesn't show through. */
 .form-tint { position: absolute; inset: 0; z-index: -1; border: 1px solid; border-radius: inherit; }
-.form-pop:has(.form-1) { color: #eafff1; } .form-pop:has(.form-2) { color: #d9ffe9; } .form-pop:has(.form-3) { color: #efffd6; }
-.form-pop:has(.form-4) { color: #fdffd0; } .form-pop:has(.form-5) { color: #fff6cc; } .form-pop:has(.form-6) { color: #fff0d6; }
-.form-pop:has(.form-7) { color: #ffe6dc; } .form-pop:has(.form-8) { color: #ffe0e1; } .form-pop:has(.form-9) { color: #ffe0e3; }
-.form-wrap:hover > .form-pop, .form-wrap:focus > .form-pop { display: flex; }
+.form-face:has(.form-1) { color: #eafff1; } .form-face:has(.form-2) { color: #d9ffe9; } .form-face:has(.form-3) { color: #efffd6; }
+.form-face:has(.form-4) { color: #fdffd0; } .form-face:has(.form-5) { color: #fff6cc; } .form-face:has(.form-6) { color: #fff0d6; }
+.form-face:has(.form-7) { color: #ffe6dc; } .form-face:has(.form-8) { color: #ffe0e1; } .form-face:has(.form-9) { color: #ffe0e3; }
 .form-pop-head { display: flex; align-items: baseline; gap: 6px; font-size: 13px; }
 .form-pop-head b { font-size: 20px; font-weight: 900; }
 .form-rank { margin-left: auto; font-size: 11px; opacity: .85; }
 .form-pop-sub { font-size: 11px; font-weight: 500; opacity: .8; white-space: normal; }
 /* Phones: the pills sit right of center, so the pop-out hangs left from the pill's right edge. */
 @media (max-width: 600px) {
-  .form-pop { left: auto; right: 0; width: min(260px, calc(100vw - 32px)); min-width: 0; }
+  .form-pop { left: auto; right: 0; width: min(280px, calc(100vw - 32px)); min-width: 0; }
 }
 .form-games { display: flex; align-items: flex-end; gap: 10px; }
-.form-game { display: flex; flex-direction: column; align-items: center; gap: 3px; flex: 1; }
+.form-game { display: flex; flex-direction: column; align-items: center; gap: 3px; flex: 1; min-width: 0; }
 .form-yds { font-size: 11px; font-weight: 800; font-variant-numeric: tabular-nums; }
 .form-bar { display: flex; align-items: flex-end; justify-content: center; height: 48px; width: 100%; }
 .form-bar i { display: block; width: 14px; background: #7ee8fa; border-radius: 2px 2px 0 0; }
 .form-wk { font-size: 10px; font-weight: 600; opacity: .75; }
+/* A whole season: narrower bars and smaller numbers so every game fits. */
+.form-games.many { gap: 3px; }
+.form-games.many .form-yds { font-size: 9px; letter-spacing: -.02em; }
+.form-games.many .form-bar i { width: 10px; }
 /* 4 or more: red with a glint sweeping across and a pulse. */
 .alert-4 { border-color: #ff7a7f; --glow: rgba(255, 122, 127, .6); animation: back-pulse 1.6s ease-in-out infinite; }
 .alert-4::after {
