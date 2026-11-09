@@ -100,7 +100,7 @@ function parseWeekly(text) {
   const n = (r, k) => Number(r[k]) || 0;
   return parseCsv(text).filter((r) => r.season_type === 'REG').map((r) => ({
     week: Number(r.week), team: r.team, name: r.player_display_name, group: r.position_group,
-    rushYds: n(r, 'rushing_yards'), recYds: n(r, 'receiving_yards'),
+    rushYds: n(r, 'rushing_yards'), passYds: n(r, 'passing_yards'), recYds: n(r, 'receiving_yards'),
     pressure: n(r, 'def_sacks') + n(r, 'def_qb_hits'), tackles: n(r, 'def_tackles_solo') + n(r, 'def_tackle_assists'),
     coverage: n(r, 'def_pass_defended') + n(r, 'def_interceptions'),
     dropbacks: n(r, 'attempts') + n(r, 'sacks_suffered'), sacked: n(r, 'sacks_suffered'),

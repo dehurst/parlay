@@ -206,6 +206,16 @@ export function collegeOf(c) {
   return { abbrev: c.abbrev, name: c.name ?? c.abbrev, logo: `https://a.espncdn.com/combiner/i?img=${path}&w=40&h=40` };
 }
 
+// The offense's passing yards per game over its last `n` games. Only weeks
+// it played have stat lines, so bye weeks are skipped on their own.
+export function passYardsAvg(weekly, code, n = 4) {
+  const byWeek = new Map();
+  for (const r of weekly) if (r.team === code && r.passYds) byWeek.set(r.week, (byWeek.get(r.week) ?? 0) + r.passYds);
+  const games = [...byWeek].sort(([a], [b]) => a - b).slice(-n).map(([week, yds]) => ({ week, yds }));
+  if (!games.length) return null;
+  return { avg: Math.round(games.reduce((t, g) => t + g.yds, 0) / games.length), games };
+}
+
 export async function teamHeatmap(name, now = Date.now()) {
   const id = await espnTeamId(name);
   if (!id) return null;
@@ -307,6 +317,9 @@ export async function teamHeatmap(name, now = Date.now()) {
       slot.streak = book && slotGroup(slot.slot) !== 'OL' ? streakFor(book, teams, {
         group: slotGroup(slot.slot), code, name: slot.name, espnId: a?.id, snapsPlayer: findPlayer(teams[code] ?? { players: [] }, slot.name),
       }) : null;
+      // RB2 and TE2 are backups by design, with smaller roles, so they can
+      // be on fire but aren't called ice cold.
+      if (['rb2', 'te2'].includes(slot.slot) && slot.streak?.kind === 'cold') slot.streak = null;
       const teamsHere = [code, slot.history?.from].filter(Boolean);
       const mine = reports?.get(fullKey(slot.name))?.filter((r) => teamsHere.includes(r.team)) ?? [];
       slot.card = {
@@ -320,6 +333,7 @@ export async function teamHeatmap(name, now = Date.now()) {
   // The offensive line's streak, as a unit (its sack rate allowed). Set
   // after the loops over the sides above, which expect only offense/defense.
   sides.lineStreak = book ? streakFor(book, teams, { group: 'OL', code }) : null;
+  sides.passYds = weekly.status === 'fulfilled' ? passYardsAvg(weekly.value, code) : null;
   // Without snap counts the RB2/WR4/TE2 squares and tags are missing, so
   // don't keep that version: the next load tries again.
   // Same without the roster: no colleges, rookies or injuries.

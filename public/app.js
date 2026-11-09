@@ -1964,15 +1964,28 @@ function heatWeather(w) {
   </div>`;
 }
 
+// The offense's passing yards per game over its last 4 games (byes skipped),
+// by the WR/TE label: frozen under 150, then yellow, orange, red, and on fire
+// past 310.
+const PASS_TIERS = [[150, 'frozen'], [200, 'cool'], [266, 'warm'], [310, 'hot'], [Infinity, 'fire']];
+function passYdsBadge(p) {
+  if (!p) return '';
+  const tier = PASS_TIERS.find(([max]) => p.avg < max)[1];
+  const tip = `Passing yards per game, last ${p.games.length} game${p.games.length === 1 ? '' : 's'} (byes skipped): ${p.games.map((g) => `Wk ${g.week} ${g.yds}`).join(', ')}`;
+  const digits = [...String(p.avg)].map((d, i) => `<i style="--d:${i}">${d}</i>`).join('');
+  return `<span class="pass-yds pass-${tier}" title="${esc(tip)}"><span class="pass-num">${digits}</span><span class="pass-unit">pass yds/g</span></span>`;
+}
+
 function heatMatchup(g, offHome, data, weather = '') {
   const [off, def] = offHome ? [data.home.offense, data.away.defense] : [data.away.offense, data.home.defense];
   const [offTeam, defTeam] = offHome ? [g.home, g.away] : [g.away, g.home];
   const [offShort, defShort] = offHome ? [g.homeShort, g.awayShort] : [g.awayShort, g.homeShort];
   // The offensive line's hot or cold streak is the unit's, so it sits by the OL label.
   const lineStreak = (offHome ? data.home : data.away).lineStreak;
+  const passYds = passYdsBadge((offHome ? data.home : data.away).passYds);
   const sideTeam = (team, short, role) => `<div class="heat-side-team">${teamLogo(team, 'small')}${esc(short)} <span class="muted">${role}</span></div>`;
   const units = HEAT_UNITS.map(([id, oLabel, dLabel]) => `<div class="heat-unit">
-      <div class="heat-side">${sideTeam(offTeam, offShort, 'offense')}<div class="heat-label">${oLabel}${id === 'line' ? streakBadge(lineStreak, ' in-label') : ''}${groupHealth(off[id], oLabel)}</div><div class="heat-row">${off[id].map(heatSquare).join('')}</div></div>
+      <div class="heat-side">${sideTeam(offTeam, offShort, 'offense')}<div class="heat-label">${oLabel}${id === 'line' ? streakBadge(lineStreak, ' in-label') : ''}${groupHealth(off[id], oLabel)}${id === 'pass' ? passYds : ''}</div><div class="heat-row">${off[id].map(heatSquare).join('')}</div></div>
       <div class="heat-side">${sideTeam(defTeam, defShort, 'defense')}<div class="heat-label">${dLabel}${groupHealth(def[id], dLabel)}</div><div class="heat-row">${def[id].map(heatSquare).join('')}</div></div>
     </div>`).join('');
   return `<div class="card heat-card">
