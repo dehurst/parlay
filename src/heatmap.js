@@ -206,14 +206,54 @@ export function collegeOf(c) {
   return { abbrev: c.abbrev, name: c.name ?? c.abbrev, logo: `https://a.espncdn.com/combiner/i?img=${path}&w=40&h=40` };
 }
 
-// The offense's passing yards per game over its last `n` games. Only weeks
-// it played have stat lines, so bye weeks are skipped on their own.
-export function passYardsAvg(weekly, code, n = 4) {
-  const byWeek = new Map();
-  for (const r of weekly) if (r.team === code && r.passYds) byWeek.set(r.week, (byWeek.get(r.week) ?? 0) + r.passYds);
-  const games = [...byWeek].sort(([a], [b]) => a - b).slice(-n).map(([week, yds]) => ({ week, yds }));
-  if (!games.length) return null;
-  return { avg: Math.round(games.reduce((t, g) => t + g.yds, 0) / games.length), games };
+// "Form": a group's yards per game over its team's last FORM_GAMES games
+// (only weeks a team played have stat lines, so byes are skipped), ranked
+// against every team. QB: passing yards; RB: rushing yards by running
+// backs; WR/TE: receiving yards by receivers and tight ends. The number
+// shown is the plain average; the ranking (the pill's color) counts the best
+// and worst games half, so one blowout or dud doesn't swing it.
+const FORM_GAMES = 5;
+// Each game's weight: the highest and lowest 0.5 (one of each, even on a
+// tie), the rest 1. Under 3 games, a plain average.
+export function weightedAvg(yds) {
+  if (yds.length < 3) return { avg: yds.reduce((t, y) => t + y, 0) / yds.length, weights: yds.map(() => 1) };
+  const order = yds.map((y, i) => i).sort((a, b) => yds[a] - yds[b]);
+  const weights = yds.map(() => 1);
+  weights[order[0]] = 0.5;
+  weights[order.at(-1)] = 0.5;
+  return { avg: yds.reduce((t, y, i) => t + y * weights[i], 0) / (yds.length - 1), weights };
+}
+const FORM = {
+  QB: { stat: 'passing yards', value: (r) => r.passYds },
+  RB: { stat: 'rushing yards by RBs', value: (r) => (r.group === 'RB' ? r.rushYds : 0) },
+  'WR/TE': { stat: 'receiving yards by WRs and TEs', value: (r) => (['WR', 'TE'].includes(r.group) ? r.recYds : 0) },
+};
+const forms = new WeakMap();
+export function formTable(weekly, n = FORM_GAMES) {
+  if (forms.has(weekly)) return forms.get(weekly);
+  const byTeam = new Map(); // team -> week -> { QB, RB, 'WR/TE' }
+  for (const r of weekly) {
+    const weeks = byTeam.get(r.team) ?? new Map();
+    byTeam.set(r.team, weeks);
+    const w = weeks.get(r.week) ?? Object.fromEntries(Object.keys(FORM).map((k) => [k, 0]));
+    weeks.set(r.week, w);
+    for (const [k, f] of Object.entries(FORM)) w[k] += f.value(r) || 0;
+  }
+  const table = {};
+  for (const k of Object.keys(FORM)) {
+    const rows = [...byTeam].map(([team, weeks]) => {
+      const games = [...weeks].sort(([a], [b]) => a - b).slice(-n).map(([week, w]) => ({ week, yds: Math.round(w[k]) }));
+      return { team, games, avg: games.reduce((t, g) => t + g.yds, 0) / games.length, score: weightedAvg(games.map((g) => g.yds)).avg };
+    });
+    for (const row of rows) {
+      const rank = rows.filter((x) => x.score > row.score).length + 1;
+      // Ninths of the league, 1 (best) to 9 (worst).
+      const ninth = Math.min(9, Math.ceil((rank / rows.length) * 9));
+      (table[row.team] ??= {})[k] = { stat: FORM[k].stat, avg: Math.round(row.avg), games: row.games, rank, of: rows.length, ninth };
+    }
+  }
+  forms.set(weekly, table);
+  return table;
 }
 
 export async function teamHeatmap(name, now = Date.now()) {
@@ -333,7 +373,7 @@ export async function teamHeatmap(name, now = Date.now()) {
   // The offensive line's streak, as a unit (its sack rate allowed). Set
   // after the loops over the sides above, which expect only offense/defense.
   sides.lineStreak = book ? streakFor(book, teams, { group: 'OL', code }) : null;
-  sides.passYds = weekly.status === 'fulfilled' ? passYardsAvg(weekly.value, code) : null;
+  sides.form = weekly.status === 'fulfilled' ? formTable(weekly.value)[code] ?? null : null;
   // Without snap counts the RB2/WR4/TE2 squares and tags are missing, so
   // don't keep that version: the next load tries again.
   // Same without the roster: no colleges, rookies or injuries.

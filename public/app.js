@@ -1730,7 +1730,15 @@ async function renderStats() {
 // green for a starter, yellow for a backup, red for third string or deeper.
 
 let heatGame = null; // the game shown
-const HEAT_UNITS = [['back', 'QB/RB', 'LB'], ['pass', 'WR/TE', 'DB'], ['line', 'OL', 'DL']];
+// Offense rows top to bottom (QB, RB, WR/TE, OL), each with the defense
+// unit across from it: none across from the QB, linebackers across from the
+// backs. `slots` picks this row's squares out of the server's unit.
+const HEAT_UNITS = [
+  { o: 'back', oLabel: 'QB', slots: (s) => s.slot === 'qb', d: null },
+  { o: 'back', oLabel: 'RB', slots: (s) => s.slot !== 'qb', d: 'back', dLabel: 'LB' },
+  { o: 'pass', oLabel: 'WR/TE', d: 'pass', dLabel: 'DB' },
+  { o: 'line', oLabel: 'OL', d: 'line', dLabel: 'DL' },
+];
 const HEAT_LEVELS = ['Nobody healthy', 'Starter', 'Backup', '3rd string or deeper'];
 
 // How the player got the job, from every week's snap counts this season.
@@ -1912,7 +1920,7 @@ function heatSummary(side) {
 // 2 up: one rookie in a group is normal). Green is safe, then yellow, red,
 // and a glistening red one past red.
 // Each group turns yellow and red at its own count (2 and 3 unless listed).
-const ALERT_AT = { OL: [2, 3], 'WR/TE': [3, 4], 'QB/RB': [1, 2] };
+const ALERT_AT = { OL: [2, 3], 'WR/TE': [3, 4], QB: [1, 1], RB: [1, 2] };
 const alertLevel = (n, [yellow, red] = [2, 3]) => (n > red ? 4 : n === red ? 3 : n >= yellow ? 2 : 1);
 function groupHealth(slots, label) {
   const backups = slots.filter((s) => heatLevel(s) !== 1).length;
@@ -1964,16 +1972,28 @@ function heatWeather(w) {
   </div>`;
 }
 
-// The offense's passing yards per game over its last 4 games (byes skipped),
-// by the WR/TE label: frozen under 150, then yellow, orange, red, and on fire
-// past 310.
-const PASS_TIERS = [[150, 'frozen'], [200, 'cool'], [266, 'warm'], [310, 'hot'], [Infinity, 'fire']];
-function passYdsBadge(p) {
-  if (!p) return '';
-  const tier = PASS_TIERS.find(([max]) => p.avg < max)[1];
-  const tip = `Passing yards per game, last ${p.games.length} game${p.games.length === 1 ? '' : 's'} (byes skipped): ${p.games.map((g) => `Wk ${g.week} ${g.yds}`).join(', ')}`;
-  const digits = [...String(p.avg)].map((d, i) => `<i style="--d:${i}">${d}</i>`).join('');
-  return `<span class="pass-yds pass-${tier}" title="${esc(tip)}"><span class="pass-num">${digits}</span><span class="pass-unit">pass yds/g</span></span>`;
+// A group's form: its yards per game over the last 5 games (byes skipped),
+// shaded by its ninth of the league: three greens (top third, best darkest
+// and brightest), three yellows, three reds (worst deepest). Hovering (or
+// tapping) opens a bigger pill with a bar for each game, like the snap bars.
+const ord = (n) => `${n}${[11, 12, 13].includes(n % 100) ? 'th' : ['th', 'st', 'nd', 'rd'][n % 10] ?? 'th'}`;
+function formBadge(f) {
+  if (!f) return '';
+  const top = Math.max(...f.games.map((g) => g.yds), 1);
+  const bars = f.games.map((g) => `<span class="form-game">
+      <span class="form-yds">${g.yds}</span>
+      <span class="form-bar"><i style="height:${Math.max(4, Math.round((g.yds / top) * 100))}%"></i></span>
+      <span class="form-wk">Wk ${g.week}</span>
+    </span>`).join('');
+  const label = `${f.stat[0].toUpperCase()}${f.stat.slice(1)} per game, last ${f.games.length} game${f.games.length === 1 ? '' : 's'}`;
+  return `<span class="form-wrap" tabindex="0" aria-label="${esc(`Form: ${f.avg} yards per game. ${label}: ${f.games.map((g) => `week ${g.week} ${g.yds}`).join(', ')}. ${ord(f.rank)} of ${f.of} teams`)}">
+    <span class="group-alert form-${f.ninth}"><span class="group-word">Form</span> ${f.avg} yds/g</span>
+    <span class="form-pop" aria-hidden="true"><span class="form-tint form-${f.ninth}"></span>
+      <span class="form-pop-head"><span class="group-word">Form</span> <b>${f.avg}</b> yds/g <span class="form-rank">${ord(f.rank)} of ${f.of}</span></span>
+      <span class="form-pop-sub">${esc(label)}</span>
+      <span class="form-games">${bars}</span>
+    </span>
+  </span>`;
 }
 
 function heatMatchup(g, offHome, data, weather = '') {
@@ -1982,12 +2002,16 @@ function heatMatchup(g, offHome, data, weather = '') {
   const [offShort, defShort] = offHome ? [g.homeShort, g.awayShort] : [g.awayShort, g.homeShort];
   // The offensive line's hot or cold streak is the unit's, so it sits by the OL label.
   const lineStreak = (offHome ? data.home : data.away).lineStreak;
-  const passYds = passYdsBadge((offHome ? data.home : data.away).passYds);
   const sideTeam = (team, short, role) => `<div class="heat-side-team">${teamLogo(team, 'small')}${esc(short)} <span class="muted">${role}</span></div>`;
-  const units = HEAT_UNITS.map(([id, oLabel, dLabel]) => `<div class="heat-unit">
-      <div class="heat-side">${sideTeam(offTeam, offShort, 'offense')}<div class="heat-label">${oLabel}${id === 'line' ? streakBadge(lineStreak, ' in-label') : ''}${groupHealth(off[id], oLabel)}${id === 'pass' ? passYds : ''}</div><div class="heat-row">${off[id].map(heatSquare).join('')}</div></div>
-      <div class="heat-side">${sideTeam(defTeam, defShort, 'defense')}<div class="heat-label">${dLabel}${groupHealth(def[id], dLabel)}</div><div class="heat-row">${def[id].map(heatSquare).join('')}</div></div>
-    </div>`).join('');
+  const form = (offHome ? data.home : data.away).form ?? {};
+  const units = HEAT_UNITS.map((u) => {
+    const mine = u.slots ? off[u.o].filter(u.slots) : off[u.o];
+    const defense = u.d ? `<div class="heat-side">${sideTeam(defTeam, defShort, 'defense')}<div class="heat-label">${u.dLabel}${groupHealth(def[u.d], u.dLabel)}</div><div class="heat-row">${def[u.d].map(heatSquare).join('')}</div></div>` : '<div></div>';
+    return `<div class="heat-unit">
+      <div class="heat-side">${sideTeam(offTeam, offShort, 'offense')}<div class="heat-label">${u.oLabel}${u.o === 'line' ? streakBadge(lineStreak, ' in-label') : ''}${groupHealth(mine, u.oLabel)}${formBadge(form[u.oLabel])}</div><div class="heat-row">${mine.map(heatSquare).join('')}</div></div>
+      ${defense}
+    </div>`;
+  }).join('');
   return `<div class="card heat-card">
     <div class="heat-head"><div class="heat-head-text">
       <h3 class="heat-title">
