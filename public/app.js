@@ -2737,15 +2737,18 @@ async function renderSlip(quiet = false) {
       </div>` : ''}
     </div>`;
   };
-  // Bets that hit (and pushes, which also pay back) on top, then the ones
-  // still in play, then the ones that didn't hit.
-  const hit = finished.filter((p) => p.status !== 'lost');
-  const missed = finished.filter((p) => p.status === 'lost');
+  // Not placed yet always on top (whatever happened in the games), then
+  // placed bets still in play, then placed bets that hit (pushes too, they pay
+  // back), then placed bets that didn't hit.
+  const unplaced = data.parlays.filter((p) => !p.placed);
+  const placed = data.parlays.filter((p) => p.placed);
+  const inPlay = placed.filter((p) => p.status === 'pending');
+  const hit = placed.filter((p) => p.status === 'won' || p.status === 'push');
+  const missed = placed.filter((p) => p.status === 'lost');
+  const groups = [['Not placed yet', unplaced], ['In play', inPlay], ['Hit ✓', hit], ['Didn’t hit', missed]].filter(([, list]) => list.length);
   let n = 0;
-  const section = (title, list) => (list.length ? `${title ? `<h3 class="section">${title}</h3>` : ''}${list.map((p) => card(p, n++)).join('')}` : '');
-  const cards = section(hit.length ? 'Hit ✓' : '', hit)
-    + section(hit.length && active.length ? 'Still in play' : '', active)
-    + section('Didn’t hit', missed);
+  // Headings only when there's more than one group.
+  const cards = groups.map(([title, list]) => `${groups.length > 1 ? `<h3 class="section">${title}</h3>` : ''}${list.map((p) => card(p, n++)).join('')}`).join('');
   // What each person has in: placed bets (real money at the sportsbook), and
   // money on bets not placed yet.
   const owes = {};
