@@ -170,10 +170,11 @@ scores (from ESPN) don't use any. FanDuel lines cost 3 credits per refresh
 Player props cost 1 credit per market per game: anytime TD + passing TDs is
 2 a game, about 28-32 for a full slate.
 
-**Lines** update at **11 AM and 6 PM Eastern**: the first visit after each time
-pulls fresh lines once (3 credits), and everyone shares them. A new week with
-no lines yet gets them on its first visit. **Sundays** add 2 manual refreshes
-(the ↻ Refresh button only shows then) for late injury news.
+**Lines** update at **11 AM Eastern** every day, and again at **6 PM on days
+that league has a game**: the first visit after each time pulls fresh lines
+once (3 credits), and everyone shares them. A new week with no lines yet gets
+them on its first visit. **Sundays** (Saturdays for college) add 2 manual
+refreshes (the ↻ Refresh button only shows then) for late injury news.
 
 **Props** update **Thursday and Sunday at 11 AM Eastern**, for games that
 haven't started. They pause if the month's credits left would drop under 75,
@@ -181,20 +182,24 @@ so lines keep working to the end of the month. Games that come back with no prop
 (often night games, posted later) are checked again every 3 hours until
 kickoff; a check that finds nothing costs nothing.
 
+NFL week:
+
 | | Lines | Props | Per week |
 | --- | --- | --- | --- |
-| Tue, Wed, Fri, Sat, Mon | 2 × 3 = 6 | 0 | 30 |
-| Thu | 6 | ~32 | ~38 |
-| Sun | 6-12 | ~30 | ~36-42 |
-| **Week** | **42-48** | **~62** | **~104-110** |
+| Tue, Wed, Fri, Sat (no games) | 1 × 3 = 3 | 0 | 12 |
+| Mon (game) | 2 × 3 = 6 | 0 | 6 |
+| Thu (game) | 6 | ~28-32 | ~34-38 |
+| Sun (game) | 6-12 | ~24-30 | ~30-42 |
+| **Week** | **30-36** | **~52-62** | **~82-98** |
 
-College lines cost the same 3 credits a refresh, on the same 11 AM / 6 PM
-schedule, so they add up to about 180 a month. With both leagues on, that
+College lines cost the same 3 credits a refresh, on the same schedule
+(twice on days with a slate game, once on others, nothing after Saturday's
+games kick off), so they add up to about 100-120 a month. With both leagues on, that
 goes past the free 500 in a heavy month; NFL props pause first (they stop at
 75 credits left), which keeps lines for both working. A league's lines only
 refresh when someone opens that league, so a quiet week costs less.
 
-NFL alone is roughly 450-470 a month in the worst case (a refresh only happens if
+NFL alone is roughly 360-420 a month in the worst case (a refresh only happens if
 someone visits), under the free 500. `DAILY_CREDIT_LIMIT` and
 `SUNDAY_CREDIT_LIMIT` are a backstop for line refreshes only. Once every game
 of the week has kicked off, nothing refreshes until the next week. The Picks

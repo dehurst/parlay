@@ -47,10 +47,16 @@ const {
 
 const SCHEDULE_TTL = 30 * 60e3; // re-check the schedule every 30 min (it's free)
 const RETRY_AFTER_ERROR = 5 * 60e3;
-// Lines update at 11 AM and 6 PM Eastern (the first visit after each), plus up
-// to 2 manual refreshes on Sundays. Props update Thursday and Sunday at 11 AM.
+// Lines update at 11 AM and 6 PM Eastern on days this league has a game, and
+// at 11 AM only on other days (the first visit after each), plus up to 2
+// manual refreshes on game day. Props update Thursday and Sunday at 11 AM.
 // That keeps a month under the free plan's 500 credits (see README).
-const LINE_HOURS = [11, 18];
+const GAME_DAY_HOURS = [11, 18];
+const OFF_DAY_HOURS = [11];
+const lineHours = (games) => {
+  const gameDays = new Set(games.map((g) => easternDate(new Date(g.commence))));
+  return (day) => (gameDays.has(day) ? GAME_DAY_HOURS : OFF_DAY_HOURS);
+};
 const PROPS_HOURS = [11];
 const PROPS_DAYS = [4, 0]; // Thursday, Sunday
 const SUNDAY_MANUAL_REFRESHES = 2;
@@ -407,7 +413,7 @@ async function loadWeek({ refreshLines = false, key = null } = {}) {
   const anyUpcoming = schedule.games.some((g) => !hasStarted(g, now));
   if (ODDS_API_KEY && !schedule.demo && anyUpcoming) {
     const age = lines ? Date.now() - lines.fetchedAt : Infinity;
-    const due = !lines || lines.fetchedAt < lastSlot(now, LINE_HOURS).getTime();
+    const due = !lines || lines.fetchedAt < lastSlot(now, lineHours(schedule.games)).getTime();
     const manual = !due && refreshLines && manualLeft(now) > 0 && age > MANUAL_REFRESH_GAP;
     const wanted = due || manual;
     limitHit = wanted && !canSpend(store.data, LINES_COST, creditLimit());
@@ -626,7 +632,7 @@ app.get('/api/week', async (req, res, next) => {
       book: ODDS_API_KEY ? bookName : null,
       linesUpdated: live ? lines?.fetchedAt ?? null : null,
       creditsLeft: live ? store.data.apiRemaining?.value ?? lines?.remaining ?? null : null,
-      nextLinesAt: live ? nextSlot(now, LINE_HOURS)?.getTime() ?? null : null,
+      nextLinesAt: live ? nextSlot(now, lineHours(schedule.games))?.getTime() ?? null : null,
       propsUpdated: store.data.props[win.key]?.fetchedAt ?? null,
       nextPropsAt: live ? nextSlot(now, PROPS_HOURS, PROPS_DAYS)?.getTime() ?? null : null,
       propsPaused: live ? !!store.data.props[win.key]?.paused : false,

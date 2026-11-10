@@ -3181,7 +3181,7 @@ $('#who').addEventListener('click', (e) => {
   }
 });
 const limitText = () =>
-  `Lines update on their own at 11 AM and 6 PM Eastern, plus ${week.manualPerSunday} extra refreshes on ${league === 'cfb' ? 'Saturdays' : 'Sundays'}, to stay under the free 500 API credits a month. Showing lines from ${new Date(week.linesUpdated).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}.`;
+  `Lines update on their own at 11 AM Eastern, and again at 6 PM on game days, plus ${week.manualPerSunday} extra refreshes on ${league === 'cfb' ? 'Saturdays' : 'Sundays'}, to stay under the free 500 API credits a month. Showing lines from ${new Date(week.linesUpdated).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}.`;
 
 $('#schedule-meta').addEventListener('click', async (e) => {
   const btn = e.target.closest('#refresh');

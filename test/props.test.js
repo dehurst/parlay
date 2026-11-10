@@ -76,3 +76,23 @@ test('update times: lines 11 AM and 6 PM, props Thursday and Sunday 11 AM (Easte
   // After clocks fall back (EST), 11 AM is 16:00 UTC.
   assert.equal(at(nextSlot(new Date('2026-11-01T12:00:00Z'), [11, 18])), '2026-11-01T16:00:00.000Z');
 });
+
+test('lines refresh twice on game days, once on other days', () => {
+  // An NFL week (Eastern dates): Thursday, Sunday and Monday games.
+  const gameDays = new Set(['2026-11-12', '2026-11-15', '2026-11-16']);
+  const hours = (day) => (gameDays.has(day) ? [11, 18] : [11]);
+  // Someone opens the app every hour, Tuesday through Monday night.
+  let fetchedAt = Date.parse('2026-11-10T05:00:00Z'); // lines from Monday night
+  let refreshes = 0;
+  for (let t = Date.parse('2026-11-10T05:00:00Z'); t < Date.parse('2026-11-17T05:00:00Z'); t += 3600e3) {
+    if (fetchedAt < lastSlot(new Date(t), hours).getTime()) {
+      fetchedAt = t;
+      refreshes++;
+    }
+  }
+  assert.equal(refreshes, 3 * 2 + 4 * 1); // was 14 a week with two every day
+  // Wednesday 2 PM: the next refresh is Thursday 11 AM, not Wednesday 6 PM.
+  assert.equal(nextSlot(new Date('2026-11-11T19:00:00Z'), hours).toISOString(), '2026-11-12T16:00:00.000Z');
+  // Thursday 2 PM (game day): 6 PM tonight.
+  assert.equal(nextSlot(new Date('2026-11-12T19:00:00Z'), hours).toISOString(), '2026-11-12T23:00:00.000Z');
+});
