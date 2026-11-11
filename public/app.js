@@ -733,9 +733,9 @@ const isFinal = (g) => g.started && (!!g.result || Date.now() - new Date(g.comme
 
 const rec = (r) => (r ? ` <span class="rec">(${esc(r)})</span>` : '');
 
-// The MAC's "GET SOME MACtion" banner (traced from a photo of the real one),
+// The MAC's "MACtion" banner (traced from a photo of the real one),
 // as a header over its games.
-const MACTION_HEAD = '<h3 class="maction-head"><img src="icons/maction.svg" alt="Get some MACtion" width="1251" height="480"></h3>';
+const MACTION_HEAD = '<h3 class="maction-head"><img src="icons/maction.svg" alt="MACtion" width="1251" height="236"></h3>';
 
 function renderGames() {
   renderWho();
