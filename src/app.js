@@ -23,7 +23,7 @@ import { tileNames, watchList, fetchInactives, decide, DECIDE_AT, WATCH_FROM } f
 import { propParts } from './props.js';
 import { gameWeather } from './weather.js';
 import { canSpend, spend, limitFor, easternDate, easternWeekday, LINES_COST, SCORES_COST } from './credits.js';
-import { sport, runInSport, inSlate, SPORTS } from './sport.js';
+import { sport, runInSport, inSlate, isMac, SPORTS } from './sport.js';
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 loadEnvFile(join(root, '.env'));
@@ -345,7 +345,12 @@ async function fetchSchedule(win, problems) {
     if (ODDS_API_KEY && known.size) {
       try {
         const all = await fetchOddsApiSchedule(ODDS_API_KEY, win);
-        return { games: all.filter((g) => known.has(teamKey(g.home)) || known.has(teamKey(g.away))), source: 'The Odds API' };
+        const mac = new Set(Object.entries(store.data.teams).filter(([, t]) => isMac(t.conf)).map(([name]) => teamKey(name)));
+        return {
+          games: all.filter((g) => known.has(teamKey(g.home)) || known.has(teamKey(g.away)))
+            .map((g) => (mac.has(teamKey(g.home)) || mac.has(teamKey(g.away)) ? { ...g, mac: true } : g)),
+          source: 'The Odds API',
+        };
       } catch (err) {
         problems.push(`The Odds API schedule failed: ${describe(err)}`);
       }
@@ -376,7 +381,9 @@ async function loadWeek({ refreshLines = false, key = null } = {}) {
 
   const cached = store.data.schedule[win.key];
   // Schedules saved before team records existed get refreshed right away.
-  if (!cached || Date.now() >= cached.retryAt || (!cached.demo && !cached.records)) {
+  // So do college schedules saved before MAC games were added.
+  const needsMac = sport().mac && cached && !cached.demo && !cached.withMac;
+  if (!cached || Date.now() >= cached.retryAt || (!cached.demo && !cached.records) || needsMac) {
     const fresh = await fetchSchedule(win, problems);
     if (fresh) {
       // Finished games can drop out of a feed; keep the ones we already had.
@@ -393,7 +400,7 @@ async function loadWeek({ refreshLines = false, key = null } = {}) {
       } catch (err) {
         console.error(`ESPN records failed: ${describe(err)}`);
       }
-      store.data.schedule[win.key] = { ...fresh, games, records, retryAt: Date.now() + SCHEDULE_TTL };
+      store.data.schedule[win.key] = { ...fresh, games, records, retryAt: Date.now() + SCHEDULE_TTL, ...(sport().mac ? { withMac: true } : {}) };
     } else if (cached && !cached.demo) {
       cached.retryAt = Date.now() + RETRY_AFTER_ERROR;
     } else {
@@ -413,7 +420,8 @@ async function loadWeek({ refreshLines = false, key = null } = {}) {
   const anyUpcoming = schedule.games.some((g) => !hasStarted(g, now));
   if (ODDS_API_KEY && !schedule.demo && anyUpcoming) {
     const age = lines ? Date.now() - lines.fetchedAt : Infinity;
-    const due = !lines || lines.fetchedAt < lastSlot(now, lineHours(schedule.games)).getTime();
+    // College lines saved before MAC games were added get one refresh for them.
+    const due = !lines || lines.fetchedAt < lastSlot(now, lineHours(schedule.games)).getTime() || (sport().mac && !lines.withMac);
     const manual = !due && refreshLines && manualLeft(now) > 0 && age > MANUAL_REFRESH_GAP;
     const wanted = due || manual;
     limitHit = wanted && !canSpend(store.data, LINES_COST, creditLimit());
@@ -426,7 +434,7 @@ async function loadWeek({ refreshLines = false, key = null } = {}) {
           fresh.byMatchup = Object.fromEntries(Object.entries(fresh.byMatchup).filter(([k]) => k.split('@').some((t) => slate.has(t))));
         }
         // Merge so games that already kicked off keep their last line.
-        lines = { ...fresh, byMatchup: { ...lines?.byMatchup, ...fresh.byMatchup }, fetchedAt: Date.now() };
+        lines = { ...fresh, byMatchup: { ...lines?.byMatchup, ...fresh.byMatchup }, fetchedAt: Date.now(), ...(sport().mac ? { withMac: true } : {}) };
         store.data.lines[win.key] = lines;
         spend(store.data, LINES_COST);
         noteRemaining(fresh.remaining);

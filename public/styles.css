@@ -1016,3 +1016,10 @@ body.viewer #push-open { display: none; }
 /* Bet Slip: bets that hit sit on top, at full brightness */
 .parlay.done.won h3, .parlay.done.won .odds, .parlay.done.won ul, .parlay.done.won table { opacity: 1; }
 .parlay.done.won { background: var(--card); }
+
+/* MAC games' header: the "GET SOME MACtion" banner itself. */
+.maction-head { margin: 4px 0 12px; line-height: 0; }
+.maction-head img {
+  display: block; width: 100%; max-width: 560px; height: auto; margin: 0 auto;
+  border: 3px solid #2f47a3; border-radius: 6px;
+}

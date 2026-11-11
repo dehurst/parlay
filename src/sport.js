@@ -42,6 +42,8 @@ export const SPORTS = {
     // Games with a team from a Power 5 conference, by ESPN conference ID:
     // ACC, Big 12, Big Ten, SEC, Pac-12.
     conferences: ['1', '4', '5', '8', '9'],
+    // Plus every MAC game (MACtion), shown first under its own header.
+    mac: '15',
     storeKey: 'parlay:cfb',
     file: 'cfb.json',
   },
@@ -55,7 +57,8 @@ export const sport = () => current.getStore() ?? SPORTS.nfl;
 export const runInSport = (id, fn) => current.run(SPORTS[id] ?? SPORTS.nfl, fn);
 
 // True if ESPN's conference ID is one this league's slate includes (all for the NFL).
-export const inSlate = (conferenceId) => !sport().conferences || sport().conferences.includes(String(conferenceId));
+export const isMac = (conferenceId) => !!sport().mac && String(conferenceId) === sport().mac;
+export const inSlate = (conferenceId) => !sport().conferences || sport().conferences.includes(String(conferenceId)) || isMac(conferenceId);
 
 export const espnSite = (path) => `https://site.api.espn.com/apis/site/v2/sports/${sport().espnPath}/${path}`;
 export const espnCore = () => `https://sports.core.api.espn.com/v2/sports/${sport().espnPath.replace('/', '/leagues/')}`;

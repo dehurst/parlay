@@ -1,7 +1,7 @@
 // Games come from The Odds API (when there's a key) or ESPN's public
 // scoreboard, so IDs are built from the week and teams rather than either
 // source's own IDs. That way picks survive switching between sources.
-import { sport, inSlate, espnSite } from './sport.js';
+import { sport, inSlate, isMac, espnSite } from './sport.js';
 
 const scoreboard = (day) => `${espnSite('scoreboard')}?dates=${day}${sport().espnQuery}`;
 const DAY = 24 * 60 * 60 * 1000;
@@ -17,7 +17,7 @@ export const teamKey = (name) => slug(sport().fullNames ? name : nickname(name))
 // Matches the same game across sources ("Denver Broncos" vs "Broncos").
 export const matchKey = (away, home) => `${teamKey(away)}@${teamKey(home)}`;
 
-export function makeGame({ weekKey, home, away, commence, state = 'pre', homeShort, awayShort }) {
+export function makeGame({ weekKey, home, away, commence, state = 'pre', homeShort, awayShort, mac = false }) {
   return {
     id: `${weekKey}-${teamKey(away)}-at-${teamKey(home)}`,
     commence: new Date(commence).toISOString(),
@@ -27,6 +27,8 @@ export function makeGame({ weekKey, home, away, commence, state = 'pre', homeSho
     awayShort: awayShort ?? nickname(away),
     // 'pre' until kickoff, then 'in' / 'post' (only ESPN reports this).
     state,
+    // College: a MAC team is playing (the page shows these first).
+    ...(mac ? { mac: true } : {}),
   };
 }
 
@@ -109,9 +111,10 @@ export function parseScoreboard(data, weekKey) {
       const home = team('home');
       const away = team('away');
       if (!home || !away) return null;
-      // College: only games with a Power 5 team.
+      // College: only games with a Power 5 or MAC team.
       if (!inSlate(home.conferenceId) && !inSlate(away.conferenceId)) return null;
       return makeGame({
+        mac: isMac(home.conferenceId) || isMac(away.conferenceId),
         weekKey,
         commence: ev.date,
         home: home.displayName,
