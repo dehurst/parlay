@@ -14,6 +14,9 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black">
   <meta name="theme-color" content="#0f1419">
   <link rel="manifest" href="manifest.webmanifest">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Audiowide&display=block">
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -36,7 +39,32 @@
   </svg>
   <header>
     <div class="brand">
-      <h1>Parlay Builder</h1>
+      <!-- The site's name rises out of a floor line with a football beside it,
+           a mirror reflection below, then shines once. -->
+      <h1 class="logo" aria-label="Parlay Builder">
+        <span class="logo-stage"><span class="logo-rise">
+          <svg class="logo-ball" viewBox="0 0 64 40" aria-hidden="true">
+            <defs><radialGradient id="ball-skin" cx="40%" cy="35%" r="70%"><stop offset="0" stop-color="#b8682f"/><stop offset=".6" stop-color="#7a3b12"/><stop offset="1" stop-color="#4a2208"/></radialGradient></defs>
+            <g transform="rotate(-28 32 20)">
+              <ellipse cx="32" cy="20" rx="29" ry="16" fill="url(#ball-skin)" stroke="#2e1503" stroke-width="1.5"/>
+              <path d="M12 9.5q2 10.5 0 21M52 9.5q-2 10.5 0 21" stroke="#fff" stroke-width="2.6" fill="none" stroke-linecap="round"/>
+              <path d="M22 20h20M25 16.5v7M29 16.5v7M33 16.5v7M37 16.5v7" stroke="#fff" stroke-width="2.2" stroke-linecap="round"/>
+            </g>
+          </svg>
+          <span class="logo-word">PARLAY BUILDER</span>
+        </span></span>
+        <span class="logo-stage logo-reflect" aria-hidden="true"><span class="logo-rise">
+          <svg class="logo-ball" viewBox="0 0 64 40" aria-hidden="true">
+            <defs><radialGradient id="ball-skin-r" cx="40%" cy="35%" r="70%"><stop offset="0" stop-color="#b8682f"/><stop offset=".6" stop-color="#7a3b12"/><stop offset="1" stop-color="#4a2208"/></radialGradient></defs>
+            <g transform="rotate(-28 32 20)">
+              <ellipse cx="32" cy="20" rx="29" ry="16" fill="url(#ball-skin-r)" stroke="#2e1503" stroke-width="1.5"/>
+              <path d="M12 9.5q2 10.5 0 21M52 9.5q-2 10.5 0 21" stroke="#fff" stroke-width="2.6" fill="none" stroke-linecap="round"/>
+              <path d="M22 20h20M25 16.5v7M29 16.5v7M33 16.5v7M37 16.5v7" stroke="#fff" stroke-width="2.2" stroke-linecap="round"/>
+            </g>
+          </svg>
+          <span class="logo-word">PARLAY BUILDER</span>
+        </span></span>
+      </h1>
       <div id="who" class="who"></div>
     </div>
     <span class="week-nav" id="week-nav">

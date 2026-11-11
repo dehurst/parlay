@@ -36,6 +36,51 @@ h3 { font-size: 16px; margin: 0; }
 /* Header: title and your name chip on one row, the week switcher below. */
 header { padding: 16px 0 8px; }
 .brand { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+
+/* The site's name, arcade style: PARLAY BUILDER and a football rise up out of
+   a floor line (with a faded mirror reflection under it), then a streak of
+   light shines across once. 1.75x the old 22px title, smaller on narrow
+   phones so it still fits beside your name chip. Plays once per page load. */
+.logo {
+  --logo-size: min(38.5px, 5.5vw);
+  display: flex; flex-direction: column; min-width: 0;
+  font: 400 var(--logo-size)/1 'Audiowide', system-ui, sans-serif; letter-spacing: 0.02em;
+}
+.logo-stage { display: block; overflow: hidden; padding-top: 0.08em; }
+.brand > .who { flex: none; white-space: nowrap; }
+.logo-rise {
+  display: flex; align-items: center; gap: 0.28em; white-space: nowrap;
+  animation: logo-rise 1.8s cubic-bezier(0.2, 0.7, 0.25, 1) 0.15s both,
+             logo-flash 0.9s ease-in-out 1.95s both;
+}
+.logo-ball { width: 1.25em; height: auto; flex: none; }
+.logo-word {
+  padding-bottom: 0.06em;
+  background:
+    linear-gradient(105deg, transparent 44%, rgba(255, 255, 255, 0.95) 50%, transparent 56%) no-repeat,
+    linear-gradient(180deg, #ff8a8a 0%, #ff2a2a 42%, #d00000 52%, #ff3030 100%);
+  background-size: 300% 100%, 100% 100%;
+  background-position: 150% 0, 0 0;
+  -webkit-background-clip: text; background-clip: text;
+  color: transparent; -webkit-text-fill-color: transparent;
+  animation: logo-shine 0.9s ease-in-out 1.95s both;
+}
+/* The reflection: flipped, squashed, faded toward the bottom, rising the
+   opposite way so it meets the letters at the floor line. */
+.logo-reflect {
+  display: flex; align-items: flex-end;
+  height: calc(var(--logo-size) * 0.42); margin-top: 1px; padding-top: 0;
+  transform: scaleY(-1);
+  -webkit-mask-image: linear-gradient(to top, rgba(0, 0, 0, 0.45), transparent 75%);
+  mask-image: linear-gradient(to top, rgba(0, 0, 0, 0.45), transparent 75%);
+  pointer-events: none; user-select: none;
+}
+@keyframes logo-rise { from { transform: translateY(105%); } to { transform: translateY(0); } }
+@keyframes logo-shine { from { background-position: 150% 0, 0 0; } to { background-position: -50% 0, 0 0; } }
+@keyframes logo-flash { 0%, 100% { filter: none; } 45% { filter: brightness(1.45) saturate(0.8); } }
+@media (prefers-reduced-motion: reduce) {
+  .logo-rise, .logo-word { animation: none; }
+}
 .me-chip { padding: 5px 12px; border-radius: 999px; font-size: 14px; font-weight: 600; }
 .week-nav { margin: 6px 0 0 -6px; }
 /* NFL | CFB switch under the week */
