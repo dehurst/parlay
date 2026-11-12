@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { fillSlot, teamSides, markFillIns, collegeOf, slotRole, chartRoles, positionRole } from '../src/heatmap.js';
+import { fillSlot, teamSides, markFillIns, collegeOf, slotRole, chartRoles, positionRole, applyOfficialReport } from '../src/heatmap.js';
 
 const athlete = (name, status) => ({ displayName: name, injuries: status ? [{ status }] : [] });
 const slot = (abbr, ...athletes) => ({ position: { abbreviation: abbr }, athletes });
@@ -161,4 +161,33 @@ test('a hurt edge rusher doesn\'t make an inside linebacker a fill-in', () => {
   assert.equal(other.history.replaced, 'Star Edge');
   assert.equal(edge.history.tag, 'week1');
   assert.equal(top.history.tag, 'week1');
+});
+
+test('this week\'s official injury report overrides ESPN\'s lagging game tags', () => {
+  const burks = athlete('Treylon Burks', 'Out');
+  const mclaurin = athlete('Terry McLaurin', 'Injured Reserve');
+  const diggs = athlete('Stefon Diggs');
+  const yankoff = athlete('Colson Yankoff', 'Out');
+  const lane = athlete('Jaylin Lane', 'Questionable');
+  const reports = new Map([
+    ['treylonburks', [{ team: 'WAS', week: 9, status: 'Out' }, { team: 'WAS', week: 10, status: '' }]], // practice line only
+    ['colsonyankoff', [{ team: 'WAS', week: 10, status: 'Out' }]],
+    ['stefondiggs', [{ team: 'WAS', week: 10, status: 'Doubtful' }]],
+  ]);
+  const changed = applyOfficialReport([burks, mclaurin, diggs, yankoff, lane], reports, 'WAS', 10);
+  assert.deepEqual(burks.injuries, []); // no designation: plays
+  assert.equal(mclaurin.injuries[0].status, 'Injured Reserve'); // roster move: ESPN's
+  assert.equal(diggs.injuries[0].status, 'Doubtful'); // on the report, ESPN missed it
+  assert.equal(yankoff.injuries[0].status, 'Out');
+  assert.deepEqual(lane.injuries, []); // off this week's report entirely
+  assert.deepEqual(changed.sort(), ['Jaylin Lane', 'Stefon Diggs', 'Treylon Burks']);
+  // Before the team's report for the week is out, ESPN's tags stand.
+  const early = athlete('Treylon Burks', 'Out');
+  assert.deepEqual(applyOfficialReport([early], reports, 'WAS', 11), []);
+  assert.equal(early.injuries[0].status, 'Out');
+  // A practice-only report (midweek, no game statuses yet) isn't final either.
+  const practice = new Map([['jaylonjones', [{ team: 'TEN', week: 10, status: '' }]]]);
+  const jones = athlete('Jaylon Jones', 'Out');
+  assert.deepEqual(applyOfficialReport([jones], practice, 'TEN', 10), []);
+  assert.equal(jones.injuries[0].status, 'Out');
 });

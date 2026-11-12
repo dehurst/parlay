@@ -5,7 +5,7 @@
 
 import { espnSite } from './sport.js';
 import { teamKey } from './schedule.js';
-import { fetchTeamDepthChart, fetchTeamRoster } from './injuries.js';
+import { fetchTeamDepthChart, fetchTeamRoster, weekOf } from './injuries.js';
 import { seasonSnaps, teamCode, starterHistory, nextUp, positionGroup, usualShare, gamesPlayed, lastSeason, outsnapped, findPlayer, fullKey, shortKey } from './starters.js';
 import { seasonFile, injuryHistory, statRanks, honorsFor } from './honors.js';
 import { streakBook, streakFor } from './streaks.js';
@@ -31,6 +31,53 @@ export const UNITS = [
   { id: 'back', offense: 'Backfield', defense: 'Linebackers', o: ['qb', 'rb', 'rb2'], d: ['wlb', 'lilb', 'mlb', 'rilb', 'slb', 'olb', 'ilb', 'lb'] },
 ];
 const DEFENSE = /(de|dt|nt|lb|cb|nb|ss|fs|^s)$/;
+
+// Game-status tags the weekly NFL injury report sets (as opposed to Injured
+// Reserve or Suspension, which are roster moves ESPN tracks well).
+const GAME_TAGS = ['Out', 'Doubtful', 'Questionable'];
+
+// ESPN's tag can lag the official report: it kept Treylon Burks "Out" after
+// Washington's final report gave him no designation. Once a team's final
+// report for `week` is out (the one with game statuses: Friday for a Sunday
+// game; earlier ones only list practice), it decides each player's game
+// status: whatever it lists for him, or healthy if he isn't on it (or has
+// no game status, only a practice line). Before that, ESPN's tag stands. `athletes` are ESPN
+// athlete objects (depth chart and roster), changed in place; `reports` is
+// parseInjuries' map. Returns the names whose tag changed.
+export function applyOfficialReport(athletes, reports, code, week) {
+  if (!reports || !code || !week) return [];
+  const thisWeek = (rows) => rows?.find((r) => r.team === code && r.week === week);
+  const filed = [...reports.values()].some((rows) => thisWeek(rows)?.status);
+  if (!filed) return [];
+  const changed = new Set();
+  for (const a of athletes) {
+    const espn = a.injuries?.[0]?.status ?? null;
+    if (espn && !GAME_TAGS.includes(espn)) continue; // IR, suspension: ESPN's
+    const official = thisWeek(reports.get(fullKey(a.displayName)))?.status || null;
+    if (official === espn || (official && !GAME_TAGS.includes(official))) continue;
+    if (!official && !espn) continue;
+    a.injuries = official ? [{ ...(a.injuries?.[0] ?? {}), status: official }] : [];
+    changed.add(a.displayName);
+  }
+  return [...changed];
+}
+
+// Every athlete object in ESPN roster / depth chart responses.
+const espnAthletes = (doc) => [
+  ...(doc?.athletes ?? []).flatMap((g) => g.items ?? [g]),
+  ...(doc?.depthchart ?? []).flatMap((g) => Object.values(g.positions ?? {}).flatMap((s) => s.athletes ?? [])),
+];
+
+// Corrects ESPN's game tags in these roster / depth chart responses (in
+// place) from this week's official report, for the team named `name`. The
+// report is extra: if it can't be loaded, ESPN's tags stand.
+export async function officialTags(name, docs, now = Date.now(), reports = null) {
+  reports ??= await seasonFile('injuries', new Date(now)).catch((err) => {
+    console.error(`Injury reports failed: ${err?.message ?? err}`);
+    return null;
+  });
+  return applyOfficialReport(docs.flatMap(espnAthletes), reports, teamCode(name), weekOf(new Date(now)));
+}
 
 // One depth-chart slot: who plays (the first player not sidelined), how deep
 // that is (1 = starter), and anyone skipped ahead of them.
@@ -369,6 +416,11 @@ export async function teamHeatmap(name, now = Date.now()) {
     seasonSnaps(new Date(now)), seasonSnaps(new Date(now), 1), seasonFile('stats', new Date(now)), seasonFile('injuries', new Date(now)),
     seasonFile('weekly', new Date(now)), seasonFile('qbr', new Date(now)), seasonFile('defAdv', new Date(now)), seasonFile('defAdvLast', new Date(now))]);
   if (chart.status === 'rejected') throw chart.reason;
+  // This week's official injury report overrides ESPN's lagging game tags,
+  // on the depth chart and roster alike, before anyone is skipped.
+  if (injuryReports.status === 'fulfilled') {
+    await officialTags(name, [chart.value, roster.status === 'fulfilled' ? roster.value : null], now, injuryReports.value);
+  }
   const sides = teamSides(chart.value);
   const roles = chartRoles(chart.value);
   const rolesByName = chartRoles(chart.value, (a) => fullKey(a.displayName));

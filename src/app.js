@@ -18,7 +18,7 @@ import { analyzeWeek } from './analysis.js';
 import { sgpDecimal, learnAdjust, isSameGameKeys } from '../public/sgp.js';
 import { seasonYear, fetchSeasonWeek, parseSeasonWeek, mergeWeek, fetchGameLine, buildTeams, fetchGameTeamStats, regularSeasonWeeks } from './research.js';
 import { fetchTeamRoster, fetchTeamDepthChart, teamInjuries, dropStaleHistory, weekOf } from './injuries.js';
-import { teamHeatmap, espnTeamId } from './heatmap.js';
+import { teamHeatmap, espnTeamId, officialTags } from './heatmap.js';
 import { tileNames, watchList, fetchInactives, decide, DECIDE_AT, WATCH_FROM } from './gameday.js';
 import { propParts } from './props.js';
 import { gameWeather } from './weather.js';
@@ -262,6 +262,8 @@ async function gamedayAlerts() {
     for (const t of teams) {
       if (!t.id) continue;
       const [roster, sides] = await Promise.all([fetchTeamRoster(t.id), teamHeatmap(t.name).catch(() => null)]);
+      // ESPN's tags can lag the final injury report; that report wins.
+      await officialTags(t.name, [roster], now);
       const found = watchList(roster, new Set([...tileNames(sides), ...props]), t.name);
       for (const [id, p] of Object.entries(found)) entry.watch[id] ??= p;
     }
@@ -1552,12 +1554,17 @@ async function loadInjuries(r, games, now) {
   if (now - r.injuries.fetchedAt < 6 * 3600e3) return;
   const teamIds = new Map();
   for (const g of games) {
-    if (g.home.id != null) teamIds.set(g.home.abbr, g.home.id);
-    if (g.away.id != null) teamIds.set(g.away.abbr, g.away.id);
+    if (g.home.id != null) teamIds.set(g.home.abbr, { id: g.home.id, name: g.home.name });
+    if (g.away.id != null) teamIds.set(g.away.abbr, { id: g.away.id, name: g.away.name });
   }
   const currentWeek = weekOf(now);
   const entries = [...teamIds.entries()];
-  const fetched = await Promise.allSettled(entries.map(([, id]) => Promise.all([fetchTeamRoster(id), fetchTeamDepthChart(id)])));
+  const fetched = await Promise.allSettled(entries.map(async ([, t]) => {
+    const docs = await Promise.all([fetchTeamRoster(t.id), fetchTeamDepthChart(t.id)]);
+    // ESPN's tags can lag the final injury report; that report wins.
+    await officialTags(t.name, docs, now);
+    return docs;
+  }));
   const teams = { ...r.injuries.teams };
   let ok = 0;
   fetched.forEach((res, i) => {
