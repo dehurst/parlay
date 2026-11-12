@@ -1111,3 +1111,13 @@ table.scheme .small { font-size: 11px; }
 .shell-man2 { background: #e077b8; }
 .shell-other { background: #8b97a3; }
 #scheme-metric { margin: 4px 0 8px; }
+
+/* Last-5 dots: each is a game with a score popup. */
+button.dot { border: none; padding: 0; cursor: pointer; font-family: inherit; }
+button.dot:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
+.tip-box {
+  position: absolute; z-index: 50; max-width: 260px; padding: 6px 10px; border-radius: 8px;
+  background: var(--card); border: 1px solid var(--line); box-shadow: 0 4px 16px rgba(0, 0, 0, .45);
+  font-size: 13px; white-space: nowrap; pointer-events: none;
+}
+.tip-box .team-logo, .tip-box img { vertical-align: -3px; }

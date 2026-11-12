@@ -2728,14 +2728,22 @@ async function renderResearch(quiet = false) {
   // Each section of a team's page, contents only: Team shows one team's,
   // Compare puts two teams' side by side.
   const recordBody = (x) => {
-    const dots = x.last5.map((r) => `<span class="dot ${r === 'W' ? 'win' : r === 'L' ? 'loss' : 'push'}">${r}</span>`).join('');
+    // Each dot is a game: hover or tap it for the score and opponent.
+    const games = x.log.filter((e) => e.result).slice(-5);
+    const word = { W: 'Won', L: 'Lost', T: 'Tied' };
+    const dots = games.map((e) => {
+      const tip = `<b class="${e.result === 'W' ? 'pos' : e.result === 'L' ? 'neg' : ''}">${word[e.result]} ${esc(e.score)}</b>
+        ${e.home ? 'vs' : '@'} ${teamLogo(e.oppName, 'small')}<b>${esc(e.opp)}</b> <span class="muted">· Week ${e.week}</span>`;
+      return `<button type="button" class="dot ${e.result === 'W' ? 'win' : e.result === 'L' ? 'loss' : 'push'}" data-tip="${esc(tip)}"
+        aria-label="${esc(`${word[e.result]} ${e.score} ${e.home ? 'vs' : 'at'} ${e.opp}, Week ${e.week}`)}">${e.result}</button>`;
+    }).join('');
     return `<div class="statline">
         <div><b>${wlt(x.record)}</b><span>overall</span></div>
         <div><b>${wlt(x.home)}</b><span>home</span></div>
         <div><b>${wlt(x.away)}</b><span>away</span></div>
         ${x.streak ? `<div><b>${x.streak}</b><span>streak</span></div>` : ''}
       </div>
-      ${dots ? `<div class="small muted last5">Last ${x.last5.length}: ${dots}</div>` : ''}
+      ${dots ? `<div class="small muted last5">Last ${games.length}: ${dots}</div>` : ''}
       <div class="small muted">Points per game: <b>${x.ppg?.toFixed(1) ?? '–'}</b> scored · <b>${x.papg?.toFixed(1) ?? '–'}</b> allowed · <b class="${netClass(x.margin ?? 0)}">${signedPts(x.margin)}</b> margin</div>`;
   };
   const injuriesNote = 'Roster position, depth-chart standing, and how long they\'ve carried the tag. From ESPN, refreshed every few hours.';
@@ -3452,3 +3460,43 @@ new ResizeObserver(() => {
 }).observe($('#submit-bar'));
 
 load();
+
+// Popups for buttons with a data-tip (the Research tab's last-5 dots): shown
+// on hover with a mouse, toggled by a tap. One shared box, positioned on the
+// page so a card's scroll area can't clip it.
+const tipBox = document.createElement('div');
+tipBox.className = 'tip-box';
+tipBox.hidden = true;
+document.body.append(tipBox);
+let tipFor = null;
+function showTip(el) {
+  tipFor = el;
+  tipBox.innerHTML = el.dataset.tip;
+  tipBox.hidden = false;
+  const r = el.getBoundingClientRect();
+  const w = tipBox.offsetWidth, h = tipBox.offsetHeight;
+  const left = Math.min(Math.max(8, r.left + r.width / 2 - w / 2), document.documentElement.clientWidth - w - 8);
+  const above = r.top - h - 8;
+  tipBox.style.left = `${left + window.scrollX}px`;
+  tipBox.style.top = `${(above >= 8 ? above : r.bottom + 8) + window.scrollY}px`;
+}
+function hideTip() {
+  tipFor = null;
+  tipBox.hidden = true;
+}
+document.addEventListener('mouseover', (e) => {
+  const el = e.target.closest?.('[data-tip]');
+  if (el && el !== tipFor) showTip(el);
+});
+document.addEventListener('mouseout', (e) => {
+  const el = e.target.closest?.('[data-tip]');
+  if (el && el === tipFor && !el.contains(e.relatedTarget)) hideTip();
+});
+document.addEventListener('click', (e) => {
+  const el = e.target.closest?.('[data-tip]');
+  if (!el) return hideTip();
+  // A tap: hover already opened it on desktop, so only a second tap closes it.
+  if (el === tipFor && e.pointerType !== 'mouse') hideTip();
+  else showTip(el);
+});
+window.addEventListener('resize', hideTip);
