@@ -1121,3 +1121,17 @@ button.dot:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; 
   font-size: 13px; white-space: nowrap; pointer-events: none;
 }
 .tip-box .team-logo, .tip-box img { vertical-align: -3px; }
+
+/* Phones: the logo is too wide to share a row with the bell, your name and
+   Log out, so it gets the whole first row and they move down beside the
+   week switcher (wrapping below it if a past week's "back" button needs the
+   room). */
+@media (max-width: 600px) {
+  header { display: flex; flex-wrap: wrap; align-items: center; column-gap: 8px; }
+  header .brand { display: contents; }
+  header .logo { flex: 1 0 100%; --logo-size: min(38.5px, 7vw); }
+  header .week-nav { order: 2; }
+  header #who { order: 3; margin-left: auto; }
+  header::after { content: ''; order: 4; flex-basis: 100%; height: 0; } /* line break */
+  header #sport-switch { order: 5; }
+}
