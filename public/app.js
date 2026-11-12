@@ -733,10 +733,6 @@ const isFinal = (g) => g.started && (!!g.result || Date.now() - new Date(g.comme
 
 const rec = (r) => (r ? ` <span class="rec">(${esc(r)})</span>` : '');
 
-// The MAC's "MACtion" banner (traced from a photo of the real one),
-// as a header over its games.
-const MACTION_HEAD = '<h3 class="maction-head"><img src="icons/maction.svg" alt="MACtion" width="1251" height="236"></h3>';
-
 function renderGames() {
   renderWho();
   $('#picks-mode').hidden = isPast();
@@ -884,15 +880,11 @@ function renderGames() {
   };
   // Upcoming and live games stay on top in kickoff order; finished games
   // move to a grayed-out section below, most recent first.
-  // College: MAC games (MACtion) come first, under their own banner.
-  const current = week.games.filter((g) => !isFinal(g));
+  // College: MAC games come first.
+  const current = week.games.filter((g) => !isFinal(g))
+    .sort((a, b) => (league === 'cfb' ? Number(!!b.mac) - Number(!!a.mac) : 0));
   const finished = week.games.filter(isFinal).sort((a, b) => b.commence.localeCompare(a.commence));
-  const macNow = league === 'cfb' ? current.filter((g) => g.mac) : [];
-  const restNow = current.filter((g) => !macNow.includes(g));
-  const macHtml = macNow.length
-    ? `${MACTION_HEAD}${macNow.map(gameCard).join('')}${restNow.length ? '<h3 class="section">More college games</h3>' : ''}`
-    : '';
-  $('#games').innerHTML = (calc ? builderHtml() : '') + macHtml + restNow.map(gameCard).join('')
+  $('#games').innerHTML = (calc ? builderHtml() : '') + current.map(gameCard).join('')
     + (current.length ? '' : '<div class="card muted">Every game this week is over.</div>')
     + (finished.length ? `<h3 class="section">Completed games</h3>${finished.map(gameCard).join('')}` : '');
   justLocked = null; // the snap plays once

@@ -1061,21 +1061,3 @@ body.viewer #push-open { display: none; }
 /* Bet Slip: bets that hit sit on top, at full brightness */
 .parlay.done.won h3, .parlay.done.won .odds, .parlay.done.won ul, .parlay.done.won table { opacity: 1; }
 .parlay.done.won { background: var(--card); }
-
-/* MAC games' header: the "MACtion" banner. A streak of green and white
-   light travels slowly around its blue border, with a soft green glow. */
-@property --mac-angle { syntax: '<angle>'; inherits: false; initial-value: 0deg; }
-.maction-head {
-  max-width: 560px; margin: 4px auto 12px; padding: 3px; line-height: 0;
-  border-radius: 8px;
-  background: conic-gradient(from var(--mac-angle),
-    #2f47a3 0deg, #2f47a3 260deg, #1fae6a 305deg, #ffffff 330deg, #1fae6a 345deg, #2f47a3 360deg);
-  box-shadow: 0 0 12px rgba(31, 174, 106, 0.22);
-  animation: mac-sweep 5s linear infinite, mac-glow 2.5s ease-in-out infinite alternate;
-}
-.maction-head img { display: block; width: 100%; height: auto; border-radius: 5px; }
-@keyframes mac-sweep { to { --mac-angle: 360deg; } }
-@keyframes mac-glow { to { box-shadow: 0 0 20px rgba(31, 174, 106, 0.42); } }
-@media (prefers-reduced-motion: reduce) {
-  .maction-head { animation: none; }
-}
