@@ -1090,3 +1090,24 @@ body.viewer #push-open { display: none; }
 /* Bet Slip: bets that hit sit on top, at full brightness */
 .parlay.done.won h3, .parlay.done.won .odds, .parlay.done.won ul, .parlay.done.won table { opacity: 1; }
 .parlay.done.won { background: var(--card); }
+
+/* Research: Coaches & scheme card. */
+.coaches { display: flex; flex-wrap: wrap; gap: 8px 24px; margin: 4px 0 8px; }
+.coaches div { display: flex; flex-direction: column; }
+table.scheme td:first-child { cursor: default; }
+table.scheme .small { font-size: 11px; }
+.scheme-notes { margin: 8px 0 0; padding-left: 18px; }
+.scheme-notes li { margin: 3px 0; }
+.shell-bar { display: flex; height: 18px; border-radius: 4px; overflow: hidden; margin: 6px 0 4px; }
+.shell-bar span { display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; color: #0f1419; min-width: 0; overflow: hidden; }
+.shell-key { display: flex; flex-wrap: wrap; gap: 2px 12px; margin-bottom: 6px; }
+.shell-key i { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
+.shell-c0 { background: #e5484d; }
+.shell-c1 { background: #f08c4a; }
+.shell-c3 { background: #f2c94c; }
+.shell-c2 { background: #4fa3e0; }
+.shell-c4 { background: #7c8cf0; }
+.shell-c6 { background: #a879e6; }
+.shell-man2 { background: #e077b8; }
+.shell-other { background: #8b97a3; }
+#scheme-metric { margin: 4px 0 8px; }

@@ -2483,6 +2483,215 @@ function advTable(off, def, offLabel, defLabel) {
   </table>`;
 }
 
+// ---- Schemes: how each team plays and who calls it (NFL only) ---------------
+// Every stat on the Coaches & scheme card. `when`: 'now' = this season (FTN
+// charting + play-by-play), 'last' = last season (Next Gen Stats coverage data,
+// which isn't published during the season). `good`: which way is better, for
+// ranks (1st = best); without it, 1st = most.
+const SCHEME_STATS = [
+  { side: 'def', when: 'now', key: 'blitz', label: 'Blitz rate', fmt: 'pct', tip: 'Dropbacks where they sent at least one extra rusher (a linebacker or DB).' },
+  { side: 'def', when: 'now', key: 'rushers', label: 'Pass rushers/dropback', fmt: 'num' },
+  { side: 'def', when: 'now', key: 'hit', label: 'Sack or QB hit', fmt: 'pct', good: 'high' },
+  { side: 'def', when: 'now', key: 'sack', label: 'Sack rate', fmt: 'pct', good: 'high' },
+  { side: 'def', when: 'now', key: 'stacked', label: 'Stacked box (8+) vs run', fmt: 'pct' },
+  { side: 'def', when: 'now', key: 'light', label: 'Light box (6 or fewer) vs run', fmt: 'pct' },
+  { side: 'def', when: 'now', key: 'epa', label: 'EPA/play allowed', fmt: 'epa', good: 'low' },
+  { side: 'def', when: 'now', key: 'epaPass', label: 'EPA/dropback allowed', fmt: 'epa', good: 'low' },
+  { side: 'def', when: 'now', key: 'epaRun', label: 'EPA/run allowed', fmt: 'epa', good: 'low' },
+  { side: 'def', when: 'now', key: 'success', label: 'Success rate allowed', fmt: 'pct', good: 'low' },
+  { side: 'def', when: 'now', key: 'explosive', label: 'Explosive plays allowed', fmt: 'pct', good: 'low' },
+  { side: 'def', when: 'now', key: 'epaBlitz', label: 'EPA allowed when blitzing', fmt: 'epa', good: 'low' },
+  { side: 'def', when: 'now', key: 'epaNoBlitz', label: 'EPA allowed, no blitz', fmt: 'epa', good: 'low' },
+  { side: 'def', when: 'last', key: 'man', label: 'Man coverage', fmt: 'pct' },
+  { side: 'def', when: 'last', key: 'zone', label: 'Zone coverage', fmt: 'pct' },
+  { side: 'def', when: 'last', key: 'oneHigh', label: 'Single-high (Cover 0/1/3)', fmt: 'pct' },
+  { side: 'def', when: 'last', key: 'twoHigh', label: 'Two-high (Cover 2/4/6, 2-man)', fmt: 'pct' },
+  { side: 'def', when: 'last', key: 'pressure', label: 'Pressure rate', fmt: 'pct', good: 'high' },
+  { side: 'def', when: 'last', key: 'nickel', label: 'Nickel (5 DBs)', fmt: 'pct' },
+  { side: 'def', when: 'last', key: 'dime', label: 'Dime (6+ DBs)', fmt: 'pct' },
+  { side: 'def', when: 'last', key: 'epaMan', label: 'EPA allowed in man', fmt: 'epa', good: 'low' },
+  { side: 'def', when: 'last', key: 'epaZone', label: 'EPA allowed in zone', fmt: 'epa', good: 'low' },
+  { side: 'off', when: 'now', key: 'passRate', label: 'Pass rate', fmt: 'pct' },
+  { side: 'off', when: 'now', key: 'proe', label: 'Pass rate over expected', fmt: 'signed', tip: 'How much more (or less) they throw than an average team would in the same down, distance, score and time.' },
+  { side: 'off', when: 'now', key: 'playAction', label: 'Play action', fmt: 'pct' },
+  { side: 'off', when: 'now', key: 'motion', label: 'Motion', fmt: 'pct' },
+  { side: 'off', when: 'now', key: 'shotgun', label: 'Shotgun or pistol', fmt: 'pct' },
+  { side: 'off', when: 'now', key: 'noHuddle', label: 'No-huddle', fmt: 'pct' },
+  { side: 'off', when: 'now', key: 'screen', label: 'Screens', fmt: 'pct' },
+  { side: 'off', when: 'now', key: 'rpo', label: 'RPOs', fmt: 'pct' },
+  { side: 'off', when: 'now', key: 'outOfPocket', label: 'QB out of pocket', fmt: 'pct' },
+  { side: 'off', when: 'now', key: 'epa', label: 'EPA/play', fmt: 'epa', good: 'high' },
+  { side: 'off', when: 'now', key: 'epaPass', label: 'EPA/dropback', fmt: 'epa', good: 'high' },
+  { side: 'off', when: 'now', key: 'epaRun', label: 'EPA/run', fmt: 'epa', good: 'high' },
+  { side: 'off', when: 'now', key: 'success', label: 'Success rate', fmt: 'pct', good: 'high' },
+  { side: 'off', when: 'now', key: 'explosive', label: 'Explosive plays', fmt: 'pct', good: 'high' },
+  { side: 'off', when: 'now', key: 'sacked', label: 'Sacked', fmt: 'pct', good: 'low' },
+  { side: 'off', when: 'now', key: 'blitzed', label: 'Faces the blitz', fmt: 'pct' },
+  { side: 'off', when: 'now', key: 'epaVsBlitz', label: 'EPA vs blitz', fmt: 'epa', good: 'high' },
+  { side: 'off', when: 'now', key: 'epaVsNoBlitz', label: 'EPA, no blitz', fmt: 'epa', good: 'high' },
+  { side: 'off', when: 'now', key: 'stackedFaced', label: 'Runs into a stacked box', fmt: 'pct' },
+  { side: 'off', when: 'last', key: 'vsMan', label: 'EPA vs man', fmt: 'epa', good: 'high' },
+  { side: 'off', when: 'last', key: 'vsZone', label: 'EPA vs zone', fmt: 'epa', good: 'high' },
+  { side: 'off', when: 'last', key: 'manFaced', label: 'Saw man coverage', fmt: 'pct' },
+  { side: 'off', when: 'last', key: 'pressured', label: 'Pressured', fmt: 'pct', good: 'low' },
+  { side: 'off', when: 'last', key: 'timeToThrow', label: 'Time to throw', fmt: 'sec' },
+];
+const statId = (s) => `${s.side}.${s.when}.${s.key}`;
+const schemeVal = (t, s) => t.scheme?.[s.when]?.[s.side]?.[s.key] ?? null;
+function schemeFmt(v, fmt) {
+  if (v == null) return '–';
+  if (fmt === 'pct') return `${v.toFixed(1)}%`;
+  if (fmt === 'signed') return `${v > 0 ? '+' : v < 0 ? '−' : ''}${Math.abs(v).toFixed(1)}%`;
+  if (fmt === 'epa') {
+    const r = Number(v.toFixed(2)); // no "−0.00"
+    return `${r > 0 ? '+' : r < 0 ? '−' : ''}${Math.abs(r).toFixed(2)}`;
+  }
+  if (fmt === 'sec') return `${v.toFixed(2)}s`;
+  return v.toFixed(2);
+}
+// Each team's rank on every stat: 1st = best when the stat has a better
+// direction, else 1st = most. Cached per research load.
+let schemeRankCache = null;
+function schemeRanks(teams) {
+  if (schemeRankCache?.teams === teams) return schemeRankCache.ranks;
+  const ranks = new Map();
+  for (const s of SCHEME_STATS) {
+    const sorted = teams.filter((t) => schemeVal(t, s) != null)
+      .sort((a, b) => (s.good === 'low' ? schemeVal(a, s) - schemeVal(b, s) : schemeVal(b, s) - schemeVal(a, s)));
+    sorted.forEach((t, i) => ranks.set(`${t.name}|${statId(s)}`, { rank: i + 1, of: sorted.length }));
+  }
+  schemeRankCache = { teams, ranks };
+  return ranks;
+}
+const schemeRankText = (r, s) => (r ? `${ordinal(r.rank)}${s.good ? '' : ' most'}` : '');
+// A rank in the top or bottom fifth gets color when the stat has a better direction.
+const schemeRankClass = (r, s) => (!r || !s.good ? '' : r.rank <= Math.ceil(r.of / 5) ? 'pos' : r.rank > r.of - Math.ceil(r.of / 5) ? 'neg' : '');
+
+function coachName(c) {
+  if (!c) return '–';
+  return `${esc(c.name)}${c.interim ? ' <span class="muted small">(interim)</span>' : ''}${c.note ? ` <span class="muted small">(${esc(c.note)})</span>` : ''}`;
+}
+function coachesHtml(x) {
+  const c = x.scheme?.coaches;
+  if (!c) return '';
+  const notes = [];
+  if (c.dc?.change) notes.push(`${esc(c.dc.change)}.`);
+  if (c.oc?.change) notes.push(`${esc(c.oc.change)}.`);
+  return `<div class="coaches">
+    <div><span class="muted small">Head coach</span><b>${coachName(c.hc)}</b></div>
+    <div><span class="muted small">Offensive coordinator</span><b>${coachName(c.oc)}</b></div>
+    <div><span class="muted small">Defensive coordinator</span><b>${coachName(c.dc)}</b></div>
+  </div>${notes.length ? `<p class="small muted">${notes.join(' ')}</p>` : ''}`;
+}
+// Last season's coverage shells as one bar.
+const SHELL_NAMES = { c0: 'Cover 0', c1: 'Cover 1', c2: 'Cover 2', c3: 'Cover 3', c4: 'Cover 4', c6: 'Cover 6', man2: '2-man', other: 'Other' };
+function shellBar(shells) {
+  if (!shells) return '';
+  const parts = Object.entries(shells).filter(([, v]) => v >= 1);
+  return `<div class="shell-bar" role="img" aria-label="${esc(parts.map(([k, v]) => `${SHELL_NAMES[k]} ${v}%`).join(', '))}">
+    ${parts.map(([k, v]) => `<span class="shell-${k}" style="width:${v}%" title="${SHELL_NAMES[k]} ${v}%">${v >= 8 ? SHELL_NAMES[k].replace('Cover ', 'C') : ''}</span>`).join('')}
+  </div>
+  <div class="shell-key small muted">${parts.sort((a, b) => b[1] - a[1]).map(([k, v]) => `<span><i class="shell-${k}"></i>${SHELL_NAMES[k]} ${Math.round(v)}%</span>`).join('')}</div>`;
+}
+function schemeTable(x, teams, side, when) {
+  const ranks = schemeRanks(teams);
+  const rows = SCHEME_STATS.filter((s) => s.side === side && s.when === when && schemeVal(x, s) != null);
+  if (!rows.length) return '<p class="small muted">Not enough plays charted yet.</p>';
+  return `<table class="slip adv scheme"><tbody>${rows.map((s) => {
+    const r = ranks.get(`${x.name}|${statId(s)}`);
+    return `<tr><td${s.tip ? ` title="${esc(s.tip)}"` : ''}>${esc(s.label)}</td><td class="num">${schemeFmt(schemeVal(x, s), s.fmt)}
+      <span class="small ${schemeRankClass(r, s) || 'muted'}">(${schemeRankText(r, s)})</span></td></tr>`;
+  }).join('')}</tbody></table>`;
+}
+function schemeBody(x, teams, seasons) {
+  if (!x.scheme) return '<p class="small muted">No scheme data for this team.</p>';
+  const c = x.scheme.coaches;
+  const pers = x.scheme.last?.off?.personnel;
+  const dcNote = c.sameDc === false
+    ? `<p class="small warn-text">New play-caller: ${esc(c.dc?.name ?? '')} replaced ${esc(c.dcLast)}, so last season's coverage numbers are ${esc(c.dcLast)}'s, not his.</p>`
+    : c.sameDc ? `<p class="small muted">Same defensive coordinator as last season (${esc(c.dcLast)}).</p>` : '';
+  return `${coachesHtml(x)}
+    <h4>Defense, ${seasons.now}</h4>${schemeTable(x, teams, 'def', 'now')}
+    <h4>Coverage, ${seasons.last}</h4>${dcNote}${shellBar(x.scheme.last?.def?.shells)}${schemeTable(x, teams, 'def', 'last')}
+    <h4>Offense, ${seasons.now}</h4>${schemeTable(x, teams, 'off', 'now')}
+    <h4>Offense vs coverage, ${seasons.last}</h4>
+    ${pers ? `<p class="small">Personnel: ${pers.map((p) => `<b>${esc(p.group)}</b> ${p.pct}%`).join(' · ')} <span class="muted">(11 = 1 RB, 1 TE, 3 WR)</span></p>` : ''}
+    ${schemeTable(x, teams, 'off', 'last')}`;
+}
+const schemeSourceNote = (seasons) => `${seasons.now} charting from FTN through Week ${seasons.ftnThrough} (play-by-play through Week ${seasons.pbpThrough}).
+  Man/zone, shells, pressure and personnel are from ${seasons.last}: the NFL's Next Gen Stats only release them after the season.
+  EPA = expected points added per play (0 is average; +0.10 is a big edge). Ranks are out of 32: 1st = best where there's a better side, else 1st = most. Updated ${seasons.built}.`;
+
+// Offense A against defense B, scheme stats side by side, with notes on
+// the biggest mismatches.
+function schemeMatchup(off, def, teams, seasons) {
+  const ranks = schemeRanks(teams);
+  const get = (t, side, when, key) => {
+    const s = SCHEME_STATS.find((z) => z.side === side && z.when === when && z.key === key);
+    const v = schemeVal(t, s);
+    return { s, v, r: ranks.get(`${t.name}|${statId(s)}`) };
+  };
+  const cell = ({ s, v, r }) => `${schemeFmt(v, s.fmt)} <span class="small ${schemeRankClass(r, s) || 'muted'}">(${schemeRankText(r, s)})</span>`;
+  const rows = [
+    ['Blitz', get(def, 'def', 'now', 'blitz'), get(off, 'off', 'now', 'epaVsBlitz')],
+    ['Pass rush', get(def, 'def', 'now', 'hit'), get(off, 'off', 'now', 'sacked')],
+    ['Run defense', get(def, 'def', 'now', 'epaRun'), get(off, 'off', 'now', 'epaRun')],
+    ['Stacked box', get(def, 'def', 'now', 'stacked'), get(off, 'off', 'now', 'stackedFaced')],
+    ['Pass defense', get(def, 'def', 'now', 'epaPass'), get(off, 'off', 'now', 'epaPass')],
+    [`Man (${seasons.last})`, get(def, 'def', 'last', 'man'), get(off, 'off', 'last', 'vsMan')],
+    [`Zone (${seasons.last})`, get(def, 'def', 'last', 'zone'), get(off, 'off', 'last', 'vsZone')],
+  ];
+  const notes = [];
+  const top = (x, n = 8) => x.r && x.r.rank <= n;
+  const bottom = (x, n = 8) => x.r && x.r.rank > x.r.of - n;
+  const blitz = get(def, 'def', 'now', 'blitz'), vsBlitz = get(off, 'off', 'now', 'epaVsBlitz');
+  if (top(blitz) && (top(vsBlitz) || bottom(vsBlitz))) {
+    notes.push(`${esc(def.short)} blitz a lot (${schemeFmt(blitz.v, 'pct')}), and ${esc(off.short)} are ${top(vsBlitz) ? 'among the best' : 'among the worst'} against it.`);
+  }
+  if (bottom(blitz) && bottom(get(off, 'off', 'now', 'epaVsNoBlitz'))) notes.push(`${esc(def.short)} rarely blitz, and ${esc(off.short)} struggle when they don't.`);
+  const man = get(def, 'def', 'last', 'man'), vsMan = get(off, 'off', 'last', 'vsMan'), vsZone = get(off, 'off', 'last', 'vsZone');
+  const sameDc = def.scheme?.coaches?.sameDc;
+  if (sameDc && top(man) && bottom(vsMan)) notes.push(`${esc(def.short)} play a lot of man, and ${esc(off.short)} struggled against man last season.`);
+  if (sameDc && bottom(man) && bottom(vsZone)) notes.push(`${esc(def.short)} live in zone, and ${esc(off.short)} struggled against zone last season.`);
+  if (sameDc === false) notes.push(`${esc(def.short)} changed defensive coordinators, so the man/zone rows are last year's coach.`);
+  const runD = get(def, 'def', 'now', 'epaRun'), run = get(off, 'off', 'now', 'epaRun');
+  if (top(run) && bottom(runD)) notes.push(`${esc(off.short)}' run game is a top-8 unit against a bottom-8 run defense.`);
+  if (bottom(run) && top(runD)) notes.push(`${esc(off.short)}' weak run game faces a top-8 run defense.`);
+  const pass = get(off, 'off', 'now', 'epaPass'), passD = get(def, 'def', 'now', 'epaPass');
+  if (top(pass) && bottom(passD)) notes.push(`${esc(off.short)}' passing game is top 8, against a bottom-8 pass defense.`);
+  const hit = get(def, 'def', 'now', 'hit'), sacked = get(off, 'off', 'now', 'sacked');
+  if (top(hit) && bottom(sacked)) notes.push(`${esc(def.short)} get home a lot, and ${esc(off.short)} give up sacks.`);
+  return `<table class="slip adv scheme"><thead><tr><th></th><th class="num">${esc(def.short)} def</th><th class="num">${esc(off.short)} off</th></tr></thead>
+    <tbody>${rows.map(([label, d, o]) => `<tr><td>${esc(label)}<div class="small muted">${esc(d.s.label)} / ${esc(o.s.label)}</div></td>
+      <td class="num">${cell(d)}</td><td class="num">${cell(o)}</td></tr>`).join('')}</tbody></table>
+    ${notes.length ? `<ul class="small scheme-notes">${notes.map((n) => `<li>${n}</li>`).join('')}</ul>` : '<p class="small muted">No big scheme mismatches.</p>'}`;
+}
+
+// League view: every team ranked on one scheme stat, with who calls it.
+let schemeMetric = 'def.now.blitz';
+function schemeLeagueHtml(teams, seasons) {
+  if (!seasons) return '';
+  const s = SCHEME_STATS.find((z) => statId(z) === schemeMetric) ?? SCHEME_STATS[0];
+  const ranks = schemeRanks(teams);
+  const sorted = teams.filter((t) => schemeVal(t, s) != null)
+    .sort((a, b) => ranks.get(`${a.name}|${statId(s)}`).rank - ranks.get(`${b.name}|${statId(s)}`).rank);
+  const group = (side, when, label) => `<optgroup label="${label}">${SCHEME_STATS.filter((z) => z.side === side && z.when === when)
+    .map((z) => `<option value="${statId(z)}" ${statId(z) === statId(s) ? 'selected' : ''}>${esc(z.label)}</option>`).join('')}</optgroup>`;
+  const coach = (t) => t.scheme?.coaches?.[s.side === 'def' ? 'dc' : 'oc'];
+  return `<div class="card"><h3>Scheme rankings</h3>
+    <label class="small">Stat <select id="scheme-metric">
+      ${group('def', 'now', `Defense ${seasons.now}`)}${group('def', 'last', `Coverage ${seasons.last}`)}
+      ${group('off', 'now', `Offense ${seasons.now}`)}${group('off', 'last', `Offense vs coverage ${seasons.last}`)}
+    </select></label>
+    ${s.tip ? `<p class="small muted">${esc(s.tip)}</p>` : ''}
+    <table class="slip league"><thead><tr><th></th><th>Team</th><th>${s.side === 'def' ? 'DC' : 'OC'}</th><th class="num">${esc(s.label)}</th></tr></thead>
+      <tbody>${sorted.map((t, i) => `<tr class="team-row" data-team="${esc(t.name)}"><td class="rank">${i + 1}</td>
+        <td>${teamLogo(t.name, 'small')}<b>${esc(t.short ?? t.name)}</b></td>
+        <td class="small">${esc(coach(t)?.name ?? '–')}${s.when === 'last' && s.side === 'def' && t.scheme?.coaches?.sameDc === false ? ' <span class="warn-text" title="New DC since last season">new</span>' : ''}</td>
+        <td class="num">${schemeFmt(schemeVal(t, s), s.fmt)}</td></tr>`).join('')}</tbody></table>
+    <p class="small muted">${schemeSourceNote(seasons)}</p></div>`;
+}
+
 // One team's season: record, against the spread, over/under, strength of
 // schedule, and every game; or (Compare mode) two teams' offense vs defense
 // side by side, or (League mode) every team ranked. Season-wide (not tied to the week up top).
@@ -2508,7 +2717,7 @@ async function renderResearch(quiet = false) {
   </div>`;
 
   if (researchMode === 'league') {
-    $('#research').innerHTML = modeSwitch + leagueHtml(teams);
+    $('#research').innerHTML = modeSwitch + schemeLeagueHtml(teams, data.schemeSeasons) + leagueHtml(teams);
     return;
   }
 
@@ -2551,6 +2760,7 @@ async function renderResearch(quiet = false) {
   const sosNote = `Opponents' combined win % this season. 1st = hardest of ${teams.length}.`;
   // College: ESPN has no injury reports to speak of, so that card is left out.
   const showInjuries = data.injuries !== false;
+  const schemes = data.schemeSeasons; // NFL only
   // College opponents outside the Power 5 have no page of their own.
   const hasPage = (name) => teams.some((x) => x.name === name);
   const sosBody = (x) => `<div class="statline">
@@ -2593,6 +2803,9 @@ async function renderResearch(quiet = false) {
       ${pair('record', 'Record', '', recordBody)}
       ${showInjuries ? pair('injuries', 'Injuries', injuriesNote, injuriesBody) : ''}
       ${pair('stats', 'Offensive/Defensive Stats', 'Per game this season. Offense is what they do; defense is what they allow.', statsBody)}
+      ${schemes ? foldCard('compare-scheme-ab', `${teamLogo(a.name, 'small')}${esc(a.short)} offense vs ${teamLogo(b.name, 'small')}${esc(b.short)} defense: scheme`, schemeMatchup(a, b, teams, schemes)) : ''}
+      ${schemes ? foldCard('compare-scheme-ba', `${teamLogo(b.name, 'small')}${esc(b.short)} offense vs ${teamLogo(a.name, 'small')}${esc(a.short)} defense: scheme`, schemeMatchup(b, a, teams, schemes)) : ''}
+      ${schemes ? pair('scheme', 'Coaches &amp; scheme', schemeSourceNote(schemes), (x) => schemeBody(x, teams, schemes)) : ''}
       ${pair('ats', 'Against the spread', '', atsBody)}
       ${pair('sos', 'Strength of schedule', sosNote, sosBody)}
       ${pair('log', 'Game log', '', logBody)}
@@ -2611,6 +2824,7 @@ async function renderResearch(quiet = false) {
     ${foldCard('team-record', 'Record', recordBody(t))}
     ${showInjuries ? foldCard('team-injuries', 'Injuries', note(injuriesNote) + injuriesBody(t)) : ''}
     ${foldCard('team-stats', 'Offensive/Defensive Stats', note(`Per game this season${t.advGames ? `, from ${t.advGames} box score${t.advGames === 1 ? '' : 's'}` : ''}. Offense is what they do; defense is what they allow.`) + statsBody(t))}
+    ${schemes ? foldCard('team-scheme', 'Coaches &amp; scheme', schemeBody(t, teams, schemes) + note(schemeSourceNote(schemes))) : ''}
     ${foldCard('team-ats', 'Against the spread', atsBody(t))}
     ${foldCard('team-sos', 'Strength of schedule', note(sosNote) + sosBody(t))}
     ${foldCard('team-log', 'Game log', logBody(t))}
@@ -2911,6 +3125,11 @@ $('#stats').addEventListener('click', (e) => {
   renderStats();
 });
 $('#research').addEventListener('change', (e) => {
+  if (e.target.id === 'scheme-metric') {
+    schemeMetric = e.target.value;
+    renderResearch(true);
+    return;
+  }
   if (e.target.id === 'research-team') {
     researchTeam = e.target.value;
     storage.set(teamStorageKey(), researchTeam);

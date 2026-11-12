@@ -24,6 +24,8 @@ import { propParts } from './props.js';
 import { gameWeather } from './weather.js';
 import { canSpend, spend, limitFor, easternDate, easternWeekday, LINES_COST, SCORES_COST } from './credits.js';
 import { sport, runInSport, inSlate, isMac, SPORTS } from './sport.js';
+import { schemes, schemeSeasons } from './scheme-data.js';
+import { teamCode } from './starters.js';
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 loadEnvFile(join(root, '.env'));
@@ -1613,8 +1615,14 @@ app.get('/api/research', async (req, res, next) => {
     if (!games.length) return res.status(503).json({ error: 'Couldn’t reach ESPN for team stats. Try again in a few minutes.' });
     const teams = buildTeams(games, savedLine, store.data.research.boxscores);
     const injuries = store.data.research.injuries?.teams ?? {};
-    for (const t of teams) t.injuries = injuries[t.abbr] ?? [];
-    res.json({ season: store.data.research.season, teams, book: ODDS_API_KEY ? bookName : null, injuries: sport().injuries });
+    // NFL only: how each team plays and who calls it (src/scheme-data.js).
+    const nfl = sport().id === 'nfl';
+    for (const t of teams) {
+      t.injuries = injuries[t.abbr] ?? [];
+      if (nfl) t.scheme = schemes[teamCode(t.name)] ?? null;
+    }
+    res.json({ season: store.data.research.season, teams, book: ODDS_API_KEY ? bookName : null, injuries: sport().injuries,
+      schemeSeasons: nfl ? schemeSeasons : null });
   } catch (err) {
     next(err);
   }
