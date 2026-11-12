@@ -2537,7 +2537,12 @@ const SCHEME_STATS = [
   { side: 'off', when: 'last', key: 'timeToThrow', label: 'Time to throw', fmt: 'sec' },
 ];
 const statId = (s) => `${s.side}.${s.when}.${s.key}`;
-const schemeVal = (t, s) => t.scheme?.[s.when]?.[s.side]?.[s.key] ?? null;
+// Coverage (last season's defense) follows the play-caller: a new DC who ran
+// another team's defense last season brings that team's numbers.
+const coverageOf = (t) => t.scheme?.coverage ?? t.scheme?.last?.def ?? null;
+const schemeVal = (t, s) => (s.side === 'def' && s.when === 'last' ? coverageOf(t)?.[s.key] : t.scheme?.[s.when]?.[s.side]?.[s.key]) ?? null;
+// Whether the coverage numbers belong to the coach calling the defense now.
+const coverageIsHis = (t) => Boolean(t.scheme?.coaches?.sameDc || t.scheme?.coverage);
 function schemeFmt(v, fmt) {
   if (v == null) return '–';
   if (fmt === 'pct') return `${v.toFixed(1)}%`;
@@ -2607,12 +2612,16 @@ function schemeBody(x, teams, seasons) {
   if (!x.scheme) return '<p class="small muted">No scheme data for this team.</p>';
   const c = x.scheme.coaches;
   const pers = x.scheme.last?.off?.personnel;
-  const dcNote = c.sameDc === false
-    ? `<p class="small warn-text">New play-caller: ${esc(c.dc?.name ?? '')} replaced ${esc(c.dcLast)}, so last season's coverage numbers are ${esc(c.dcLast)}'s, not his.</p>`
+  const prev = c.dcPrevTeam && teams.find((t) => t.name === c.dcPrevTeam);
+  const prevShort = prev?.short ?? c.dcPrevTeam;
+  const dcNote = c.sameDc === false && x.scheme.coverage
+    ? `<p class="small warn-text">New play-caller: ${esc(c.dc?.name ?? '')} replaced ${esc(c.dcLast)}. These are ${esc(c.dc?.name ?? '')}'s numbers from the ${prev ? teamLogo(prev.name, 'small') : ''}${esc(prevShort)} defense he called in ${seasons.last}.</p>`
+    : c.sameDc === false
+    ? `<p class="small warn-text">New play-caller: ${esc(c.dc?.name ?? '')} replaced ${esc(c.dcLast)}, so last season's coverage numbers are ${esc(c.dcLast)}'s, not his (he wasn't a defensive coordinator in ${seasons.last}).</p>`
     : c.sameDc ? `<p class="small muted">Same defensive coordinator as last season (${esc(c.dcLast)}).</p>` : '';
   return `${coachesHtml(x)}
     <h4>Defense, ${seasons.now}</h4>${schemeTable(x, teams, 'def', 'now')}
-    <h4>Coverage, ${seasons.last}</h4>${dcNote}${shellBar(x.scheme.last?.def?.shells)}${schemeTable(x, teams, 'def', 'last')}
+    <h4>Coverage, ${seasons.last}${x.scheme.coverage ? ` <span class="muted small">(${esc(c.dc?.name ?? '')} with the ${esc(prevShort)})</span>` : ''}</h4>${dcNote}${shellBar(coverageOf(x)?.shells)}${schemeTable(x, teams, 'def', 'last')}
     <h4>Offense, ${seasons.now}</h4>${schemeTable(x, teams, 'off', 'now')}
     <h4>Offense vs coverage, ${seasons.last}</h4>
     ${pers ? `<p class="small">Personnel: ${pers.map((p) => `<b>${esc(p.group)}</b> ${p.pct}%`).join(' · ')} <span class="muted">(11 = 1 RB, 1 TE, 3 WR)</span></p>` : ''}
@@ -2650,10 +2659,11 @@ function schemeMatchup(off, def, teams, seasons) {
   }
   if (bottom(blitz) && bottom(get(off, 'off', 'now', 'epaVsNoBlitz'))) notes.push(`${esc(def.short)} rarely blitz, and ${esc(off.short)} struggle when they don't.`);
   const man = get(def, 'def', 'last', 'man'), vsMan = get(off, 'off', 'last', 'vsMan'), vsZone = get(off, 'off', 'last', 'vsZone');
-  const sameDc = def.scheme?.coaches?.sameDc;
+  const sameDc = coverageIsHis(def);
   if (sameDc && top(man) && bottom(vsMan)) notes.push(`${esc(def.short)} play a lot of man, and ${esc(off.short)} struggled against man last season.`);
   if (sameDc && bottom(man) && bottom(vsZone)) notes.push(`${esc(def.short)} live in zone, and ${esc(off.short)} struggled against zone last season.`);
-  if (sameDc === false) notes.push(`${esc(def.short)} changed defensive coordinators, so the man/zone rows are last year's coach.`);
+  if (!sameDc && def.scheme?.coaches?.sameDc === false) notes.push(`${esc(def.short)} changed defensive coordinators, so the man/zone rows are last year's coach.`);
+  else if (def.scheme?.coverage) notes.push(`${esc(def.short)}' man/zone rows are their new DC's ${seasons.last} numbers from his old team.`);
   const runD = get(def, 'def', 'now', 'epaRun'), run = get(off, 'off', 'now', 'epaRun');
   if (top(run) && bottom(runD)) notes.push(`${esc(off.short)}' run game is a top-8 unit against a bottom-8 run defense.`);
   if (bottom(run) && top(runD)) notes.push(`${esc(off.short)}' weak run game faces a top-8 run defense.`);
@@ -2687,7 +2697,8 @@ function schemeLeagueHtml(teams, seasons) {
     <table class="slip league"><thead><tr><th></th><th>Team</th><th>${s.side === 'def' ? 'DC' : 'OC'}</th><th class="num">${esc(s.label)}</th></tr></thead>
       <tbody>${sorted.map((t, i) => `<tr class="team-row" data-team="${esc(t.name)}"><td class="rank">${i + 1}</td>
         <td>${teamLogo(t.name, 'small')}<b>${esc(t.short ?? t.name)}</b></td>
-        <td class="small">${esc(coach(t)?.name ?? '–')}${s.when === 'last' && s.side === 'def' && t.scheme?.coaches?.sameDc === false ? ' <span class="warn-text" title="New DC since last season">new</span>' : ''}</td>
+        <td class="small">${esc(coach(t)?.name ?? '–')}${s.when === 'last' && s.side === 'def' && t.scheme?.coverage ? ` <span class="muted" title="His ${seasons.last} numbers with the ${esc(t.scheme.coaches.dcPrevTeam)}">(${esc(teams.find((x) => x.name === t.scheme.coaches.dcPrevTeam)?.abbr ?? '')} '${String(seasons.last).slice(2)})</span>`
+          : s.when === 'last' && s.side === 'def' && t.scheme?.coaches?.sameDc === false ? ' <span class="warn-text" title="New DC since last season: these are his predecessor’s numbers">new</span>' : ''}</td>
         <td class="num">${schemeFmt(schemeVal(t, s), s.fmt)}</td></tr>`).join('')}</tbody></table>
     <p class="small muted">${schemeSourceNote(seasons)}</p></div>`;
 }

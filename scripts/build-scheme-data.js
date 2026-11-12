@@ -154,8 +154,13 @@ const teams = Object.fromEntries(Object.keys(TEAMS).map((code) => {
   const dcNow = staff[code]?.dc;
   // Last season's coverage is a guide to this year's only if the same coach calls it.
   const sameDc = dcLast && dcNow ? dcNow.name === dcLast : null;
+  // A new DC who called another team's defense last season: his coverage
+  // numbers from there say more about this year than his predecessor's do.
+  const prevTeam = sameDc === false
+    ? Object.keys(TEAMS).find((c) => c !== code && staffLast[c]?.dc?.name === dcNow.name) ?? null : null;
   return [code, {
-    coaches: { ...staff[code], dcLast, ocLast: staffLast[code]?.oc?.name ?? null, sameDc },
+    coaches: { ...staff[code], dcLast, ocLast: staffLast[code]?.oc?.name ?? null, sameDc, dcPrevTeam: prevTeam ? TEAMS[prevTeam] : null },
+    coverage: prevTeam ? last.teams[prevTeam]?.def ?? null : null,
     now: now_.teams[code] ?? null,
     last: last.teams[code] ?? null,
   }];
