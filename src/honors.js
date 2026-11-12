@@ -93,8 +93,24 @@ const FILES = {
   injuries: (season) => `${NFLVERSE}/injuries/injuries_${season}.csv`,
   weekly: (season) => `${NFLVERSE}/stats_player/stats_player_week_${season}.csv`,
   qbr: () => `${NFLVERSE}/espn_data/qbr_week_level.csv`, // every season since 2006
+  // PFR's charting: coverage targets, blitzes and pressures, for LB roles.
+  defAdv: (season) => `${NFLVERSE}/pfr_advstats/advstats_week_def_${season}.csv`,
+  defAdvLast: (season) => `${NFLVERSE}/pfr_advstats/advstats_week_def_${season - 1}.csv`,
 };
-const PARSE = { stats: parseStats, injuries: parseInjuries, weekly: parseWeekly, qbr: parseQbr };
+const PARSE = { stats: parseStats, injuries: parseInjuries, weekly: parseWeekly, qbr: parseQbr, defAdv: parseDefAdv, defAdvLast: parseDefAdv };
+// PFR id -> { tgt, bltz, prss } summed over the regular season.
+function parseDefAdv(text) {
+  const out = new Map();
+  for (const r of parseCsv(text)) {
+    if (r.game_type !== 'REG' || !r.pfr_player_id) continue;
+    const a = out.get(r.pfr_player_id) ?? { tgt: 0, bltz: 0, prss: 0 };
+    a.tgt += Number(r.def_targets) || 0;
+    a.bltz += Number(r.def_times_blitzed) || 0;
+    a.prss += Number(r.def_pressures) || 0;
+    out.set(r.pfr_player_id, a);
+  }
+  return out;
+}
 // Each regular-season game's stat line, for the hot and cold streaks.
 function parseWeekly(text) {
   const n = (r, k) => Number(r[k]) || 0;

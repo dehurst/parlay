@@ -12,7 +12,8 @@
     "start": "node server.js",
     "dev": "node --watch server.js",
     "test": "node --test",
-    "upload-data": "node scripts/upload-data.js"
+    "upload-data": "node scripts/upload-data.js",
+    "build-lb-data": "node scripts/build-lb-data.js"
   },
   "dependencies": {
     "express": "^5.2.1",

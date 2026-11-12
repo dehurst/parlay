@@ -1805,6 +1805,7 @@ function heatDetails(s) {
     text,
     recent,
     s.extra && `${s.extra.nth} by snaps this season: ${s.extra.season}%`,
+    s.lbRole?.why && `${s.lbRole.label}: ${s.lbRole.why.replace(/^Per/, 'per')}`,
     s.status && `Injury status: ${s.status}`,
     ...s.skipped.map((p) => `${p.name} is ${p.status}`),
   ].filter(Boolean);
@@ -1835,7 +1836,12 @@ function popTop(s) {
       ${s.college ? `<span class="pop-college" title="${esc(s.college.name)}"><img src="${esc(s.college.logo)}" alt="" loading="lazy">${esc(s.college.abbrev)}</span>` : ''}
       ${s.status === 'Questionable' ? '<span class="heat-tag">Q</span>' : ''}
     </div>
-    <div class="pop-level">${HEAT_LEVELS[level]}${esc(note)}${s.rookie ? ' <span class="rookie in-key" title="Rookie">R</span>' : ''}${tag ? ` <span class="heat-how how-${s.history.tag}">${tag}</span>` : ''}</div>`;
+    <div class="pop-level">${HEAT_LEVELS[level]}${esc(note)}${s.rookie ? ' <span class="rookie in-key" title="Rookie">R</span>' : ''}${tag ? ` <span class="heat-how how-${s.history.tag}">${tag}</span>` : ''}${lbRoleChip(s.lbRole)}</div>`;
+}
+
+// What kind of linebacker: rush, thumper, coverage or plain off-ball.
+function lbRoleChip(r) {
+  return r ? ` <span class="lb-role lb-${esc(r.kind)}" title="${esc(r.why)}">${esc(r.label)}</span>` : '';
 }
 
 // The back of the card: yards by game, injuries that cost games this
@@ -2018,8 +2024,9 @@ function formBadge(f) {
 // line of scrimmage and the offense below it, seen from behind the offense
 // (so the defense's right end is on the left). The offense is an 11-personnel
 // look from the depth chart: OL with the TE on the right end, WR1 and WR2
-// split wide, WR3 in the left slot, QB under center, RB behind him; WR4, RB2
-// and TE2 sit on the bench strip. On phones one side shows at a time.
+// split wide, WR3 in the left slot, QB under center, RB behind him. Backups
+// (TE2, WR4, RB2, CB4) sit tucked behind the starter they back up, just
+// peeking out below. On phones one side shows at a time.
 const FIELD_OFFENSE = ['wr1', 'wr3', 'lt', 'lg', 'c', 'rg', 'rt', 'te', 'wr2', 'qb', 'rb'];
 const FIELD_ROWS = {
   // Defense rows, deepest first; each lists slots left to right as seen from
@@ -2031,15 +2038,26 @@ const FIELD_ROWS = {
 };
 const fieldRowOf = (slot) => Object.keys(FIELD_ROWS).find((r) => FIELD_ROWS[r].includes(slot))
   ?? (/(de|dt|nt)$/.test(slot) ? 'front' : /lb$/.test(slot) ? 'backers' : 'corners');
-const fieldTile = (s) => heatSquare(s).replace('<div class="heat-sq', `<div style="grid-area:${s.slot}" class="field-${s.slot} heat-sq`);
+// Which starter each backup tucks in behind.
+const FIELD_UNDER = { te2: 'te', wr4: 'wr3', rb2: 'rb', cb4: 'nb' };
+const tileClass = (html, cls) => html.replace('<div class="heat-sq', `<div class="${cls} heat-sq`);
 function heatField({ off, def, offTeam, defTeam, offShort, defShort, lineStreak, form, sideTeam }) {
   const offense = Object.values(off).flat();
-  const onField = offense.filter((s) => FIELD_OFFENSE.includes(s.slot));
-  const bench = offense.filter((s) => !FIELD_OFFENSE.includes(s.slot));
   const defense = Object.values(def).flat();
+  const all = [...offense, ...defense];
+  // Backups whose starter is on the field; any others go to the bench strip.
+  const under = new Map(all.filter((s) => all.some((t) => t.slot === FIELD_UNDER[s.slot])).map((s) => [FIELD_UNDER[s.slot], s]));
+  const tucked = new Set(under.values());
+  const fieldTile = (s) => {
+    const back = under.get(s.slot);
+    if (!back) return tileClass(heatSquare(s), `field-${s.slot}`).replace('<div class="', `<div style="grid-area:${s.slot}" class="`);
+    return `<div class="field-stack" style="grid-area:${s.slot}">${tileClass(heatSquare(s), `field-${s.slot} field-top`)}${tileClass(heatSquare(back), `field-${back.slot} field-under`)}</div>`;
+  };
+  const onField = offense.filter((s) => FIELD_OFFENSE.includes(s.slot));
+  const bench = offense.filter((s) => !FIELD_OFFENSE.includes(s.slot) && !tucked.has(s));
   const defRow = (r) => {
     const at = (s) => (FIELD_ROWS[r].includes(s.slot) ? FIELD_ROWS[r].indexOf(s.slot) : 99);
-    const mine = defense.filter((s) => fieldRowOf(s.slot) === r).sort((a, b) => at(a) - at(b));
+    const mine = defense.filter((s) => !tucked.has(s) && fieldRowOf(s.slot) === r).sort((a, b) => at(a) - at(b));
     // The corners and nickel share the offense's columns, so each covers his
     // receiver: RCB over WR1, the nickel over WR3 (the slot), LCB over WR2.
     const tile = (s) => (r === 'corners' && ['rcb', 'nb', 'lcb'].includes(s.slot) ? fieldTile(s) : heatSquare(s));

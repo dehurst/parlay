@@ -749,7 +749,15 @@ h3.section.first { margin-top: 4px; }
     ". wr3 . . . qb . . . . ."
     ". . . . . rb . . . . .";
 }
-.field-formation .heat-sq.field-wr3 { margin-top: -10px; }
+.field-formation > .field-wr3, .field-formation > .field-stack:has(> .field-wr3) { margin-top: -10px; }
+/* A backup tucked behind his starter, only its bottom edge peeking out. */
+.field-stack { position: relative; display: grid; padding-bottom: 8px; min-width: 0; }
+.field-stack .field-top { position: relative; z-index: 2; }
+.field-stack .field-under {
+  position: absolute; inset: 8px 0 0; z-index: 1; /* same size, just below */
+  filter: brightness(.8); transition: transform .15s ease, filter .15s ease;
+}
+.field-stack .field-under:hover, .field-stack .field-under:focus-visible { filter: none; transform: translateY(4px); }
 .field-bench { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin-top: 4px; }
 .field-bench-label { font-size: 12px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
 .field-switch { display: none; }
@@ -766,7 +774,9 @@ h3.section.first { margin-top: 4px; }
       ". . qb . . ."
       ". . rb . . .";
   }
-  .field-formation .heat-sq.field-wr3 { margin-top: 0; }
+  .field-formation > .field-wr3, .field-formation > .field-stack:has(> .field-wr3) { margin-top: 0; }
+  .field-stack { padding-bottom: 6px; }
+  .field-stack .field-under { inset: 6px 0 0; }
   .field-corners { gap: 3px; grid-template-columns: repeat(6, minmax(0, 1fr)); grid-template-areas: "rcb nb . . . lcb"; }
   .field-safeties { gap: 40px; }
   .field-row { gap: 4px; }
@@ -882,6 +892,12 @@ h3.section.first { margin-top: 4px; }
 .heat-2 { background: rgba(232, 196, 40, .26); border-color: #e8c428; color: #fff6cc; }
 .heat-3 { background: rgba(229, 72, 77, .28); border-color: #e5484d; color: #ffe0e1; }
 .heat-0 { background: transparent; border: 1px dashed var(--muted); color: var(--muted); }
+/* Stacked tiles on the field get the same tint over solid turf, so the
+   starter on top hides the backup behind it. */
+.field-stack .heat-1 { background: linear-gradient(rgba(47, 191, 113, .28), rgba(47, 191, 113, .28)), #13291b; }
+.field-stack .heat-2 { background: linear-gradient(rgba(232, 196, 40, .26), rgba(232, 196, 40, .26)), #13291b; }
+.field-stack .heat-3 { background: linear-gradient(rgba(229, 72, 77, .28), rgba(229, 72, 77, .28)), #13291b; }
+.field-stack .heat-0 { background: #13291b; }
 .heat-tag {
   display: inline-block; min-width: 15px; height: 15px; padding: 0 3px; border-radius: 8px; font-size: 10px; font-weight: 800; line-height: 15px;
   background: var(--warn); color: #1a1300; text-align: center;
@@ -934,6 +950,19 @@ h3.section.first { margin-top: 4px; }
 .heat-key .heat-how { margin-top: 0; }
 .how-back { color: #9be9a8; }
 .how-part { color: #f0b46a; }
+
+/* What kind of linebacker, on the heat map card. Outlined so it doesn't read
+   as another "how he got the job" tag. */
+.lb-role {
+  display: inline-block; margin-left: 4px; padding: 0 6px; border-radius: 4px; border: 1px solid currentColor;
+  font-size: 9px; font-weight: 800; line-height: 14px; text-transform: uppercase; letter-spacing: .03em; vertical-align: 1px; cursor: help;
+}
+.lb-rush { color: #ff9b85; }
+.lb-thumper { color: #f0c46a; }
+.lb-blitzer { color: #ff7ac8; }
+.lb-allround { color: #7ee081; }
+.lb-coverage { color: #8cc8ff; }
+.lb-offball { color: #c9d1d9; }
 /* Snaps each week: one bar per game, full height = every snap. */
 .heat-weeks { display: inline-flex; align-items: flex-end; gap: 1px; height: 12px; margin-top: 4px; }
 .heat-weeks i { display: block; width: 4px; background: currentColor; opacity: .75; border-radius: 1px 1px 0 0; }

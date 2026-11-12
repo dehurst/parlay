@@ -9,6 +9,8 @@ import { fetchTeamDepthChart, fetchTeamRoster } from './injuries.js';
 import { seasonSnaps, teamCode, starterHistory, nextUp, positionGroup, usualShare, gamesPlayed, lastSeason, outsnapped, findPlayer, fullKey, shortKey } from './starters.js';
 import { seasonFile, injuryHistory, statRanks, honorsFor } from './honors.js';
 import { streakBook, streakFor } from './streaks.js';
+import { lbRole } from './lbroles.js';
+import { lbData } from './lb-data.js';
 
 // The weekly rankings behind the streaks, built once per download of the data.
 const books = new WeakMap();
@@ -25,7 +27,7 @@ const SIDELINED = ['Out', 'Doubtful', 'Injured Reserve', 'Suspension'];
 // ESPN's slot ids vary with the formation (4-3 vs 3-4), so unknown ones go last.
 export const UNITS = [
   { id: 'line', offense: 'Offensive line', defense: 'Defensive line', o: ['lt', 'lg', 'c', 'rg', 'rt'], d: ['rde', 'rdt', 'nt', 'ldt', 'lde', 'de', 'dt'] },
-  { id: 'pass', offense: 'Receivers', defense: 'Secondary', o: ['wr1', 'wr2', 'wr3', 'wr4', 'te', 'te2'], d: ['lcb', 'rcb', 'nb', 'ss', 'fs', 'cb', 's'] },
+  { id: 'pass', offense: 'Receivers', defense: 'Secondary', o: ['wr1', 'wr2', 'wr3', 'wr4', 'te', 'te2'], d: ['lcb', 'rcb', 'nb', 'ss', 'fs', 'cb', 's', 'cb4'] },
   { id: 'back', offense: 'Backfield', defense: 'Linebackers', o: ['qb', 'rb', 'rb2'], d: ['wlb', 'lilb', 'mlb', 'rilb', 'slb', 'olb', 'ilb', 'lb'] },
 ];
 const DEFENSE = /(de|dt|nt|lb|cb|nb|ss|fs|^s)$/;
@@ -46,12 +48,69 @@ export function fillSlot(slot) {
   return { pos: slot.position?.abbreviation ?? '', name: null, rank: null, status: null, skipped, depth: athletes.length };
 }
 
-// A team's depth chart -> { offense: { line: [...], ... }, defense: { ... } }.
-export function teamSides(depthChart) {
+// The job a depth-chart slot is, for deciding who fills in for whom. Players
+// at different jobs don't replace each other just because they share a
+// roster position: an edge rusher listed at LB isn't an inside linebacker,
+// a safety isn't a corner, the WR3 isn't the WR1. Only mirror-image spots
+// share a job (both outside corners, both inside LBs, both edges). ESPN's
+// 3-4 lists its edge rushers as WLB/SLB and its 5-techs as LDE/RDE; its 4-3
+// has true ends at LDE/RDE and three off-ball LBs (WLB, MLB, SLB).
+export function slotRole(id, threeFour) {
+  if (/^[lr]cb$|^cb$/.test(id)) return 'cb';
+  if (/^[lr]dt$/.test(id)) return 'dt';
+  if (/^[lr]ilb$|^ilb$/.test(id)) return 'ilb';
+  if (/^[lr]de$|^de$/.test(id)) return threeFour ? 'de34' : 'edge';
+  if (threeFour && /^(wlb|slb|olb|lolb|rolb)$/.test(id)) return 'edge';
+  return id;
+}
+
+// A 3-4 front: ESPN's chart has two inside linebackers.
+const isThreeFour = (positions) => Object.keys(positions ?? {}).some((k) => /^[lr]?ilb$/.test(k));
+
+// The chart's offense and defense groups (special teams left out).
+function chartGroups(depthChart) {
   const groups = depthChart?.depthchart ?? [];
   const offense = groups.find((g) => g.positions?.qb);
   const defense = groups.find((g) => g !== offense && Object.keys(g.positions ?? {}).some((k) => DEFENSE.test(k)));
+  return { offense, defense };
+}
+
+// Athlete id -> the job ESPN lists him at (his highest listing if more than
+// one), injured players included, so a hurt player is only weighed against
+// the starters at his own spot.
+export function chartRoles(depthChart, keyOf = (a) => a.id) {
+  const roles = new Map();
+  for (const group of Object.values(chartGroups(depthChart))) {
+    const threeFour = isThreeFour(group?.positions);
+    const best = new Map();
+    for (const [id, slot] of Object.entries(group?.positions ?? {})) {
+      (slot.athletes ?? []).forEach((a, i) => {
+        const k = keyOf(a);
+        if (k && (!best.has(k) || i < best.get(k).i)) best.set(k, { i, role: slotRole(id, threeFour) });
+      });
+    }
+    for (const [aid, { role }] of best) if (!roles.has(aid)) roles.set(aid, role);
+  }
+  return roles;
+}
+
+// A hurt player ESPN left off the chart: his job from his roster position,
+// only where that position means one job in this front. Linebackers and
+// receivers don't (edge or inside, WR1 or the slot), so they're left out
+// rather than guessed.
+export function positionRole(pos, depthChart) {
+  const threeFour = isThreeFour(chartGroups(depthChart).defense?.positions);
+  return {
+    CB: 'cb', DE: threeFour ? 'de34' : 'edge', DT: threeFour ? null : 'dt', NT: 'nt',
+    C: 'c', QB: 'qb', RB: 'rb', HB: 'rb', TE: 'te',
+  }[pos] ?? null;
+}
+
+// A team's depth chart -> { offense: { line: [...], ... }, defense: { ... } }.
+export function teamSides(depthChart) {
+  const { offense, defense } = chartGroups(depthChart);
   const side = (group, key) => {
+    const threeFour = isThreeFour(group?.positions);
     // No fullbacks: the RB2 square (from snap counts) takes that spot.
     const slots = Object.entries(group?.positions ?? {}).filter(([id]) => id !== 'fb');
     const out = {};
@@ -62,7 +121,7 @@ export function teamSides(depthChart) {
       mine.sort(([a], [b]) => rankOf(order, a) - rankOf(order, b));
       out[unit.id] = mine.filter(([id]) => !used.has(id)).map(([id, slot]) => {
         used.add(id);
-        return { slot: id, ...fillSlot(slot) };
+        return { slot: id, role: slotRole(id, threeFour), ...fillSlot(slot) };
       });
     }
     return out;
@@ -78,10 +137,14 @@ const EXTRAS = [
   { slot: 'wr4', unit: 'pass', pos: 'WR', from: ['WR'], chart: ['wr1', 'wr2', 'wr3'], nth: '4th WR' },
   { slot: 'te2', unit: 'pass', pos: 'TE2', from: ['TE'], chart: ['te'], nth: '2nd TE' },
 ];
+// The defense's one: a 4th corner after the two outside corners and the nickel.
+const DEF_EXTRAS = [
+  { slot: 'cb4', unit: 'pass', pos: 'CB4', from: ['CB'], chart: ['lcb', 'rcb', 'nb', 'cb'], nth: '4th CB', order: 'd' },
+];
 
-export function addExtras(offense, teams, code, opts) {
+export function addExtras(offense, teams, code, opts, extras = EXTRAS) {
   const all = () => Object.values(offense).flat();
-  for (const x of EXTRAS) {
+  for (const x of extras) {
     if (!offense[x.unit]) continue;
     const exclude = all().flatMap((s) => [s.name, ...s.skipped.map((p) => p.name)]).filter(Boolean);
     const pick = nextUp(teams, code, x.from, { ...opts, exclude });
@@ -95,7 +158,7 @@ export function addExtras(offense, teams, code, opts) {
       slot: x.slot, pos: x.pos, name: pick.name, rank: short ? 2 : 1, status: pick.status,
       skipped: pick.skipped, extra: { nth: x.nth, season: pick.season }, history: { timeline: pick.timeline, recent: pick.recent },
     });
-    const order = UNITS.find((u) => u.id === x.unit).o;
+    const order = UNITS.find((u) => u.id === x.unit)[x.order ?? 'o'];
     offense[x.unit].sort((a, b) => rankOf(order, a.slot) - rankOf(order, b.slot));
   }
 }
@@ -137,12 +200,13 @@ export function markFillIns(side, sidelined, { share, starterShare = share, ahea
   const slots = Object.values(side).flat().filter((s) => s.name && !s.extra);
   const names = new Set(slots.map((s) => s.name));
   const groups = new Map();
+  // Grouped by job (`role`, see slotRole) when known, else by position group.
   for (const s of slots) {
-    const g = slotGroup(s.slot);
+    const g = 'role' in s ? s.role : slotGroup(s.slot);
     if (g) groups.set(g, [...(groups.get(g) ?? []), s]);
   }
   for (const [group, mine] of groups) {
-    const out = sidelined.filter((p) => p.group === group && !names.has(p.name))
+    const out = sidelined.filter((p) => ('role' in p ? p.role : p.group) === group && !names.has(p.name))
       .map((p) => ({ ...p, score: share(p.name) ?? 0 })).filter((p) => p.score >= STARTER_SHARE);
     const starters = mine.map((slot) => ({ slot, name: slot.name, score: (starterShare(slot.name) ?? 0) + EDGE }));
     for (const x of out) {
@@ -301,11 +365,13 @@ export async function teamHeatmap(name, now = Date.now()) {
   if (cached && now - cached.at < CHART_TTL) return cached.sides;
   // The roster (for injuries, IR included) and snap counts only add the
   // "how they got the job" tags, so the heat map still works without them.
-  const [chart, roster, snaps, lastSnaps, stats, injuryReports, weekly, qbr] = await Promise.allSettled([fetchTeamDepthChart(id), fetchTeamRoster(id),
+  const [chart, roster, snaps, lastSnaps, stats, injuryReports, weekly, qbr, defAdv, defAdvLast] = await Promise.allSettled([fetchTeamDepthChart(id), fetchTeamRoster(id),
     seasonSnaps(new Date(now)), seasonSnaps(new Date(now), 1), seasonFile('stats', new Date(now)), seasonFile('injuries', new Date(now)),
-    seasonFile('weekly', new Date(now)), seasonFile('qbr', new Date(now))]);
+    seasonFile('weekly', new Date(now)), seasonFile('qbr', new Date(now)), seasonFile('defAdv', new Date(now)), seasonFile('defAdvLast', new Date(now))]);
   if (chart.status === 'rejected') throw chart.reason;
   const sides = teamSides(chart.value);
+  const roles = chartRoles(chart.value);
+  const rolesByName = chartRoles(chart.value, (a) => fullKey(a.displayName));
   const teams = snaps.status === 'fulfilled' ? snaps.value : null;
   if (snaps.status === 'rejected') console.error(`Snap counts failed: ${snaps.reason?.message ?? snaps.reason}`);
   const athletes = roster.status === 'fulfilled' ? (roster.value.athletes ?? []).flatMap((g) => g.items ?? [g]) : null;
@@ -331,17 +397,27 @@ export async function teamHeatmap(name, now = Date.now()) {
     for (const slot of slots) tagPlayer(slot);
     const starters = slots.map((s) => s.name).filter(Boolean);
     const opts = { injuries, roster: names, starters, proven };
+    // Only someone ESPN lists at this slot's job (or nowhere) can be the
+    // player he replaced.
+    const sameJob = (slot) => (n) => {
+      const role = rolesByName.get(fullKey(n));
+      return role == null || role === slot.role;
+    };
     // Each job lost goes to one replacement: whoever took over first.
-    const first = new Map(slots.map((s) => [s, starterHistory(teams, teamCode(name), s, opts)?.since ?? Infinity]));
+    const first = new Map(slots.map((s) => [s, starterHistory(teams, teamCode(name), s, { ...opts, sameJob: sameJob(s) })?.since ?? Infinity]));
     const taken = new Set();
     for (const slot of [...slots].sort((a, b) => first.get(a) - first.get(b))) {
-      slot.history = starterHistory(teams, teamCode(name), slot, { ...opts, taken });
+      slot.history = starterHistory(teams, teamCode(name), slot, { ...opts, taken, sameJob: sameJob(slot) });
     }
     if (teams && athletes) {
       // Someone out since before Week 1 is missed only if he was a clear
       // starter last season; otherwise the team has built around his absence.
       const sidelined = athletes.filter((a) => SIDELINED.includes(a.injuries?.[0]?.status) && (gamesPlayed(teams, code, a.displayName) > 0 || proven(a.displayName)))
-        .map((a) => ({ name: a.displayName, status: a.injuries[0].status, group: positionGroup(a.position?.abbreviation) }));
+        .map((a) => ({
+          name: a.displayName, status: a.injuries[0].status, group: positionGroup(a.position?.abbreviation),
+          // His spot on ESPN's chart, so he's only weighed against starters there.
+          role: roles.get(a.id) ?? positionRole(a.position?.abbreviation, chart.value),
+        }));
       const share = (n) => usualShare(teams, last(n), code, n);
       // A clear starter for this team last season who's starting now keeps
       // that standing, however few or light his games this season (hurt,
@@ -370,7 +446,8 @@ export async function teamHeatmap(name, now = Date.now()) {
   }
   if (teams) {
     addExtras(sides.offense, teams, teamCode(name), { injuries, roster: names });
-    for (const slot of Object.values(sides.offense).flat()) tagPlayer(slot);
+    addExtras(sides.defense, teams, teamCode(name), { injuries, roster: names }, DEF_EXTRAS);
+    for (const slot of [...Object.values(sides.offense).flat(), ...sides.defense.pass ?? []]) if (slot.extra) tagPlayer(slot);
   }
   // The back of each card: birthday (for his age), injuries that cost games
   // this season, honors, and stat leaders. Each part is extra: a source
@@ -384,6 +461,22 @@ export async function teamHeatmap(name, now = Date.now()) {
   // (offense) or 3 (defense).
   if (weekly.status === 'rejected') console.error(`Weekly stats failed: ${weekly.reason?.message ?? weekly.reason}`);
   if (qbr.status === 'rejected') console.error(`QBR failed: ${qbr.reason?.message ?? qbr.reason}`);
+  if (defAdv.status === 'rejected') console.error(`PFR defense stats failed: ${defAdv.reason?.message ?? defAdv.reason}`);
+  const ok = (r) => (r.status === 'fulfilled' ? r.value : null);
+  const lbSeasons = [{ teams, adv: ok(defAdv) }, { teams: ok(lastSnaps), adv: ok(defAdvLast) }];
+  // His PFR id from the snap counts: this team first, then anywhere (traded).
+  // Elsewhere only on an exact name, so a shared initial and last name
+  // ("J. Smith") can't borrow someone else's numbers.
+  const pfrIdOf = (n) => {
+    const here = teams?.[code] && findPlayer(teams[code], n);
+    if (here?.pfrId) return here.pfrId;
+    const key = fullKey(n);
+    for (const t of [...Object.values(teams ?? {}), ...Object.values(ok(lastSnaps) ?? {})]) {
+      const p = t.players.find((x) => x.pfrId && [...x.names].some((m) => fullKey(m) === key));
+      if (p) return p.pfrId;
+    }
+    return null;
+  };
   const book = teams && weekly.status === 'fulfilled' ? bookFor(teams, weekly.value, qbr.status === 'fulfilled' ? qbr.value : []) : null;
   for (const [sideName, side] of Object.entries(sides)) {
     const s = sideName === 'offense' ? 'O' : 'D';
@@ -397,7 +490,7 @@ export async function teamHeatmap(name, now = Date.now()) {
       }) : null;
       // RB2 and TE2 are backups by design, with smaller roles, so they can
       // be on fire but aren't called ice cold.
-      if (['rb2', 'te2'].includes(slot.slot) && slot.streak?.kind === 'cold') slot.streak = null;
+      if (['rb2', 'te2', 'cb4'].includes(slot.slot) && slot.streak?.kind === 'cold') slot.streak = null;
       const teamsHere = [code, slot.history?.from].filter(Boolean);
       const mine = reports?.get(fullKey(slot.name))?.filter((r) => teamsHere.includes(r.team)) ?? [];
       slot.card = {
@@ -408,6 +501,11 @@ export async function teamHeatmap(name, now = Date.now()) {
         ranks: statRows ? statRanks(statRows, slot.name, s) : [],
         ...honorsFor(slot.name, s, a?.id),
       };
+      // Linebackers: rush, thumper or coverage, from how he's been used.
+      if (slotGroup(slot.slot) === 'LB') {
+        const pfrId = pfrIdOf(slot.name);
+        slot.lbRole = lbRole(pfrId, slot.role, lbSeasons, pfrId ? lbData[pfrId] ?? null : null);
+      }
     }
   }
   // The offensive line's streak, as a unit (its sack rate allowed). Set

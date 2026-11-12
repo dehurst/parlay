@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { fillSlot, teamSides, markFillIns, collegeOf } from '../src/heatmap.js';
+import { fillSlot, teamSides, markFillIns, collegeOf, slotRole, chartRoles, positionRole } from '../src/heatmap.js';
 
 const athlete = (name, status) => ({ displayName: name, injuries: status ? [{ status }] : [] });
 const slot = (abbr, ...athletes) => ({ position: { abbreviation: abbr }, athletes });
@@ -113,4 +113,52 @@ test('a clear starter last season is scored on that, not a few limited games thi
   markFillIns(side, sidelined, { share: (n) => share[n] ?? null, starterShare: (n) => (n === 'Proven Wideout' ? 0.78 : share[n]) });
   assert.equal(side.pass[0].history.tag, 'week1');
   assert.equal(side.pass[1].history.tag, 'week1');
+});
+
+test('jobs: edges, inside LBs, corners and safeties are different spots', () => {
+  // ESPN's 3-4 lists edge rushers at WLB/SLB and 5-techs at LDE/RDE.
+  assert.equal(slotRole('wlb', true), 'edge');
+  assert.equal(slotRole('slb', true), 'edge');
+  assert.equal(slotRole('rilb', true), 'ilb');
+  assert.equal(slotRole('lde', true), 'de34');
+  // In a 4-3 the ends rush and the three linebackers each have their own job.
+  assert.equal(slotRole('lde', false), 'edge');
+  assert.equal(slotRole('wlb', false), 'wlb');
+  assert.equal(slotRole('mlb', false), 'mlb');
+  assert.equal(slotRole('lcb', false), slotRole('rcb', false));
+  assert.notEqual(slotRole('nb', false), slotRole('lcb', false));
+  assert.notEqual(slotRole('ss', false), slotRole('fs', false));
+  assert.notEqual(slotRole('wr1', false), slotRole('wr3', false));
+});
+
+test('a hurt edge rusher doesn\'t make an inside linebacker a fill-in', () => {
+  const a = (id, displayName) => ({ id, displayName });
+  const chart = { depthchart: [{ name: 'Base 3-4 D', positions: {
+    wlb: slot('WLB', a('1', 'Edge Starter'), a('2', 'Star Edge')),
+    lilb: slot('LILB', a('3', 'Top Inside')),
+    rilb: slot('RILB', a('4', 'Young Inside'), a('5', 'Vet Inside')),
+    slb: slot('SLB', a('6', 'Other Edge')),
+  } }] };
+  const roles = chartRoles(chart);
+  assert.equal(roles.get('2'), 'edge');
+  assert.equal(roles.get('5'), 'ilb');
+  // Left off the chart: a linebacker could be either job, so he's not counted.
+  assert.equal(positionRole('LB', chart), null);
+  assert.equal(positionRole('CB', chart), 'cb');
+
+  const sq = (slotId, name) => ({ slot: slotId, role: slotRole(slotId, true), name, rank: 1, skipped: [], history: { tag: 'week1' } });
+  const side = { back: [sq('wlb', 'Edge Starter'), sq('lilb', 'Top Inside'), sq('rilb', 'Young Inside'), sq('slb', 'Other Edge')] };
+  const share = { 'Edge Starter': 0.8, 'Top Inside': 0.95, 'Young Inside': 0.67, 'Other Edge': 0.75, 'Star Edge': 0.85, 'Vet Inside': 0.9 };
+  const sidelined = [['Star Edge', '2'], ['Vet Inside', '5']].map(([name, id]) => ({ name, status: 'Injured Reserve', group: 'LB', role: roles.get(id) }));
+  markFillIns(side, sidelined, { share: (n) => share[n] ?? null });
+  const [edge, top, young, other] = side.back;
+  // Only the inside backer is ahead of the young one: one spot, not "3rd string".
+  assert.equal(young.history.tag, 'fillin');
+  assert.equal(young.history.deep, 1);
+  assert.deepEqual(young.history.ahead.map((p) => p.name), ['Vet Inside']);
+  // The star edge bumps the weaker edge, not an inside linebacker.
+  assert.equal(other.history.tag, 'fillin');
+  assert.equal(other.history.replaced, 'Star Edge');
+  assert.equal(edge.history.tag, 'week1');
+  assert.equal(top.history.tag, 'week1');
 });

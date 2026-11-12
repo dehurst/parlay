@@ -58,8 +58,9 @@ export function parseSnaps(csv) {
     // By player id: the listed name can change mid-season ("DeAundre" -> "Dee").
     const id = r[col.pfr_player_id] || r[col.player];
     let p = team.byName.get(id);
-    if (!p) team.byName.set(id, (p = { name: r[col.player], names: new Set(), pos: r[col.position], group: GROUPS[r[col.position]] ?? null, pct: {} }));
+    if (!p) team.byName.set(id, (p = { name: r[col.player], names: new Set(), pos: r[col.position], group: GROUPS[r[col.position]] ?? null, pct: {}, pfrId: r[col.pfr_player_id] || null, defSnaps: 0 }));
     p.names.add(r[col.player]);
+    p.defSnaps += Number(r[col.defense_snaps]) || 0;
     p.pct[week] = Math.max(Number(r[col.offense_pct]) || 0, Number(r[col.defense_pct]) || 0);
   }
   return Object.fromEntries(Object.entries(teams).map(([code, t]) => [code, { weeks: [...t.weeks].sort((a, b) => a - b), players: [...t.byName.values()] }]));
@@ -98,7 +99,10 @@ export const timelineOf = (team, p) => team.weeks.map((week) => ({ week, pct: p?
 // on this side now, `taken` collects players already named as replaced
 // (each job goes to one replacement), and `proven(name)` says whether he was
 // a clear starter last season. Returns null when we can't tell.
-export function starterHistory(teams, code, slot, { injuries = new Map(), roster = null, starters = [], taken = new Set(), proven = () => false } = {}) {
+// `sameJob(name)` is false for a player the depth chart lists at a different
+// job than this slot (an edge rusher vs. an inside linebacker): he can't be
+// the one this player replaced.
+export function starterHistory(teams, code, slot, { injuries = new Map(), roster = null, starters = [], taken = new Set(), proven = () => false, sameJob = () => true } = {}) {
   const team = teams?.[code];
   if (!team || !slot.name || !team.weeks.length) return null;
   const me = findPlayer(team, slot.name);
@@ -170,7 +174,7 @@ export function starterHistory(teams, code, slot, { injuries = new Map(), roster
   const run = weeks.slice(start, last + 1);
   const candidates = team.players.filter((p) => p !== me && p.group && p.group === me.group
     && !regular(p, latest) && avg(p, recent) < REGULAR
-    && run.filter((w) => regular(p, w)).length <= 1
+    && run.filter((w) => regular(p, w)).length <= 1 && sameJob(p.name)
     && ![...starters, ...taken].some((n) => sameName(n, p.name)));
   const prev = weeks[start - 1];
   const replaced = candidates.filter((p) => regular(p, prev)).sort((a, b) => b.pct[prev] - a.pct[prev])[0]
