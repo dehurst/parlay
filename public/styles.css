@@ -1166,3 +1166,10 @@ button.dot:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; 
 .player-card .player-views { margin-bottom: 4px; }
 .player-stats th.num { line-height: 1.2; vertical-align: bottom; }
 .player-stats td:first-child { white-space: nowrap; }
+.hit-card h3 { margin: 0 0 6px; }
+.hit-card h4 { margin: 14px 0 6px; }
+.hit-calc { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 8px; }
+.hit-calc select, .hit-calc input { border: 1px solid var(--line); background: var(--bg); color: var(--text); border-radius: 8px; padding: 8px 10px; font-size: 16px; }
+.hit-calc input { width: 90px; margin-left: 4px; }
+.hit-table td .small { font-weight: 400; }
+.hit-dots { flex-wrap: wrap; }

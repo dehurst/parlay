@@ -75,7 +75,12 @@ the plays most of you agree on and builds a few parlays out of them.
   ▲▼ marks stats running 15%+ above or below his season average), and
   **Career** (every regular season since 1999). From nflverse's free stat
   files; past seasons live in src/career-data.js, rebuilt once a year with
-  `npm run build-career`.
+  `npm run build-career`. Below it, **Hit rate**: how often he's cleared
+  a line in his last 3, last 5 and all games this season, with a dot per
+  game. It starts on FanDuel's anytime TD or pass TD prop when one's posted
+  for this week (with the chance the price implies, to compare), or type any
+  line for any stat. Uses only the props already pulled for the Picks tab,
+  so it costs no extra credits.
 - **Share links**: every parlay has a **Share** button. The link opens the app
   on that parlay (right week and league), after logging in: only people with
   an account can see it.

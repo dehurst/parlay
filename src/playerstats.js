@@ -24,6 +24,7 @@ export const STAT_DEFS = {
   rec: { label: 'Receptions', col: 'receptions' },
   recYds: { label: 'Rec yds', col: 'receiving_yards' },
   recTd: { label: 'Rec TD', col: 'receiving_tds' },
+  anyTd: { label: 'Total TD' }, // scored himself: rushing, receiving, returns (what anytime TD pays on)
   tgtShare: { label: 'Target share', col: 'target_share', rate: true },
   airShare: { label: 'Air yds share', col: 'air_yards_share', rate: true },
   tkl: { label: 'Tackles' }, // solo + assisted
@@ -44,10 +45,10 @@ export const CAREER_KEYS = Object.keys(STAT_DEFS).filter((k) => !STAT_DEFS[k].ra
 // Which stats each position shows, in order.
 const DEFENSE = ['tkl', 'sacks', 'qbHits', 'tfl', 'defInt', 'pd', 'ff'];
 export const SHOWN = {
-  QB: ['cmp', 'att', 'passYds', 'passTd', 'int', 'sacked', 'car', 'rushYds', 'rushTd'],
-  RB: ['car', 'rushYds', 'rushTd', 'tgt', 'rec', 'recYds', 'recTd', 'tgtShare'],
-  WR: ['tgt', 'rec', 'recYds', 'recTd', 'tgtShare', 'airShare', 'car', 'rushYds'],
-  TE: ['tgt', 'rec', 'recYds', 'recTd', 'tgtShare', 'airShare'],
+  QB: ['cmp', 'att', 'passYds', 'passTd', 'int', 'sacked', 'car', 'rushYds', 'rushTd', 'anyTd'],
+  RB: ['car', 'rushYds', 'rushTd', 'tgt', 'rec', 'recYds', 'recTd', 'anyTd', 'tgtShare'],
+  WR: ['tgt', 'rec', 'recYds', 'recTd', 'anyTd', 'tgtShare', 'airShare', 'car', 'rushYds'],
+  TE: ['tgt', 'rec', 'recYds', 'recTd', 'anyTd', 'tgtShare', 'airShare'],
   DL: DEFENSE, LB: DEFENSE, DB: DEFENSE,
   SPEC: ['fgm', 'fga', 'fgLong', 'xpm'],
 };
@@ -64,6 +65,7 @@ export function statsOf(r) {
   const out = {};
   for (const [k, d] of Object.entries(STAT_DEFS)) out[k] = d.col ? num(r[d.col]) : 0;
   out.tkl = num(r.def_tackles_solo) + num(r.def_tackle_assists);
+  out.anyTd = num(r.rushing_tds) + num(r.receiving_tds) + num(r.special_teams_tds) + num(r.def_tds);
   return out;
 }
 
@@ -135,6 +137,8 @@ export function teamPlayers(games, code, { career = {}, snaps = null, season } =
       // Bye weeks have no line, and neither do games he missed, so these are
       // simply his last 3 games played.
       form: log.slice(-FORM_GAMES).reverse(),
+      // Every game played this season, newest first, for hit rates.
+      log: log.slice().reverse().map((l) => ({ week: l.week, opp: l.opp, home: l.home, stats: l.stats, ...(l.quiet ? { quiet: true } : {}) })),
       career: {
         games: (past?.games ?? 0) + log.length,
         seasons: (past?.n ?? 0) + 1,

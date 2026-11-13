@@ -6,7 +6,7 @@ import { createStore } from './store.js';
 import { weekWindow, weekLabel, lastSlot, nextSlot } from './week.js';
 import { fetchEspnSchedule, fetchEspnRecords, demoSchedule, hasStarted, matchKey, teamKey } from './schedule.js';
 import { fetchOddsApiSchedule, fetchBookLines, fetchEventIds, fetchEventProps } from './oddsapi.js';
-import { isProp, validProp, propLine, parseProps, parseBoxScore, PROP_MARKETS } from './props.js';
+import { isProp, validProp, propLine, parseProps, parseBoxScore, PROP_MARKETS, normName } from './props.js';
 import { tally, buildParlays, priceParlay, selectionLabel, MARKETS, sameGameProblem, isSameGame } from './parlay.js';
 import { gradeLeg, gradeParlay, actualDecimal } from './grading.js';
 import { fetchEspnScores, fetchEspnLive, fetchOddsApiScores, fetchEspnPlayerStats } from './results.js';
@@ -1629,9 +1629,27 @@ app.get('/api/players', async (req, res, next) => {
       seasonSnaps(now).catch((err) => (console.error(`Snap counts failed: ${err.message}`), null))]);
     const season = now.getMonth() >= 8 ? now.getFullYear() : now.getFullYear() - 1;
     const through = games.reduce((m, g) => Math.max(m, g.week), 0);
+    // This week's FanDuel props for the team's game, by player id, for hit
+    // rates: { td: price, ptd: { point, over, under } }. Only what's already
+    // been pulled for the Picks tab, so this costs no credits.
+    const win = weekWindow();
+    const game = (store.data.schedule[win.key]?.games ?? []).find((g) => teamCode(g.home) === code || teamCode(g.away) === code);
+    const gameProps = game ? store.data.props[win.key]?.byGame?.[game.id] : null;
+    const players = teamPlayers(games, code, { career: careerById, snaps, season });
+    const props = {};
+    if (gameProps) {
+      for (const p of players) {
+        const key = normName(p.name);
+        const td = gameProps.td?.find((x) => normName(x.player) === key);
+        const ptd = gameProps.ptd?.find((x) => normName(x.player) === key);
+        if (td || ptd) props[p.id] = { ...(td ? { td: td.price } : {}), ...(ptd ? { ptd: { point: ptd.point, over: ptd.over, under: ptd.under } } : {}) };
+      }
+    }
+    const opp = game ? (teamCode(game.home) === code ? game.away : game.home) : null;
     res.json({ season, through, careerFrom: 1999, careerThrough: CAREER_THROUGH, careerKeys: CAREER_KEYS,
+      book: ODDS_API_KEY ? bookName : null, props, propsGame: game ? { opp, home: teamCode(game.home) === code, commence: game.commence, updated: store.data.props[win.key]?.fetchedAt ?? null } : null,
       defs: Object.fromEntries(Object.entries(STAT_DEFS).map(([k, d]) => [k, { label: d.label, rate: !!d.rate, max: !!d.max, bad: !!d.bad }])), shown: SHOWN,
-      players: teamPlayers(games, code, { career: careerById, snaps, season }) });
+      players });
   } catch (err) {
     next(err);
   }

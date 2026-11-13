@@ -1,5 +1,6 @@
 import { sgpDecimal } from './sgp.js';
 import { legStatus } from './margin.js';
+import { hitRate, impliedProb, defaultLine } from './hitrate.js';
 
 const $ = (sel) => document.querySelector(sel);
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
@@ -2735,10 +2736,110 @@ async function renderPlayers(team) {
   box().innerHTML = playersHtml(team, data);
 }
 
+// Hit rates (Players view): how often he's cleared a line this season. The
+// line is FanDuel's prop when one's posted for this week (anytime TD, pass
+// TDs), or any number you type in for any stat.
+const HIT_DEFAULT = { QB: 'passYds', RB: 'rushYds', WR: 'recYds', TE: 'recYds', DL: 'sacks', LB: 'tkl', DB: 'tkl', SPEC: 'fgm' };
+let hitFor = null; // the player the settings below are for
+let hitKey = null;
+let hitLine = null; // null = his average, to the nearest half
+
+const hitKeys = (p, data) => (data.shown[p.group] ?? []).filter((k) => !data.defs[k].rate && !data.defs[k].max);
+const pctText = (x, n) => (n ? `${Math.round((x / n) * 100)}%` : '–');
+// "4 of 9 (44%)"
+const ofText = (x, n) => `<b>${x}</b> of ${n} <span class="muted">(${pctText(x, n)})</span>`;
+
+function hitSetup(p, data) {
+  if (hitFor !== p.id) {
+    hitFor = p.id;
+    hitKey = null;
+    hitLine = null;
+    // Start on his FanDuel prop when there is one.
+    const bp = data.props?.[p.id];
+    if (bp?.ptd) (hitKey = 'passTd'), (hitLine = bp.ptd.point);
+    else if (bp?.td != null) (hitKey = 'anyTd'), (hitLine = 0.5);
+  }
+  const keys = hitKeys(p, data);
+  if (!keys.includes(hitKey)) hitKey = keys.includes(HIT_DEFAULT[p.group]) ? HIT_DEFAULT[p.group] : keys[0];
+  return keys;
+}
+const hitLineFor = (p) => hitLine ?? defaultLine(p.season.games ? p.season.stats[hitKey] / p.season.games : 0);
+
+// Last 3, last 5 and the season against `line`, plus a dot per game (newest first).
+function hitResultHtml(p, data, key, line) {
+  const d = data.defs[key];
+  const vals = p.log.map((g) => g.stats[key]);
+  const row = (label, list) => {
+    const r = hitRate(list, line);
+    return `<tr><td>${label}</td><td class="num">${ofText(r.over, r.n)}</td><td class="num muted">${r.under}${r.push ? ` · ${r.push} push` : ''}</td></tr>`;
+  };
+  const dots = p.log.map((g) => {
+    const v = g.stats[key];
+    const cls = v > line ? 'win' : v < line ? 'loss' : 'push';
+    const tip = `<b>${statFmt(d, v)} ${esc(d.label.toLowerCase())}</b> ${g.home ? 'vs' : '@'} <b>${esc(g.opp)}</b> <span class="muted">· Week ${g.week}</span>`;
+    return `<button type="button" class="dot ${cls}" data-tip="${esc(tip)}" aria-label="${esc(`Week ${g.week}: ${statFmt(d, v)} ${d.label}`)}">${v > line ? 'O' : v < line ? 'U' : 'P'}</button>`;
+  }).join('');
+  if (!vals.length) return '<p class="small muted">No games this season yet.</p>';
+  return `<table class="slip hit-table"><thead><tr><th></th><th class="num">Over ${line}</th><th class="num">Under</th></tr></thead><tbody>
+      ${vals.length > 3 ? row('Last 3', vals.slice(0, 3)) : ''}
+      ${vals.length > 5 ? row('Last 5', vals.slice(0, 5)) : ''}
+      ${row(`${data.season} season`, vals)}
+    </tbody></table>
+    <div class="small muted last5 hit-dots">Newest first: ${dots}</div>`;
+}
+
+// FanDuel's props for him this week, each with how often he'd have hit it.
+function bookPropsHtml(p, data) {
+  const bp = data.props?.[p.id];
+  if (!bp) return '';
+  const g = data.propsGame;
+  const rows = [];
+  const season = (key, line) => hitRate(p.log.map((x) => x.stats[key]), line);
+  const last5 = (key, line) => hitRate(p.log.slice(0, 5).map((x) => x.stats[key]), line);
+  if (bp.td != null) {
+    const s = season('anyTd', 0.5), l = last5('anyTd', 0.5);
+    rows.push(`<tr><td><b>Anytime TD</b> <span class="muted">${fmtOdds(bp.td)}</span><div class="small muted">Book: ${Math.round(impliedProb(bp.td) * 100)}%</div></td>
+      <td class="num">${pctText(s.over, s.n)}<div class="small muted">${s.over} of ${s.n}</div></td>
+      <td class="num">${l.n > 0 && s.n > 5 ? `${l.over} of ${l.n}` : '–'}</td>
+      <td class="num"><button type="button" class="link small" data-hit-use="anyTd" data-hit-line="0.5">Check</button></td></tr>`);
+  }
+  if (bp.ptd) {
+    const s = season('passTd', bp.ptd.point), l = last5('passTd', bp.ptd.point);
+    rows.push(`<tr><td><b>Pass TDs o${bp.ptd.point}</b> <span class="muted">${bp.ptd.over != null ? fmtOdds(bp.ptd.over) : ''}</span><div class="small muted">Book: ${bp.ptd.over != null ? `${Math.round(impliedProb(bp.ptd.over) * 100)}%` : '–'}</div></td>
+      <td class="num">${pctText(s.over, s.n)}<div class="small muted">${s.over} of ${s.n}</div></td>
+      <td class="num">${l.n > 0 && s.n > 5 ? `${l.over} of ${l.n}` : '–'}</td>
+      <td class="num"><button type="button" class="link small" data-hit-use="passTd" data-hit-line="${bp.ptd.point}">Check</button></td></tr>`);
+  }
+  return `<h4>${esc(data.book ?? 'FanDuel')} this week${g ? ` ${g.home ? 'vs' : '@'} ${teamLogo(g.opp, 'small')}${esc(abbr(g.opp))}` : ''}</h4>
+    <table class="slip hit-table"><thead><tr><th></th><th class="num">Hit, season</th><th class="num">Last 5</th><th></th></tr></thead><tbody>${rows.join('')}</tbody></table>
+    <p class="small muted">"Book" is the chance FanDuel's price implies (including its cut). If he's hit it more often than that, the bet may be worth a look; fewer, the price may be too short.</p>`;
+}
+
+function hitCardHtml(p, data) {
+  const keys = hitSetup(p, data);
+  const line = hitLineFor(p);
+  return `<div class="card hit-card">
+      <h3>Hit rate</h3>
+      ${bookPropsHtml(p, data)}
+      <h4>Any line</h4>
+      <div class="hit-calc">
+        <select id="hit-stat" aria-label="Stat">${keys.map((k) => `<option value="${k}" ${k === hitKey ? 'selected' : ''}>${esc(data.defs[k].label)}</option>`).join('')}</select>
+        <label class="small">Over <input id="hit-line" type="number" inputmode="decimal" step="0.5" min="0" value="${line}" aria-label="Line"></label>
+        ${hitLine == null ? '<span class="small muted">(his average)</span>' : ''}
+      </div>
+      <div id="hit-result">${hitResultHtml(p, data, hitKey, line)}</div>
+      <p class="small muted">Games he played this season, including ones where he didn't record a stat. Bye weeks and games he missed aren't counted.</p>
+    </div>`;
+}
+
+// The player on screen, for the hit-rate box's typing.
+let shownPlayer = null;
+
 function playersHtml(team, data) {
   const { players, defs, shown } = data;
   if (!players.length) return '<p class="small muted">No stats for this team yet this season.</p>';
   const p = players.find((x) => x.id === playerId) ?? players[0];
+  shownPlayer = { p, data };
   const groups = [...new Set(players.map((x) => x.group))];
   const pick = `<span class="team-select player-select"><select id="player-pick" aria-label="Player">${groups.map((g) => `<optgroup label="${esc(GROUP_NAMES[g] ?? g)}">
     ${players.filter((x) => x.group === g).map((x) => `<option value="${esc(x.id)}" ${x.id === p.id ? 'selected' : ''}>${esc(x.name)} (${esc(x.pos)})</option>`).join('')}</optgroup>`).join('')}</select></span>`;
@@ -2783,6 +2884,7 @@ function playersHtml(team, data) {
       <div class="player-name">${teamLogo(team.name, 'small')}<b>${esc(p.name)}</b> <span class="muted">${esc(p.pos)}</span></div>
       ${toggle}${head}${table}
     </div>
+    ${hitCardHtml(p, data)}
     <p class="small muted">From nflverse's free stat files, usually updated the morning after games. Regular season only.</p>`;
 }
 
@@ -3239,6 +3341,12 @@ $('#research').addEventListener('change', (e) => {
     renderResearch(true);
     return;
   }
+  if (e.target.id === 'hit-stat') {
+    hitKey = e.target.value;
+    hitLine = null;
+    renderResearch(true);
+    return;
+  }
   if (e.target.id === 'player-pick') {
     playerId = e.target.value;
     storage.set('parlay.player', playerId);
@@ -3258,6 +3366,15 @@ $('#research').addEventListener('change', (e) => {
     renderResearch(true);
   }
 });
+// Typing a line updates the hit rates in place (re-rendering would drop the cursor).
+$('#research').addEventListener('input', (e) => {
+  if (e.target.id !== 'hit-line' || !shownPlayer) return;
+  const v = Number(e.target.value);
+  if (e.target.value === '' || !Number.isFinite(v) || v < 0) return;
+  hitLine = v;
+  e.target.closest('.hit-calc')?.querySelector('.muted')?.remove();
+  $('#hit-result').innerHTML = hitResultHtml(shownPlayer.p, shownPlayer.data, hitKey, v);
+});
 $('#research').addEventListener('click', (e) => {
   const head = e.target.closest('.fold-head');
   if (head) {
@@ -3266,6 +3383,14 @@ $('#research').addEventListener('click', (e) => {
     if (shut) folded.add(card.dataset.fold);
     else folded.delete(card.dataset.fold);
     head.setAttribute('aria-expanded', String(!shut));
+    return;
+  }
+  const use = e.target.closest('[data-hit-use]');
+  if (use) {
+    hitKey = use.dataset.hitUse;
+    hitLine = Number(use.dataset.hitLine);
+    renderResearch(true);
+    requestAnimationFrame(() => $('.hit-calc')?.scrollIntoView({ block: 'center', behavior: 'smooth' }));
     return;
   }
   const pview = e.target.closest('[data-pview]')?.dataset.pview;

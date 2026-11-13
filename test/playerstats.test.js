@@ -75,3 +75,32 @@ test('totals: longest field goal is the best, not the sum', () => {
   assert.equal(t.fgm, 5);
   assert.equal(t.fgLong, 55);
 });
+
+import { hitRate, impliedProb, defaultLine } from '../public/hitrate.js';
+
+test('hit rate: over beats the line, under misses it, a whole-number line can push', () => {
+  assert.deepEqual(hitRate([102, 76, 23, 64], 64.5), { over: 2, under: 2, push: 0, n: 4 });
+  assert.deepEqual(hitRate([2, 1, 3, 2], 2), { over: 1, under: 1, push: 2, n: 4 });
+});
+
+test('a price becomes the chance it implies', () => {
+  assert.equal(impliedProb(-150), 0.6);
+  assert.equal(Math.round(impliedProb(200) * 1000), 333);
+});
+
+test('with no line typed, start from his average to the nearest half point', () => {
+  assert.equal(defaultLine(67.6), 67.5);
+  assert.equal(defaultLine(1.4), 1.5);
+  assert.equal(defaultLine(0.2), 0.5);
+  assert.equal(defaultLine(0), 0.5);
+});
+
+test('total TDs count what he scored himself (anytime TD), not what he threw', () => {
+  const s = statsOf({ rushing_tds: '1', receiving_tds: '1', special_teams_tds: '1', passing_tds: '3' });
+  assert.equal(s.anyTd, 3);
+});
+
+test('the full game log is newest first, with games he played without a stat', () => {
+  const [wr] = teamPlayers(parseGames(csv), 'CIN', { season: 2026 }).filter((p) => p.id === 'A');
+  assert.deepEqual(wr.log.map((g) => g.week), [6, 5, 2, 1]);
+});
