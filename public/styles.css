@@ -57,13 +57,7 @@ header { padding: 16px 0 8px; }
   animation: logo-rise 1.8s cubic-bezier(0.2, 0.7, 0.25, 1) 0.15s both,
              logo-flash 0.9s ease-in-out 1.95s both;
 }
-/* The football is 24x16 pixel art; 1.25em is about 2x, kept crisp. */
-.logo-ball { width: 1.25em; height: auto; flex: none; overflow: visible; image-rendering: pixelated; }
-/* A pixel sparkle on the ball's nose, just as each glimmer starts. */
-.ball-sparkle {
-  opacity: 0; transform-box: fill-box; transform-origin: center;
-  animation: ball-sparkle 15s steps(1, end) 1.95s infinite;
-}
+.logo-ball { width: 1.25em; height: auto; flex: none; }
 .logo-word {
   padding-bottom: 0.06em;
   background:
@@ -92,16 +86,9 @@ header { padding: 16px 0 8px; }
   0% { background-position: 150% 0, 0 0; }
   6%, 100% { background-position: -50% 0, 0 0; }
 }
-/* Stepped, like a sprite: small, full, small, gone (about 0.45s). */
-@keyframes ball-sparkle {
-  0% { opacity: 1; transform: scale(0.4); }
-  1% { transform: scale(1); }
-  2% { transform: scale(0.6); }
-  3%, 100% { opacity: 0; transform: scale(0.4); }
-}
 @keyframes logo-flash { 0%, 100% { filter: none; } 45% { filter: brightness(1.45) saturate(0.8); } }
 @media (prefers-reduced-motion: reduce) {
-  .logo-rise, .logo-word, .ball-sparkle { animation: none; }
+  .logo-rise, .logo-word { animation: none; }
 }
 .me-chip { padding: 5px 12px; border-radius: 999px; font-size: 14px; font-weight: 600; }
 .week-nav { margin: 6px 0 0 -6px; }
