@@ -25,7 +25,10 @@ import { gameWeather } from './weather.js';
 import { canSpend, spend, limitFor, easternDate, easternWeekday, LINES_COST, SCORES_COST } from './credits.js';
 import { sport, runInSport, inSlate, isMac, SPORTS } from './sport.js';
 import { schemes, schemeSeasons } from './scheme-data.js';
-import { teamCode } from './starters.js';
+import { teamCode, seasonSnaps } from './starters.js';
+import { seasonFile } from './honors.js';
+import { teamPlayers, CAREER_KEYS, STAT_DEFS, SHOWN } from './playerstats.js';
+import { CAREER, KEYS as CAREER_FILE_KEYS, THROUGH as CAREER_THROUGH } from './career-data.js';
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 loadEnvFile(join(root, '.env'));
@@ -1604,6 +1607,31 @@ app.get('/api/heatmap', async (req, res, next) => {
       gameWeather(game).catch((err) => (console.error(`Weather failed: ${err.message}`), null))]);
     if (!away || !home) return res.status(503).json({ error: 'Couldn’t get depth charts from ESPN. Try again in a few minutes.' });
     res.json({ away, home, weather });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Players view (Stats/Data tab), NFL only: everyone on a team who's made a
+// stat sheet this season, with season totals, his last 3 games, and career
+// totals (past seasons from src/career-data.js plus this one).
+const careerById = Object.fromEntries(Object.entries(CAREER).map(([id, v]) => [id, {
+  seasons: [v[0], v[1]], n: v[2], games: v[3], stats: Object.fromEntries(CAREER_FILE_KEYS.map((k, i) => [k, v[4 + i]])),
+}]));
+app.get('/api/players', async (req, res, next) => {
+  try {
+    if (sport().id !== 'nfl') return res.status(400).json({ error: 'Player stats are NFL only for now.' });
+    const code = teamCode(String(req.query.team ?? ''));
+    if (!code) return res.status(404).json({ error: 'Unknown team.' });
+    const now = new Date();
+    // Snap counts are extra: they only fill in games a player played without a stat.
+    const [games, snaps] = await Promise.all([seasonFile('games', now),
+      seasonSnaps(now).catch((err) => (console.error(`Snap counts failed: ${err.message}`), null))]);
+    const season = now.getMonth() >= 8 ? now.getFullYear() : now.getFullYear() - 1;
+    const through = games.reduce((m, g) => Math.max(m, g.week), 0);
+    res.json({ season, through, careerFrom: 1999, careerThrough: CAREER_THROUGH, careerKeys: CAREER_KEYS,
+      defs: Object.fromEntries(Object.entries(STAT_DEFS).map(([k, d]) => [k, { label: d.label, rate: !!d.rate, max: !!d.max, bad: !!d.bad }])), shown: SHOWN,
+      players: teamPlayers(games, code, { career: careerById, snaps, season }) });
   } catch (err) {
     next(err);
   }

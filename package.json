@@ -14,7 +14,8 @@
     "test": "node --test",
     "upload-data": "node scripts/upload-data.js",
     "build-lb-data": "node scripts/build-lb-data.js",
-    "build-scheme-data": "node scripts/build-scheme-data.js"
+    "build-scheme-data": "node scripts/build-scheme-data.js",
+    "build-career": "node scripts/build-career.js"
   },
   "dependencies": {
     "express": "^5.2.1",

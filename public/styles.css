@@ -1157,3 +1157,12 @@ button.dot:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; 
   header::after { content: ''; order: 4; flex-basis: 100%; height: 0; } /* line break */
   header #sport-switch { order: 5; }
 }
+
+/* Players view (Stats/Data tab): a player picker, then his numbers three ways. */
+.player-pick { margin: 0 0 10px; }
+.player-select { max-width: 380px; }
+.player-select select { padding-left: 16px; min-height: 46px; font-size: 16px; }
+.player-card .player-name { display: flex; align-items: center; gap: 6px; font-size: 17px; margin-bottom: 8px; }
+.player-card .player-views { margin-bottom: 4px; }
+.player-stats th.num { line-height: 1.2; vertical-align: bottom; }
+.player-stats td:first-child { white-space: nowrap; }

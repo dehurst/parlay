@@ -69,6 +69,13 @@ the plays most of you agree on and builds a few parlays out of them.
   against the spread and on over/unders (tap one to open its page). Finished
   weeks are cached; weeks in progress re-check every 15 minutes
   during games, else every 6 hours.
+- **Players** (NFL, a fourth switch on Stats/Data): pick a team, then a
+  player, and flip between this season's totals and per-game averages,
+  **Form** (his last 3 games played; byes and missed games are skipped, and
+  ▲▼ marks stats running 15%+ above or below his season average), and
+  **Career** (every regular season since 1999). From nflverse's free stat
+  files; past seasons live in src/career-data.js, rebuilt once a year with
+  `npm run build-career`.
 - **Share links**: every parlay has a **Share** button. The link opens the app
   on that parlay (right week and league), after logging in: only people with
   an account can see it.

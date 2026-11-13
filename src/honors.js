@@ -6,6 +6,7 @@
 import { byName, awards } from './honors-data.js';
 import { fullKey } from './starters.js';
 import { STATS, parseCsv, parseStats, sideOf } from './nflstats.js';
+import { parseGames } from './playerstats.js';
 
 
 // Where a player ranks in the league in each stat that matters for his side,
@@ -92,12 +93,13 @@ const FILES = {
   stats: (season) => `${NFLVERSE}/stats_player/stats_player_reg_${season}.csv`,
   injuries: (season) => `${NFLVERSE}/injuries/injuries_${season}.csv`,
   weekly: (season) => `${NFLVERSE}/stats_player/stats_player_week_${season}.csv`,
+  games: (season) => `${NFLVERSE}/stats_player/stats_player_week_${season}.csv`, // the same file, every stat (Players view)
   qbr: () => `${NFLVERSE}/espn_data/qbr_week_level.csv`, // every season since 2006
   // PFR's charting: coverage targets, blitzes and pressures, for LB roles.
   defAdv: (season) => `${NFLVERSE}/pfr_advstats/advstats_week_def_${season}.csv`,
   defAdvLast: (season) => `${NFLVERSE}/pfr_advstats/advstats_week_def_${season - 1}.csv`,
 };
-const PARSE = { stats: parseStats, injuries: parseInjuries, weekly: parseWeekly, qbr: parseQbr, defAdv: parseDefAdv, defAdvLast: parseDefAdv };
+const PARSE = { games: parseGames, stats: parseStats, injuries: parseInjuries, weekly: parseWeekly, qbr: parseQbr, defAdv: parseDefAdv, defAdvLast: parseDefAdv };
 // PFR id -> { tgt, bltz, prss } summed over the regular season.
 function parseDefAdv(text) {
   const out = new Map();

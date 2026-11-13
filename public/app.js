@@ -2408,7 +2408,7 @@ async function renderAnalysis() {
 // The team you looked at last, per league.
 const teamStorageKey = () => (league === 'cfb' ? 'parlay.team.cfb' : 'parlay.team');
 let researchTeam = storage.get(teamStorageKey());
-let researchMode = 'team'; // 'team' (one team's full page) | 'compare' (two teams, head to head) | 'league' (rankings)
+let researchMode = 'team'; // 'team' (one team's full page) | 'compare' (two teams, head to head) | 'league' (rankings) | 'players' (NFL)
 let compareA = null;
 let compareB = null;
 // Research cards folded shut this visit, by id. Every card starts open.
@@ -2703,6 +2703,89 @@ function schemeLeagueHtml(teams, seasons) {
     <p class="small muted">${schemeSourceNote(seasons)}</p></div>`;
 }
 
+// ---- Players (Stats/Data tab, NFL) -------------------------------------------
+
+// Each team's players, as /api/players sent them, kept for this visit.
+const playersCache = new Map();
+let playerId = storage.get('parlay.player');
+let playerView = storage.get('parlay.playerView') ?? 'season'; // 'season' | 'form' | 'career'
+const GROUP_NAMES = { QB: 'Quarterbacks', RB: 'Running backs', WR: 'Receivers', TE: 'Tight ends', DL: 'Defensive line', LB: 'Linebackers', DB: 'Secondary', SPEC: 'Kickers & punters' };
+// Always shown for a position; the rest only when he has some.
+const CORE_ROWS = 4;
+
+function statFmt(d, v, perGame = false) {
+  if (v == null) return '–';
+  if (d.rate) return v ? `${Math.round(v * 100)}%` : '–';
+  if (perGame) return v.toFixed(1);
+  return Number.isInteger(v) ? String(v) : v.toFixed(1);
+}
+
+async function renderPlayers(team) {
+  const box = () => $('#players-view');
+  let data = playersCache.get(team.name);
+  if (!data) {
+    data = await api(`/api/players?team=${encodeURIComponent(team.name)}`).catch((err) => (notice(err.message), null));
+    if (!data) {
+      if (box()) box().innerHTML = '<p class="small muted">Couldn’t load player stats. Try again in a few minutes.</p>';
+      return;
+    }
+    playersCache.set(team.name, data);
+  }
+  if (!box() || researchTeam !== team.name || researchMode !== 'players') return; // moved on while it loaded
+  box().innerHTML = playersHtml(team, data);
+}
+
+function playersHtml(team, data) {
+  const { players, defs, shown } = data;
+  if (!players.length) return '<p class="small muted">No stats for this team yet this season.</p>';
+  const p = players.find((x) => x.id === playerId) ?? players[0];
+  const groups = [...new Set(players.map((x) => x.group))];
+  const pick = `<span class="team-select player-select"><select id="player-pick" aria-label="Player">${groups.map((g) => `<optgroup label="${esc(GROUP_NAMES[g] ?? g)}">
+    ${players.filter((x) => x.group === g).map((x) => `<option value="${esc(x.id)}" ${x.id === p.id ? 'selected' : ''}>${esc(x.name)} (${esc(x.pos)})</option>`).join('')}</optgroup>`).join('')}</select></span>`;
+  const views = [['season', `${data.season}`], ['form', 'Form'], ['career', 'Career']];
+  const toggle = `<div class="mode-switch player-views" role="tablist">${views.map(([v, label]) => `<button type="button" data-pview="${v}" class="${playerView === v ? 'active' : ''}">${label}</button>`).join('')}</div>`;
+
+  // Rows: the position's stats, leaving out side ones he has none of.
+  const keys = (shown[p.group] ?? []).filter((k, i) => i < CORE_ROWS || (playerView === 'career' ? p.career : p.season).stats[k]);
+  const perGame = (stats, games, k) => (defs[k].rate || defs[k].max ? stats[k] : games ? stats[k] / games : null);
+  let head = '';
+  let table = '';
+  if (playerView === 'form') {
+    const games = p.form;
+    const avg = (k) => (defs[k].max ? Math.max(...games.map((g) => g.stats[k])) : games.reduce((t, g) => t + g.stats[k], 0) / games.length);
+    // Avg vs his season per game: a clear step up or down gets an arrow.
+    const trend = (k) => {
+      const now = avg(k), usual = perGame(p.season.stats, p.season.games, k);
+      if (defs[k].max || !usual || p.season.games <= games.length) return '';
+      const diff = (now - usual) / usual;
+      if (Math.abs(diff) < 0.15) return '';
+      const good = diff > 0 !== defs[k].bad;
+      return ` <span class="small ${good ? 'pos' : 'neg'}" title="${diff > 0 ? 'Above' : 'Below'} his season average (${statFmt(defs[k], usual, true)})">${diff > 0 ? '▲' : '▼'}</span>`;
+    };
+    head = `<p class="small muted">His last ${games.length} game${games.length === 1 ? '' : 's'} played, newest first. Bye weeks and games he missed are skipped. ▲▼ = 15%+ above or below his ${data.season} average.</p>`;
+    table = `<table class="slip player-stats"><thead><tr><th></th>${games.map((g) => `<th class="num">Wk ${g.week}<br><span class="muted small">${g.home ? 'vs' : '@'} ${esc(g.opp)}${g.quiet ? '*' : ''}</span></th>`).join('')}<th class="num">Avg</th></tr></thead>
+      <tbody>${keys.map((k) => `<tr><td>${esc(defs[k].label)}</td>${games.map((g) => `<td class="num">${statFmt(defs[k], g.stats[k])}</td>`).join('')}
+        <td class="num"><b>${statFmt(defs[k], avg(k), !defs[k].max)}</b>${trend(k)}</td></tr>`).join('')}</tbody></table>
+      ${games.some((g) => g.quiet) ? '<p class="small muted">* Played (from the snap counts) without recording a stat.</p>' : ''}`;
+  } else {
+    const c = playerView === 'career' ? p.career : p.season;
+    const rows = playerView === 'career' ? keys.filter((k) => !defs[k].rate) : keys;
+    head = playerView === 'career'
+      ? `<p class="small muted">${c.seasons} season${c.seasons === 1 ? '' : 's'} (${c.from}–${data.season}) · ${c.games} games, regular season only${c.from <= data.careerFrom ? ` (nflverse starts in ${data.careerFrom})` : ''}.</p>`
+      : `<p class="small muted">${c.games} game${c.games === 1 ? '' : 's'} played this regular season, through Week ${data.through}.</p>`;
+    table = `<table class="slip player-stats"><thead><tr><th></th><th class="num">Total</th><th class="num">Per game</th></tr></thead>
+      <tbody>${rows.map((k) => `<tr><td>${esc(defs[k].label)}</td>
+        <td class="num">${defs[k].rate ? '–' : statFmt(defs[k], c.stats[k])}</td>
+        <td class="num"><b>${statFmt(defs[k], perGame(c.stats, c.games, k), true)}</b></td></tr>`).join('')}</tbody></table>`;
+  }
+  return `<div class="player-pick">${pick}</div>
+    <div class="card player-card">
+      <div class="player-name">${teamLogo(team.name, 'small')}<b>${esc(p.name)}</b> <span class="muted">${esc(p.pos)}</span></div>
+      ${toggle}${head}${table}
+    </div>
+    <p class="small muted">From nflverse's free stat files, usually updated the morning after games. Regular season only.</p>`;
+}
+
 // One team's season: record, against the spread, over/under, strength of
 // schedule, and every game; or (Compare mode) two teams' offense vs defense
 // side by side, or (League mode) every team ranked. Season-wide (not tied to the week up top).
@@ -2725,7 +2808,14 @@ async function renderResearch(quiet = false) {
     <button type="button" data-mode="team" class="${researchMode === 'team' ? 'active' : ''}">Team</button>
     <button type="button" data-mode="compare" class="${researchMode === 'compare' ? 'active' : ''}">Compare</button>
     <button type="button" data-mode="league" class="${researchMode === 'league' ? 'active' : ''}">League</button>
+    ${league === 'nfl' ? `<button type="button" data-mode="players" class="${researchMode === 'players' ? 'active' : ''}">Players</button>` : ''}
   </div>`;
+  if (researchMode === 'players' && league !== 'nfl') researchMode = 'team';
+  if (researchMode === 'players') {
+    $('#research').innerHTML = `${modeSwitch}<label class="team-pick">${teamPick('research-team', t.name)}</label><div id="players-view"><p class="muted">Loading players…</p></div>`;
+    renderPlayers(t);
+    return;
+  }
 
   if (researchMode === 'league') {
     $('#research').innerHTML = modeSwitch + schemeLeagueHtml(teams, data.schemeSeasons) + leagueHtml(teams);
@@ -3149,6 +3239,12 @@ $('#research').addEventListener('change', (e) => {
     renderResearch(true);
     return;
   }
+  if (e.target.id === 'player-pick') {
+    playerId = e.target.value;
+    storage.set('parlay.player', playerId);
+    renderResearch(true);
+    return;
+  }
   if (e.target.id === 'research-team') {
     researchTeam = e.target.value;
     storage.set(teamStorageKey(), researchTeam);
@@ -3170,6 +3266,13 @@ $('#research').addEventListener('click', (e) => {
     if (shut) folded.add(card.dataset.fold);
     else folded.delete(card.dataset.fold);
     head.setAttribute('aria-expanded', String(!shut));
+    return;
+  }
+  const pview = e.target.closest('[data-pview]')?.dataset.pview;
+  if (pview) {
+    playerView = pview;
+    storage.set('parlay.playerView', pview);
+    renderResearch(true);
     return;
   }
   const mode = e.target.closest('#research-mode button')?.dataset.mode;
