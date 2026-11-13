@@ -1824,20 +1824,27 @@ function heatDetails(s) {
     ${chart}`;
 }
 
+// A player's headshot in a white circle with a blue ring (empty if there's
+// no photo, or it doesn't load).
+const playerPhoto = (url, cls = '') => `<span class="photo-ring ${cls}" aria-hidden="true">${url ? `<img src="${esc(url)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : ''}</span>`;
+document.addEventListener('error', (e) => {
+  if (e.target.matches?.('.photo-ring img')) e.target.remove();
+}, true);
+
 // The top of both sides of the card: position, name and college, then
 // starter or backup and how he got the job.
 function popTop(s) {
   const level = heatLevel(s);
   const note = s.rank > 3 ? ` (#${s.rank} on the depth chart)` : s.rank === 1 && level === 2 ? ' (listed first, filling in)' : '';
   const tag = HEAT_TAGS[s.history?.tag];
-  return `<div class="pop-head">
+  return `<div class="pop-top">${s.name ? playerPhoto(s.card?.photo, 'pop-photo') : ''}<div class="pop-top-text"><div class="pop-head">
       <span class="pop-pos">${esc(s.pos)}</span>
       <span class="pop-name">${esc(s.name ?? 'Nobody healthy')}</span>
       ${s.history?.tag === 'back' ? backBadge(' in-key') : ''}
       ${s.college ? `<span class="pop-college" title="${esc(s.college.name)}"><img src="${esc(s.college.logo)}" alt="" loading="lazy">${esc(s.college.abbrev)}</span>` : ''}
       ${s.status === 'Questionable' ? '<span class="heat-tag">Q</span>' : ''}
     </div>
-    <div class="pop-level">${HEAT_LEVELS[level]}${esc(note)}${s.rookie ? ' <span class="rookie in-key" title="Rookie">R</span>' : ''}${tag ? ` <span class="heat-how how-${s.history.tag}">${tag}</span>` : ''}${lbRoleChip(s.lbRole)}</div>`;
+    <div class="pop-level">${HEAT_LEVELS[level]}${esc(note)}${s.rookie ? ' <span class="rookie in-key" title="Rookie">R</span>' : ''}${tag ? ` <span class="heat-how how-${s.history.tag}">${tag}</span>` : ''}${lbRoleChip(s.lbRole)}</div></div></div>`;
 }
 
 // What kind of linebacker: rush, thumper, coverage or plain off-ball.
@@ -2881,7 +2888,7 @@ function playersHtml(team, data) {
   }
   return `<div class="player-pick">${pick}</div>
     <div class="card player-card">
-      <div class="player-name">${teamLogo(team.name, 'small')}<b>${esc(p.name)}</b> <span class="muted">${esc(p.pos)}</span></div>
+      <div class="player-name">${playerPhoto(p.photo, 'player-photo')}<span class="player-name-text"><b>${esc(p.name)}</b><span class="muted small">${teamLogo(team.name, 'small')}${esc(p.pos)} · ${esc(team.short ?? team.name)}</span></span></div>
       ${toggle}${head}${table}
     </div>
     ${hitCardHtml(p, data)}

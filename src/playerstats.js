@@ -69,13 +69,20 @@ export function statsOf(r) {
   return out;
 }
 
+// nflverse's headshots are NFL.com images at full size (over 1 MB); ask
+// NFL.com's image server for a small one cropped to the face instead.
+export function smallPhoto(url) {
+  if (!url || !/^https:\/\/static\.www\.nfl\.com\/image\/upload\//.test(url)) return null;
+  return url.replace('/upload/f_auto,q_auto/', '/upload/f_auto,q_auto,w_160,h_160,c_thumb,g_face/');
+}
+
 // The weekly stat file -> regular-season game lines:
 // [{ id, name, pos, group, team, opp, week, stats }].
 export function parseGames(text) {
   return parseCsv(text).filter((r) => r.season_type === 'REG' && r.player_id && SHOWN[r.position_group]).map((r) => ({
     id: r.player_id, name: r.player_display_name, pos: r.position, group: r.position_group,
     team: r.team, opp: r.opponent_team, week: Number(r.week), home: r.game_id?.endsWith(`_${r.team}`) ?? null,
-    stats: statsOf(r), fantasy: num(r.fantasy_points_ppr),
+    stats: statsOf(r), fantasy: num(r.fantasy_points_ppr), photo: smallPhoto(r.headshot_url),
   }));
 }
 
@@ -132,7 +139,7 @@ export function teamPlayers(games, code, { career = {}, snaps = null, season } =
     const past = career[id]?.seasons?.[1] < season ? career[id] : null;
     const careerTotal = totalOf([past?.stats ?? {}, seasonTotal], CAREER_KEYS);
     out.push({
-      id, name: last.name, pos: last.pos, group: last.group,
+      id, name: last.name, pos: last.pos, group: last.group, photo: [...lines].reverse().find((l) => l.photo)?.photo ?? null,
       season: { games: log.length, stats: seasonTotal },
       // Bye weeks have no line, and neither do games he missed, so these are
       // simply his last 3 games played.

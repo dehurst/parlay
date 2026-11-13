@@ -19,6 +19,19 @@ const bookFor = (teams, weekly, qbr) => {
   return books.get(weekly).book;
 };
 
+// A player's ESPN headshot, shrunk to card size by ESPN's image resizer (the
+// full one is ~250 KB); null if ESPN has none.
+export function espnPhoto(a) {
+  const href = a?.headshot?.href ?? (a?.id ? `https://a.espncdn.com/i/headshots/nfl/players/full/${a.id}.png` : null);
+  if (!href) return null;
+  try {
+    const u = new URL(href);
+    return u.hostname === 'a.espncdn.com' && u.pathname.startsWith('/i/headshots/') ? `https://a.espncdn.com/combiner/i?img=${u.pathname}&w=160&h=116` : href;
+  } catch {
+    return null;
+  }
+}
+
 // Tags that keep a player off the field; Questionable players still count.
 const SIDELINED = ['Out', 'Doubtful', 'Injured Reserve', 'Suspension'];
 
@@ -546,6 +559,7 @@ export async function teamHeatmap(name, now = Date.now()) {
       const teamsHere = [code, slot.history?.from].filter(Boolean);
       const mine = reports?.get(fullKey(slot.name))?.filter((r) => teamsHere.includes(r.team)) ?? [];
       slot.card = {
+        photo: espnPhoto(a),
         born: a?.dateOfBirth ?? null,
         height: a?.displayHeight ?? null, weight: a?.displayWeight ?? null,
         yards: weekly.status === 'fulfilled' ? playerYards(weekly.value, code, slot.name, slotGroup(slot.slot)) : null,

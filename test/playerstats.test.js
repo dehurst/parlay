@@ -104,3 +104,16 @@ test('the full game log is newest first, with games he played without a stat', (
   const [wr] = teamPlayers(parseGames(csv), 'CIN', { season: 2026 }).filter((p) => p.id === 'A');
   assert.deepEqual(wr.log.map((g) => g.week), [6, 5, 2, 1]);
 });
+
+import { smallPhoto } from '../src/playerstats.js';
+import { espnPhoto } from '../src/heatmap.js';
+
+test('headshots: asks the image servers for a small one, not the full-size file', () => {
+  assert.equal(smallPhoto('https://static.www.nfl.com/image/upload/f_auto,q_auto/league/abc'),
+    'https://static.www.nfl.com/image/upload/f_auto,q_auto,w_160,h_160,c_thumb,g_face/league/abc');
+  assert.equal(smallPhoto(''), null);
+  assert.equal(espnPhoto({ headshot: { href: 'https://a.espncdn.com/i/headshots/nfl/players/full/42.png' } }),
+    'https://a.espncdn.com/combiner/i?img=/i/headshots/nfl/players/full/42.png&w=160&h=116');
+  assert.equal(espnPhoto({ id: '7' }), 'https://a.espncdn.com/combiner/i?img=/i/headshots/nfl/players/full/7.png&w=160&h=116');
+  assert.equal(espnPhoto(null), null);
+});
