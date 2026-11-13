@@ -39,21 +39,31 @@ header { padding: 16px 0 8px; }
 
 /* The site's name, arcade style: PARLAY BUILDER and a football rise up out of
    a floor line (with a faded mirror reflection under it), then a streak of
-   light shines across once. 1.75x the old 22px title, smaller on narrow
-   phones so it still fits beside your name chip. Plays once per page load. */
+   light shines across once. 1.75x the old 22px title, scaled down on phones
+   to whatever room is left beside your name chip (the logo is ~12em wide, so
+   8cqi of its box always fits). Plays once per page load. */
 .logo {
-  --logo-size: min(38.5px, 5.5vw);
-  display: flex; flex-direction: column; min-width: 0;
+  --logo-size: min(38.5px, 8cqi);
+  display: flex; flex-direction: column; flex: 1 1 auto; min-width: 0;
+  container-type: inline-size;
+}
+.logo-stage {
+  display: block; overflow: hidden; padding-top: 0.08em;
   font: 400 var(--logo-size)/1 'Audiowide', system-ui, sans-serif; letter-spacing: 0.02em;
 }
-.logo-stage { display: block; overflow: hidden; padding-top: 0.08em; }
 .brand > .who { flex: none; white-space: nowrap; }
 .logo-rise {
   display: flex; align-items: center; gap: 0.28em; white-space: nowrap;
   animation: logo-rise 1.8s cubic-bezier(0.2, 0.7, 0.25, 1) 0.15s both,
              logo-flash 0.9s ease-in-out 1.95s both;
 }
-.logo-ball { width: 1.25em; height: auto; flex: none; }
+/* The football is 24x16 pixel art; 1.25em is about 2x, kept crisp. */
+.logo-ball { width: 1.25em; height: auto; flex: none; overflow: visible; image-rendering: pixelated; }
+/* A pixel sparkle on the ball's nose, just as each glimmer starts. */
+.ball-sparkle {
+  opacity: 0; transform-box: fill-box; transform-origin: center;
+  animation: ball-sparkle 15s steps(1, end) 1.95s infinite;
+}
 .logo-word {
   padding-bottom: 0.06em;
   background:
@@ -63,7 +73,8 @@ header { padding: 16px 0 8px; }
   background-position: 150% 0, 0 0;
   -webkit-background-clip: text; background-clip: text;
   color: transparent; -webkit-text-fill-color: transparent;
-  animation: logo-shine 0.9s ease-in-out 1.95s both;
+  /* The shine after it rises, then a glimmer across every 15 seconds. */
+  animation: logo-shine 15s ease-in-out 1.95s infinite both;
 }
 /* The reflection: flipped, squashed, faded toward the bottom, rising the
    opposite way so it meets the letters at the floor line. */
@@ -76,10 +87,21 @@ header { padding: 16px 0 8px; }
   pointer-events: none; user-select: none;
 }
 @keyframes logo-rise { from { transform: translateY(105%); } to { transform: translateY(0); } }
-@keyframes logo-shine { from { background-position: 150% 0, 0 0; } to { background-position: -50% 0, 0 0; } }
+/* 6% of 15s: the same 0.9s sweep, then a rest until the next one. */
+@keyframes logo-shine {
+  0% { background-position: 150% 0, 0 0; }
+  6%, 100% { background-position: -50% 0, 0 0; }
+}
+/* Stepped, like a sprite: small, full, small, gone (about 0.45s). */
+@keyframes ball-sparkle {
+  0% { opacity: 1; transform: scale(0.4); }
+  1% { transform: scale(1); }
+  2% { transform: scale(0.6); }
+  3%, 100% { opacity: 0; transform: scale(0.4); }
+}
 @keyframes logo-flash { 0%, 100% { filter: none; } 45% { filter: brightness(1.45) saturate(0.8); } }
 @media (prefers-reduced-motion: reduce) {
-  .logo-rise, .logo-word { animation: none; }
+  .logo-rise, .logo-word, .ball-sparkle { animation: none; }
 }
 .me-chip { padding: 5px 12px; border-radius: 999px; font-size: 14px; font-weight: 600; }
 .week-nav { margin: 6px 0 0 -6px; }

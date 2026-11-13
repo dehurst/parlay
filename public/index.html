@@ -23,6 +23,8 @@
   <!-- Gold for lock icons, with a shine that sweeps across. -->
   <svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
     <defs>
+      <!-- The logo football: 16-bit pixel art (24x16), drawn crisp at about 2x. -->
+      <symbol id="pixel-ball" viewBox="0 0 24 16"><path fill="#1a0a02" d="M14 1h6v1h-6zM11 2h3v1h-3zM20 2h2v1h-2zM9 3h2v1h-2zM21 3h1v1h-1zM7 4h2v1h-2zM21 4h1v1h-1zM6 5h1v1h-1zM20 5h1v1h-1zM5 6h1v1h-1zM20 6h1v1h-1zM4 7h1v1h-1zM19 7h1v1h-1zM4 8h1v1h-1zM19 8h1v1h-1zM3 9h1v1h-1zM18 9h1v1h-1zM3 10h1v1h-1zM17 10h1v1h-1zM2 11h1v1h-1zM15 11h2v1h-2zM2 12h1v1h-1zM13 12h2v1h-2zM2 13h2v1h-2zM10 13h3v1h-3zM4 14h6v1h-6z"/><path fill="#5a280a" d="M20 3h1v1h-1zM20 4h1v1h-1zM18 7h1v1h-1zM16 8h3v1h-3zM15 9h3v1h-3zM13 10h4v1h-4zM11 11h4v1h-4zM9 12h4v1h-4zM4 13h1v1h-1zM7 13h3v1h-3z"/><path fill="#8c4314" d="M19 2h1v1h-1zM19 3h1v1h-1zM17 4h1v1h-1zM16 5h2v1h-2zM14 6h5v1h-5zM12 7h6v1h-6zM10 8h6v1h-6zM8 9h7v1h-7zM7 10h6v1h-6zM3 11h1v1h-1zM6 11h5v1h-5zM3 12h2v1h-2zM7 12h2v1h-2z"/><path fill="#bb6a2c" d="M15 2h2v1h-2zM14 3h1v1h-1zM16 3h1v1h-1zM12 4h1v1h-1zM16 4h1v1h-1zM10 5h1v1h-1zM14 5h1v1h-1zM12 6h1v1h-1zM5 7h1v1h-1zM7 7h1v1h-1zM10 7h1v1h-1zM5 8h4v1h-4zM5 9h3v1h-3zM6 10h1v1h-1z"/><path fill="#f0b070" d="M14 2h1v1h-1zM11 3h3v1h-3zM9 4h3v1h-3zM7 5h3v1h-3zM6 6h3v1h-3zM6 7h1v1h-1z"/><path fill="#ffffff" d="M17 2h2v1h-2zM15 3h1v1h-1zM17 3h2v1h-2zM13 4h3v1h-3zM18 4h2v1h-2zM11 5h3v1h-3zM15 5h1v1h-1zM9 6h3v1h-3zM13 6h1v1h-1zM8 7h2v1h-2zM11 7h1v1h-1zM9 8h1v1h-1zM4 9h1v1h-1zM4 10h2v1h-2zM4 11h2v1h-2z"/><path fill="#bdb4aa" d="M18 5h2v1h-2zM19 6h1v1h-1zM5 12h2v1h-2zM5 13h2v1h-2z"/></symbol>
       <linearGradient id="gold" x1="0" y1="0" x2="1" y2="1">
         <stop offset="0" stop-color="#fff4b8"/>
         <stop offset=".3" stop-color="#f7cd4a"/>
@@ -43,25 +45,11 @@
            a mirror reflection below, then shines once. -->
       <h1 class="logo" aria-label="Parlay Builder">
         <span class="logo-stage"><span class="logo-rise">
-          <svg class="logo-ball" viewBox="0 0 64 40" aria-hidden="true">
-            <defs><radialGradient id="ball-skin" cx="40%" cy="35%" r="70%"><stop offset="0" stop-color="#b8682f"/><stop offset=".6" stop-color="#7a3b12"/><stop offset="1" stop-color="#4a2208"/></radialGradient></defs>
-            <g transform="rotate(-28 32 20)">
-              <ellipse cx="32" cy="20" rx="29" ry="16" fill="url(#ball-skin)" stroke="#2e1503" stroke-width="1.5"/>
-              <path d="M12 9.5q2 10.5 0 21M52 9.5q-2 10.5 0 21" stroke="#fff" stroke-width="2.6" fill="none" stroke-linecap="round"/>
-              <path d="M22 20h20M25 16.5v7M29 16.5v7M33 16.5v7M37 16.5v7" stroke="#fff" stroke-width="2.2" stroke-linecap="round"/>
-            </g>
-          </svg>
+          <svg class="logo-ball" viewBox="0 0 24 16" shape-rendering="crispEdges" aria-hidden="true"><use href="#pixel-ball"/><path class="ball-sparkle" fill="#fff" d="M20 0h1v1h-1zM19 1h3v1h-3zM18 2h5v1h-5zM19 3h3v1h-3zM20 4h1v1h-1z"/></svg>
           <span class="logo-word">PARLAY BUILDER</span>
         </span></span>
         <span class="logo-stage logo-reflect" aria-hidden="true"><span class="logo-rise">
-          <svg class="logo-ball" viewBox="0 0 64 40" aria-hidden="true">
-            <defs><radialGradient id="ball-skin-r" cx="40%" cy="35%" r="70%"><stop offset="0" stop-color="#b8682f"/><stop offset=".6" stop-color="#7a3b12"/><stop offset="1" stop-color="#4a2208"/></radialGradient></defs>
-            <g transform="rotate(-28 32 20)">
-              <ellipse cx="32" cy="20" rx="29" ry="16" fill="url(#ball-skin-r)" stroke="#2e1503" stroke-width="1.5"/>
-              <path d="M12 9.5q2 10.5 0 21M52 9.5q-2 10.5 0 21" stroke="#fff" stroke-width="2.6" fill="none" stroke-linecap="round"/>
-              <path d="M22 20h20M25 16.5v7M29 16.5v7M33 16.5v7M37 16.5v7" stroke="#fff" stroke-width="2.2" stroke-linecap="round"/>
-            </g>
-          </svg>
+          <svg class="logo-ball" viewBox="0 0 24 16" shape-rendering="crispEdges" aria-hidden="true"><use href="#pixel-ball"/><path class="ball-sparkle" fill="#fff" d="M20 0h1v1h-1zM19 1h3v1h-3zM18 2h5v1h-5zM19 3h3v1h-3zM20 4h1v1h-1z"/></svg>
           <span class="logo-word">PARLAY BUILDER</span>
         </span></span>
       </h1>
