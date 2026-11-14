@@ -1249,6 +1249,33 @@ app.post('/api/stakes-all', async (req, res, next) => {
 // Delete a parlay nobody placed (say the bet never got in at the sportsbook).
 // Works on any week, so a never-placed parlay doesn't count in Stats. Placed
 // ones can't be deleted: undo "placed" first.
+// Drop one leg from a bet that isn't placed yet (say the sportsbook wouldn't
+// take that leg in time). The odds are re-priced from the legs left.
+app.post('/api/remove-leg', async (req, res, next) => {
+  try {
+    const name = checkPlayer(req, res);
+    if (!name) return;
+    if (!canEditStakes(name)) return res.status(403).json({ error: 'Only the person who places the bets can change a bet’s legs.' });
+    const saved = store.data.stakes[weekWindow().key]?.[String(req.body.id ?? '')];
+    if (!saved) return res.status(404).json({ error: 'That bet isn’t on the slip anymore. Refresh and try again.' });
+    if (saved.placed) return res.status(409).json({ error: 'It’s marked placed. Undo that first.' });
+    const legs = saved.legs.filter((l) => l.key !== req.body.key);
+    if (legs.length === saved.legs.length) return res.status(404).json({ error: 'That leg is already gone.' });
+    if (!legs.length) return res.status(409).json({ error: 'That’s its only leg. To drop the bet, use Delete.' });
+    const priced = priceParlay(legs.map((l) => ({ ...l, fairProb: 0.5 })));
+    saved.legs = legs;
+    saved.decimal = priced.decimal;
+    saved.american = priced.american;
+    saved.legsEdited = true; // still counts as an option on the slip
+    if (isSameGame(legs.map((l) => l.key))) saved.sameGame = true;
+    else delete saved.sameGame;
+    await save();
+    res.json({ legs: legs.length, american: priced.american });
+  } catch (err) {
+    next(err);
+  }
+});
+
 app.post('/api/delete-parlay', async (req, res, next) => {
   try {
     const name = checkPlayer(req, res);
@@ -1362,7 +1389,7 @@ function gradedParlays(win, gamesById, optionIds) {
       }));
       const decimal = actualDecimal(p, total);
       const { status, returned } = gradeParlay(legs, total, decimal / p.decimal);
-      const stillOption = p.custom || optionIds.has(p.id);
+      const stillOption = p.custom || p.legsEdited || optionIds.has(p.id);
       // Same-game: the multiplied odds are only an upper limit ("up to").
       const sameGame = isSameGameKeys(p.legs.map((l) => l.key));
       const estDecimal = estimatedDecimal(p, total, adjust);
