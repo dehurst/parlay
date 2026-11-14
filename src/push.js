@@ -75,6 +75,8 @@ export function messageFor(event, who) {
       const title = `${tag}${event.game}: ${out ? `${event.players.filter((p) => p.now === 'Inactive').length} out` : 'all active'}`;
       return { title, body: [out && `Inactive: ${out}.`, active && `Active: ${active}.`].filter(Boolean).join(' ') };
     }
+    case 'bank': // balance alerts: the text comes ready-made
+      return { title: event.title, body: event.body };
     case 'paid':
       return { title: `${tag}Paid out: ${name}`, body: `${actor} marked it paid.${event.shares?.[who] ? ` Your share: ${money(event.shares[who])}.` : ''}` };
     default:

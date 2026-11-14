@@ -252,6 +252,27 @@ The week flips every Tuesday at 6 AM Eastern: new games, fresh lines, and empty
 picks. Nothing is deleted. Past weeks stay in the data and show up on the
 Stats tab with their results.
 
+## Running balances
+
+Instead of a Venmo for every bet, everyone but the banker (the first
+`STAKE_EDITORS` player, who places the bets) keeps money with the banker. The
+banker taps **Start balances now** at the top of the Bet Slip once; bets placed
+before that are settled the old way (Mark paid out).
+
+A balance is worked out, never typed in: Venmos to the banker, minus Venmos
+back, minus their stake on each bet placed since the start, plus their share
+of what each of those bets paid (wins and pushes). Money on bets not placed
+yet is "on hold": it comes off what's available, not the balance. Both
+leagues share one balance. Only the banker records Venmos (and can remove a
+mistaken one); everyone can see every balance and its history.
+
+Lines (in `src/bank.js`): under **$20** available, the person gets a
+notification to top up (and a heads-up when they pledge more than they have;
+nothing is blocked); at **$200**, the banker gets one to pay them back down to
+**$100**. Alerts go out from the 5-minute reminder check, once per crossing.
+With Venmo usernames saved, the banker gets Request / Pay buttons that open
+Venmo with the amount filled in.
+
 ## Hosting on Vercel (free)
 
 Vercel runs the site for free but has no lasting disk, so the data goes in a

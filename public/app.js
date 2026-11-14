@@ -41,7 +41,8 @@ const isPast = () => !!week?.past;
 // Adds the viewed week to an API path (nothing for this week).
 const withWeek = (path) => (viewKey ? `${path}${path.includes('?') ? '&' : '?'}week=${viewKey}` : path);
 let statsScope = 'week'; // Stats tab: 'week' (the one picked up top) or 'season'
-let tab = new URLSearchParams(location.search).get('parlay') ? 'parlays' : 'picks';
+let tab = new URLSearchParams(location.search).get('parlay') ? 'parlays'
+  : new URLSearchParams(location.search).get('tab') === 'slip' ? 'slip' : 'picks';
 // Payout calculator: a scratch parlay that's never saved or shared.
 let calc = false;
 const calcKeys = new Set();
@@ -3107,15 +3108,23 @@ let stakesEditId = null; // Bet Slip parlay whose "Edit stakes" form is open
 async function renderSlip(quiet = false) {
   const y = window.scrollY;
   if (!quiet) $('#slip').innerHTML = '<p class="muted">Loading…</p>';
-  const data = await api(withWeek('/api/slip')).catch((err) => (notice(err.message), null));
+  const [data, bank] = await Promise.all([
+    api(withWeek('/api/slip')).catch((err) => (notice(err.message), null)),
+    isPast() ? null : api(`/api/bank?me=${encodeURIComponent(me ?? '')}`).catch(() => null),
+  ]);
   if (!data) return;
+  bankInfo = bank;
   const past = isPast();
+  const bankCard = bank ? bankHtml(bank) : '';
   if (!data.parlays.length) {
-    $('#slip').innerHTML = `<div class="card muted">${past
+    $('#slip').innerHTML = `${bankCard}<div class="card muted">${past
       ? `Nobody put money on a parlay in ${esc(week.label)}.`
       : 'Nobody has put money on a parlay yet. Do that on the Parlays tab.'}</div>`;
+    if (quiet) window.scrollTo(0, y);
     return;
   }
+  // Bets placed since balances started pay out to balances, not by Venmo.
+  const viaBank = (p) => !!(data.bankStart && p.placed && p.placed.at >= data.bankStart);
   const grand = data.parlays.reduce((sum, p) => sum + p.total, 0);
   // Parlays still in play (to place, or placed and waiting on games) stay on
   // top; finished ones move to a grayed-out section at the bottom.
@@ -3127,7 +3136,7 @@ async function renderSlip(quiet = false) {
   // share is proportional to their stake.
   const owed = {};
   for (const p of finished) {
-    if (!['won', 'push'].includes(p.status) || p.paidOut) continue;
+    if (!['won', 'push'].includes(p.status) || p.paidOut || viaBank(p)) continue;
     for (const [who, amt] of Object.entries(p.stakes)) owed[who] = (owed[who] ?? 0) + (p.returned * amt) / p.total;
   }
   const owedTotal = Object.values(owed).reduce((a, b) => a + b, 0);
@@ -3181,7 +3190,9 @@ async function renderSlip(quiet = false) {
              ${deleteHtml(p, true)}`}
       </div>
       ${['won', 'push'].includes(p.status) ? `<div class="place-row">
-        ${p.paidOut
+        ${viaBank(p)
+          ? `<span class="small muted">${p.status === 'push' ? 'Stakes went' : 'Winnings went'} back to everyone’s balance ✓</span>`
+          : p.paidOut
           ? `<span class="small muted">Paid out by ${esc(p.paidOut.by)} ${esc(at(p.paidOut.at))}.</span>
              <button type="button" class="link" data-paid="${esc(p.id)}" data-val="0">Not paid yet</button>`
           : `<button type="button" class="primary" data-paid="${esc(p.id)}" data-val="1">Mark paid out</button>
@@ -3213,7 +3224,7 @@ async function renderSlip(quiet = false) {
   const sum = (k) => Object.values(owes).reduce((a, o) => a + o[k], 0);
   const anyWaiting = sum('waiting') > 0.004;
   const totals = Object.entries(owes).map(([who, o]) => `<tr><td>${esc(who)}</td><td class="num">${money(o.placed)}</td>${anyWaiting ? `<td class="num muted">${money(o.waiting)}</td>` : ''}</tr>`).join('');
-  $('#slip').innerHTML = `
+  $('#slip').innerHTML = `${bankCard}
     <div class="card"><b>${past ? `${esc(week.label)} bet slip` : toPlace.length
         ? `${toPlace.length} parlay${toPlace.length === 1 ? '' : 's'} left to place, ${money(left)}.`
         : active.length ? `All placed ✓ · ${active.length} still in play` : 'All parlays are settled.'}</b>
@@ -3232,6 +3243,113 @@ async function renderSlip(quiet = false) {
     </div>`;
   if (quiet) window.scrollTo(0, y);
 }
+
+// ---- Balances ----------------------------------------------------------------
+// Asher and Matt keep money with the banker instead of a Venmo per bet. The
+// server works the balances out; the banker records Venmos in and out here.
+
+let bankInfo = null;
+let bankForm = null; // { who, kind } while the banker is recording a Venmo
+const signedMoney = (n) => `${n < 0 ? '−' : ''}$${Math.abs(n).toFixed(2)}`;
+const venmoLink = (handle, txn, amount, note) => `https://venmo.com/${encodeURIComponent(handle)}?${new URLSearchParams({ txn, amount: amount.toFixed(2), note })}`;
+
+function bankHtml(b) {
+  if (!b.on) {
+    return b.canEdit ? `<div class="card bank"><b>Running balances</b>
+      <p class="small muted">Instead of a Venmo for every bet, ${esc(b.members.length ? 'everyone' : 'each person')} Venmos you $${b.lines.backTo} up front. Placed bets come out of their balance and winnings go back in. You’ll get a heads-up to pay someone back at $${b.lines.high}, and they’ll get one to top up under $${b.lines.low}. Bets placed before you start are settled the old way.</p>
+      <button type="button" class="primary" id="bank-start">Start balances now</button></div>` : '';
+  }
+  const mine = b.members.find((m) => m.name === b.me);
+  const fmtWhen = (t) => new Date(t).toLocaleDateString([], { month: 'short', day: 'numeric' });
+  const row = (m) => {
+    const handle = b.venmo?.[m.name];
+    const note = m.status === 'low'
+      ? `<div class="small neg">Low: Venmo ${esc(b.banker)} ${money(m.topUp)} to get back to $${b.lines.backTo}</div>`
+      : m.status === 'high' ? `<div class="small pos">${b.canEdit ? `Pay back ${money(m.cashOut)}` : `${esc(b.banker)} owes you ${money(m.cashOut)}`} (back to $${b.lines.backTo})</div>` : '';
+    const extra = [m.inPlay > 0 && `${money(m.inPlay)} in play`, m.hold > 0 && `${money(m.hold)} on bets not placed yet`].filter(Boolean).join(' · ');
+    const actions = b.canEdit ? `<div class="bank-actions">
+        <button type="button" class="link small" data-bank-form="${esc(m.name)}" data-kind="deposit">+ Venmo in</button>
+        <button type="button" class="link small" data-bank-form="${esc(m.name)}" data-kind="cashout">Paid back</button>
+        ${handle && m.status === 'low' ? `<a class="small" href="${esc(venmoLink(handle, 'charge', m.topUp, 'Parlay balance top-up'))}" target="_blank" rel="noopener">Request ${money(m.topUp)} in Venmo</a>` : ''}
+        ${handle && m.status === 'high' ? `<a class="small" href="${esc(venmoLink(handle, 'pay', m.cashOut, 'Parlay balance cash-out'))}" target="_blank" rel="noopener">Pay ${money(m.cashOut)} in Venmo</a>` : ''}
+      </div>
+      ${bankForm?.who === m.name ? `<form class="bank-form" data-who="${esc(m.name)}" data-kind="${bankForm.kind}">
+        <label>${bankForm.kind === 'deposit' ? `${esc(m.name)} Venmo’d you` : `You Venmo’d ${esc(m.name)}`} $<input name="amount" type="number" inputmode="decimal" min="0.01" step="0.01" required></label>
+        <input name="note" placeholder="Note (optional)" maxlength="80">
+        <button type="submit" class="primary">Save</button>
+        <button type="button" class="link small" data-bank-cancel>Cancel</button>
+      </form>` : ''}` : '';
+    const history = m.history.length ? `<details class="bank-history"><summary class="small">History</summary><ul>${m.history.map((h) => `
+        <li><span class="muted">${fmtWhen(h.at)}</span>
+          <span>${h.url ? `<a href="${esc(h.url)}">${esc(h.text)}</a>` : esc(h.text)}${h.note ? ` <span class="muted">· ${esc(h.note)}</span>` : ''}</span>
+          <span class="num ${h.amount > 0 ? 'pos' : h.amount < 0 ? 'neg' : 'muted'}">${h.amount === 0 ? '$0.00' : `${h.amount > 0 ? '+' : ''}${signedMoney(h.amount)}`}</span>
+          ${b.canEdit && h.id ? `<button type="button" class="link small danger" data-bank-delete="${esc(h.id)}" title="Remove this entry">×</button>` : ''}</li>`).join('')}</ul></details>` : '';
+    return `<div class="bank-row${m.name === b.me ? ' me' : ''}">
+      <div class="bank-top"><b>${esc(m.name)}</b>
+        <span class="bank-bal ${m.status === 'low' ? 'neg' : m.status === 'high' ? 'pos' : ''}">${signedMoney(m.balance)}</span></div>
+      ${m.hold > 0 ? `<div class="small muted">${signedMoney(m.available)} available</div>` : ''}
+      ${extra ? `<div class="small muted">${extra}</div>` : ''}
+      ${note}${actions}${history}
+    </div>`;
+  };
+  return `<div class="card bank"><div class="bank-head"><b>Balances</b>${mine ? `<span class="small muted">You: <b>${signedMoney(mine.available)}</b> available</span>` : ''}</div>
+    ${b.members.map(row).join('')}
+    ${b.canEdit ? `<p class="small muted bank-foot">You’re holding <b>${money(b.holding)}</b> for them${b.inPlay > 0 ? `, plus ${money(b.inPlay)} of theirs in bets in play` : ''}.</p>
+      <details class="bank-venmo"><summary class="small">Venmo usernames (for the Request / Pay buttons)</summary>
+        ${b.members.map((m) => `<form class="bank-venmo-form" data-who="${esc(m.name)}"><label>${esc(m.name)} @<input name="handle" value="${esc(b.venmo?.[m.name] ?? '')}" placeholder="username" autocapitalize="off" autocorrect="off"></label><button type="submit" class="link small">Save</button></form>`).join('')}
+      </details>` : ''}
+  </div>`;
+}
+
+$('#slip').addEventListener('click', async (e) => {
+  if (e.target.closest('#bank-start')) {
+    if (!confirm('Start running balances now? Bets placed from now on come out of balances.')) return;
+    try {
+      await api('/api/bank/start', { method: 'POST', body: { name: me } });
+    } catch (err) {
+      return notice(err.message);
+    }
+    return renderSlip(true);
+  }
+  const open = e.target.closest('[data-bank-form]');
+  if (open) {
+    bankForm = { who: open.dataset.bankForm, kind: open.dataset.kind };
+    await renderSlip(true);
+    $('#slip .bank-form input[name=amount]')?.focus();
+    return;
+  }
+  if (e.target.closest('[data-bank-cancel]')) {
+    bankForm = null;
+    return renderSlip(true);
+  }
+  const del = e.target.closest('[data-bank-delete]');
+  if (del) {
+    if (!confirm('Remove this entry from the balance?')) return;
+    try {
+      await api('/api/bank/delete', { method: 'POST', body: { name: me, id: del.dataset.bankDelete } });
+    } catch (err) {
+      return notice(err.message);
+    }
+    renderSlip(true);
+  }
+});
+$('#slip').addEventListener('submit', async (e) => {
+  const form = e.target.closest('.bank-form, .bank-venmo-form');
+  if (!form) return;
+  e.preventDefault();
+  try {
+    if (form.classList.contains('bank-form')) {
+      await api('/api/bank/entry', { method: 'POST', body: { name: me, who: form.dataset.who, kind: form.dataset.kind, amount: Number(form.elements.amount.value), note: form.elements.note.value } });
+      bankForm = null;
+    } else {
+      await api('/api/bank/venmo', { method: 'POST', body: { name: me, who: form.dataset.who, handle: form.elements.handle.value } });
+      notice(`Saved ${form.dataset.who}’s Venmo username.`);
+    }
+  } catch (err) {
+    return notice(err.message);
+  }
+  renderSlip(true);
+});
 
 // ---- Events --------------------------------------------------------------
 
@@ -3506,10 +3624,20 @@ async function setStake(id, amount, rerender) {
   try {
     await api('/api/stake', { method: 'POST', body: { name: me, id, amount } });
     notice(null);
+    if (amount > 0) warnIfOverBalance();
   } catch (err) {
     notice(err.message);
   }
   rerender();
+}
+
+// After you put money on a bet: a heads-up if it's more than you have.
+async function warnIfOverBalance() {
+  const bank = await api(`/api/bank?me=${encodeURIComponent(me ?? '')}`).catch(() => null);
+  const mine = bank?.on && bank.members.find((m) => m.name === me);
+  if (mine && mine.available < 0) {
+    notice(`Heads up: that’s more than your balance. You’re at ${signedMoney(mine.available)} available, so Venmo ${bank.banker} to top up.`);
+  }
 }
 $('#parlays').addEventListener('submit', (e) => {
   e.preventDefault();

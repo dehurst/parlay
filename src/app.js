@@ -12,7 +12,8 @@ import { gradeLeg, gradeParlay, actualDecimal } from './grading.js';
 import { fetchEspnScores, fetchEspnLive, fetchOddsApiScores, fetchEspnPlayerStats } from './results.js';
 import { computeStats } from './stats.js';
 import { setupPush, sendEvent, addToInbox, defaultPrefs, EVENTS, REMINDER_EVENT, remindersDue } from './push.js';
-import { createHash, timingSafeEqual } from 'node:crypto';
+import { createHash, timingSafeEqual, randomUUID } from 'node:crypto';
+import { computeBank, bankAlerts, BANK_LINES } from './bank.js';
 import { parseLogins, checkLogin, makeToken, readToken, cookieValue, sessionCookie, COOKIE } from './auth.js';
 import { analyzeWeek } from './analysis.js';
 import { sgpDecimal, learnAdjust, isSameGameKeys } from '../public/sgp.js';
@@ -40,6 +41,7 @@ const {
   PLAYERS = 'Daniel,Asher,Matt',
   VIEWERS = 'Robi', // view-only logins: can look at everything, change nothing (comma-separated)
   PUSH_FILE = join(root, 'data', 'push.json'), // notification sign-ups (local runs)
+  BANK_FILE = join(root, 'data', 'bank.json'), // running balances (local runs)
   GROUP_CODE = '',
   LOGINS = '', // "matt:password,daniel:password,..." (set in Vercel, never in the code)
   SESSION_SECRET = '',
@@ -130,6 +132,73 @@ const eventsFor = (who) => (reminderPlayers.includes(who) ? { ...EVENTS, ...REMI
 const stakeEditors = STAKE_EDITORS.split(',').map((p) => p.trim().toLowerCase()).filter(Boolean);
 const canEditStakes = (name) => !!name && stakeEditors.includes(name.toLowerCase());
 
+// ---- Running balances (see bank.js) ----
+// The banker is the first STAKE_EDITORS player (the one who places the bets);
+// everyone else keeps a balance with them. Both leagues share one balance.
+const banker = players.find((p) => p.toLowerCase() === stakeEditors[0]) ?? players[0];
+const bankMembers = players.filter((p) => p !== banker);
+let bankStore;
+async function loadBank() {
+  bankStore ??= createStore(process.env, BANK_FILE, 'parlay:bank');
+  await bankStore.load();
+  bankStore.data.entries ??= []; // deposits and cash-outs
+  bankStore.data.alerts ??= {}; // { member: 'low' | 'high' } last alert sent
+  return bankStore.data; // startAt (ms) once the banker starts balances
+}
+// Run fn with another league's data loaded as `store`.
+const inLeague = (id, fn) => new Promise((resolve, reject) => runInSport(id, () => store.load().then(fn).then(resolve, reject)));
+// Every parlay with money on it, both leagues, from the week balances started.
+async function bankBets(startAt) {
+  const bets = [];
+  const startWeek = weekWindow(new Date(startAt)).key;
+  for (const id of Object.keys(SPORTS)) {
+    await inLeague(id, () => {
+      const current = weekWindow().key;
+      for (const week of Object.keys(store.data.stakes)) {
+        if (week < startWeek) continue;
+        for (const p of gradedParlays({ key: week }, new Map(), new Set())) {
+          const last = Math.max(...p.legs.map((l) => new Date(l.commence ?? 0).getTime()));
+          bets.push({
+            id: p.id, name: `${id === 'cfb' ? 'CFB · ' : ''}${p.name}`, url: parlayUrl(p.id, week),
+            placed: p.placed ?? null, status: p.status, stakes: p.stakes, total: p.total, returned: p.returned ?? 0,
+            // When it was decided: about when its last game ended (never before it was placed).
+            decidedAt: Math.min(Date.now(), Math.max(p.placed?.at ?? 0, (Number.isFinite(last) ? last : 0) + 3.5 * 3600e3)),
+            current: week === current,
+          });
+        }
+      }
+    });
+  }
+  return bets;
+}
+async function bankNow() {
+  const data = await loadBank();
+  if (!data.startAt) return { data, on: false };
+  const bets = await bankBets(data.startAt);
+  return { data, on: true, ...computeBank(data, bets, bankMembers, banker) };
+}
+// Tell people when a balance crosses a line (from the 5-minute check).
+async function bankAlertsRun() {
+  const now = await bankNow();
+  if (!now.on) return [];
+  const { sent, alerts } = bankAlerts(now.members, now.data.alerts);
+  now.data.alerts = sent;
+  await bankStore.save();
+  const money = (n) => `${n < 0 ? '−' : ''}$${Math.abs(n).toFixed(2)}`;
+  for (const m of alerts) {
+    if (m.status === 'low') {
+      await notify({ type: 'bank', to: [m.name], id: `low:${m.name}`, url: '/?tab=slip',
+        title: `Your balance is ${money(m.available)}`,
+        body: `Venmo ${banker} to top up (${money(m.topUp)} gets you back to ${money(BANK_LINES.backTo)}).` });
+    } else {
+      await notify({ type: 'bank', to: [banker], id: `high:${m.name}`, url: '/?tab=slip',
+        title: `${m.name} is at ${money(m.balance)}`,
+        body: `Venmo ${m.name} ${money(m.cashOut)} to bring them back to ${money(BANK_LINES.backTo)}, then record it on the Bet Slip.` });
+    }
+  }
+  return alerts.map((m) => `${m.name}: ${m.status}`);
+}
+
 // Logins: on once LOGINS is set. Sessions are signed with SESSION_SECRET, or
 // one derived from LOGINS (changing a password logs everyone out).
 const viewers = VIEWERS.split(',').map((p) => p.trim()).filter((v) => v && !players.includes(v));
@@ -195,6 +264,12 @@ app.all('/api/reminders', async (req, res, next) => {
   if (!secretOk(req)) return res.status(401).json({ error: 'Wrong or missing secret.' });
   try {
     const sent = [];
+    try {
+      const bank = await bankAlertsRun();
+      if (bank.length) sent.push({ bank });
+    } catch (err) {
+      console.error(`Balance alerts failed: ${describe(err)}`);
+    }
     for (const id of Object.keys(SPORTS)) {
       await new Promise((resolve, reject) => runInSport(id, () => remindLeague().then((r) => (r && sent.push({ league: id, ...r }), resolve()), reject)));
       if (id === 'nfl') {
@@ -1300,6 +1375,91 @@ function gradedParlays(win, gamesById, optionIds) {
     .filter((p) => p.total > 0);
 }
 
+// Balances: everyone sees all of them (and the history); only the banker
+// starts them and records Venmos.
+app.get('/api/bank', async (req, res, next) => {
+  try {
+    const me = req.player ?? (players.includes(req.query.me) ? req.query.me : null);
+    const now = await bankNow();
+    res.json({
+      on: now.on, startAt: now.data.startAt ?? null, banker, lines: BANK_LINES,
+      canEdit: me === banker, me,
+      members: now.members ?? [], holding: now.holding ?? 0, inPlay: now.inPlay ?? 0,
+      venmo: now.data.venmo ?? {},
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+const bankerOnly = (req, res) => {
+  const name = checkPlayer(req, res);
+  if (!name) return null;
+  if (name !== banker) {
+    res.status(403).json({ error: `Only ${banker} can change balances.` });
+    return null;
+  }
+  return name;
+};
+app.post('/api/bank/start', async (req, res, next) => {
+  try {
+    if (!bankerOnly(req, res)) return;
+    const data = await loadBank();
+    data.startAt ??= Date.now();
+    await bankStore.save();
+    res.json({ startAt: data.startAt });
+  } catch (err) {
+    next(err);
+  }
+});
+// Record a Venmo: a deposit (member → banker) or a cash-out (banker → member).
+app.post('/api/bank/entry', async (req, res, next) => {
+  try {
+    if (!bankerOnly(req, res)) return;
+    const { who, kind } = req.body;
+    const amount = Math.round(Number(req.body.amount) * 100) / 100;
+    if (!bankMembers.includes(who)) return res.status(400).json({ error: 'Pick who it’s for.' });
+    if (!['deposit', 'cashout'].includes(kind)) return res.status(400).json({ error: 'Deposit or cash-out?' });
+    if (!(amount > 0 && amount <= 10000)) return res.status(400).json({ error: 'Enter an amount.' });
+    const data = await loadBank();
+    if (!data.startAt) return res.status(409).json({ error: 'Start balances first.' });
+    data.entries.push({ id: randomUUID(), who, kind, amount, at: Date.now(), note: String(req.body.note ?? '').slice(0, 80) });
+    await bankStore.save();
+    res.json({ ok: true });
+  } catch (err) {
+    next(err);
+  }
+});
+// Undo a mistaken entry.
+app.post('/api/bank/delete', async (req, res, next) => {
+  try {
+    if (!bankerOnly(req, res)) return;
+    const data = await loadBank();
+    const before = data.entries.length;
+    data.entries = data.entries.filter((e) => e.id !== req.body.id);
+    if (data.entries.length === before) return res.status(404).json({ error: 'That entry is already gone.' });
+    await bankStore.save();
+    res.json({ ok: true });
+  } catch (err) {
+    next(err);
+  }
+});
+// Each member's Venmo username, for the Request / Pay buttons.
+app.post('/api/bank/venmo', async (req, res, next) => {
+  try {
+    if (!bankerOnly(req, res)) return;
+    const { who } = req.body;
+    if (!bankMembers.includes(who)) return res.status(400).json({ error: 'Pick who it’s for.' });
+    const handle = String(req.body.handle ?? '').trim().replace(/^@/, '');
+    if (handle && !/^[A-Za-z0-9_-]{2,40}$/.test(handle)) return res.status(400).json({ error: 'That doesn’t look like a Venmo username.' });
+    const data = await loadBank();
+    data.venmo = { ...data.venmo, [who]: handle || undefined };
+    await bankStore.save();
+    res.json({ venmo: data.venmo });
+  } catch (err) {
+    next(err);
+  }
+});
+
 app.get('/api/slip', async (req, res, next) => {
   try {
     await refreshResults();
@@ -1310,7 +1470,8 @@ app.get('/api/slip', async (req, res, next) => {
     parlays
       // Still to place first, then placed; bigger bets first within each.
       .sort((a, b) => !!a.placed - !!b.placed || b.total - a.total);
-    res.json({ book: ODDS_API_KEY ? bookName : null, parlays, totals });
+    const bank = await loadBank().catch(() => ({}));
+    res.json({ book: ODDS_API_KEY ? bookName : null, parlays, totals, bankStart: bank.startAt ?? null, banker });
   } catch (err) {
     next(err);
   }
