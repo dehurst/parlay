@@ -3250,14 +3250,15 @@ async function renderSlip(quiet = false) {
 
 let bankInfo = null;
 let bankForm = null; // { who, kind } while the banker is recording a Venmo
+let bankOpen = false; // the Balances card starts closed; stays open across redraws once opened
 const signedMoney = (n) => `${n < 0 ? '−' : ''}$${Math.abs(n).toFixed(2)}`;
 const venmoLink = (handle, txn, amount, note) => `https://venmo.com/${encodeURIComponent(handle)}?${new URLSearchParams({ txn, amount: amount.toFixed(2), note })}`;
 
 function bankHtml(b) {
   if (!b.on) {
-    return b.canEdit ? `<div class="card bank"><b>Running balances</b>
+    return b.canEdit ? `<details class="card bank"${bankOpen ? ' open' : ''}><summary class="bank-head"><b>Running balances</b><span class="small muted">Not started</span></summary>
       <p class="small muted">Instead of a Venmo for every bet, ${esc(b.members.length ? 'everyone' : 'each person')} Venmos you $${b.lines.backTo} up front. Placed bets come out of their balance and winnings go back in. You’ll get a heads-up to pay someone back at $${b.lines.high}, and they’ll get one to top up under $${b.lines.low}. Bets placed before you start are settled the old way.</p>
-      <button type="button" class="primary" id="bank-start">Start balances now</button></div>` : '';
+      <button type="button" class="primary" id="bank-start">Start balances now</button></details>` : '';
   }
   const mine = b.members.find((m) => m.name === b.me);
   const fmtWhen = (t) => new Date(t).toLocaleDateString([], { month: 'short', day: 'numeric' });
@@ -3292,15 +3293,23 @@ function bankHtml(b) {
       ${note}${actions}${history}
     </div>`;
   };
-  return `<div class="card bank"><div class="bank-head"><b>Balances</b>${mine ? `<span class="small muted">You: <b>${signedMoney(mine.available)}</b> available</span>` : ''}</div>
+  // Collapsed by default: the line you see closed is your own number (or, for
+  // the banker, what they're holding and who needs a top-up or cash-out).
+  const attention = b.members.filter((m) => m.status !== 'ok').length;
+  const peek = mine ? `You: <b class="${mine.status === 'low' ? 'neg' : ''}">${signedMoney(mine.available)}</b> available`
+    : b.canEdit ? `Holding <b>${money(b.holding)}</b>${attention ? ` · <span class="warn-text">${attention} need${attention === 1 ? 's' : ''} attention</span>` : ''}` : '';
+  return `<details class="card bank"${bankOpen ? ' open' : ''}><summary class="bank-head"><b>Balances</b><span class="small muted">${peek}</span></summary>
     ${b.members.map(row).join('')}
     ${b.canEdit ? `<p class="small muted bank-foot">You’re holding <b>${money(b.holding)}</b> for them${b.inPlay > 0 ? `, plus ${money(b.inPlay)} of theirs in bets in play` : ''}.</p>
       <details class="bank-venmo"><summary class="small">Venmo usernames (for the Request / Pay buttons)</summary>
         ${b.members.map((m) => `<form class="bank-venmo-form" data-who="${esc(m.name)}"><label>${esc(m.name)} @<input name="handle" value="${esc(b.venmo?.[m.name] ?? '')}" placeholder="username" autocapitalize="off" autocorrect="off"></label><button type="submit" class="link small">Save</button></form>`).join('')}
       </details>` : ''}
-  </div>`;
+  </details>`;
 }
 
+$('#slip').addEventListener('toggle', (e) => {
+  if (e.target.matches?.('details.bank')) bankOpen = e.target.open;
+}, true);
 $('#slip').addEventListener('click', async (e) => {
   if (e.target.closest('#bank-start')) {
     if (!confirm('Start running balances now? Bets placed from now on come out of balances.')) return;

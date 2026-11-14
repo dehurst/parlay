@@ -1190,3 +1190,10 @@ button.dot:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; 
 .bank-foot { margin: 10px 0 4px; }
 .bank-venmo summary, .bank-history summary { cursor: pointer; color: var(--muted); }
 body.viewer .bank-actions, body.viewer .bank-venmo, body.viewer #bank-start { display: none; }
+/* Balances card: closed until you tap it */
+details.bank > summary { list-style: none; cursor: pointer; margin-bottom: 0; }
+details.bank > summary::-webkit-details-marker { display: none; }
+details.bank > summary > b::before { content: '▸'; display: inline-block; width: 1.1em; color: var(--muted); transition: transform .15s; }
+details.bank[open] > summary > b::before { transform: rotate(90deg); }
+details.bank[open] > summary { margin-bottom: 4px; }
+.warn-text { color: var(--warn); }
