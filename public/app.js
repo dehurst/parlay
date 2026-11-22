@@ -3259,7 +3259,17 @@ function bookSlipLink(legs) {
     const urls = links.map((u) => new URL(u));
     const base = `${urls[0].origin}${urls[0].pathname}`;
     if (urls.some((u) => `${u.origin}${u.pathname}` !== base)) return null;
-    const pairs = urls.flatMap((u, i) => [...u.searchParams].map(([k, v]) => [k.replace(/\[\d+\]$/, `[${i}]`), v]));
+    // Each leg's marketId / selectionId get that leg's number (FanDuel keeps
+    // only the last of repeated plain names); anything else, once.
+    const pairs = [];
+    const seen = new Set();
+    urls.forEach((u, i) => {
+      for (const [k, v] of u.searchParams) {
+        const id = k.match(/^(marketId|selectionId)(\[\d*\])?$/i);
+        if (id) pairs.push([`${id[1]}[${i}]`, v]);
+        else if (!seen.has(k)) pairs.push([k, v]), seen.add(k);
+      }
+    });
     return `${base}?${pairs.map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join('&')}`;
   } catch {
     return null;
