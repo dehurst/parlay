@@ -28,14 +28,17 @@ export async function fetchOddsApiSchedule(apiKey, win) {
 }
 
 export async function fetchBookLines(apiKey, book, win) {
-  const { data, remaining } = await get('odds', {
-    apiKey,
-    bookmakers: book,
-    markets: 'h2h,spreads,totals',
-    oddsFormat: 'american',
-    ...timeRange(win),
-  });
-  return { byMatchup: parseLines(data, book), remaining };
+  const params = { apiKey, bookmakers: book, markets: 'h2h,spreads,totals', oddsFormat: 'american', ...timeRange(win) };
+  let got;
+  try {
+    // The book's own links (FanDuel: "add to bet slip") and ids, when it has them.
+    got = await get('odds', { ...params, includeLinks: 'true', includeSids: 'true' });
+  } catch (err) {
+    // Turned down (a bad request, not a key or quota problem): plain lines.
+    if (!/returned 4(00|22)/.test(err.message)) throw err;
+    got = await get('odds', params);
+  }
+  return { byMatchup: parseLines(got.data, book), remaining: got.remaining };
 }
 
 // { "broncos@chiefs": { spread: { home: { point, price }, away }, total: { over, under }, ml: { home, away } } }
@@ -47,9 +50,11 @@ export function parseLines(events, book) {
     const outcomes = (key) => bm.markets?.find((m) => m.key === key)?.outcomes ?? [];
     const side = (o) => (o.name === ev.home_team ? 'home' : 'away');
     const lines = {};
-    for (const o of outcomes('h2h')) (lines.ml ??= {})[side(o)] = { point: null, price: o.price };
-    for (const o of outcomes('spreads')) (lines.spread ??= {})[side(o)] = { point: o.point, price: o.price };
-    for (const o of outcomes('totals')) (lines.total ??= {})[o.name.toLowerCase()] = { point: o.point, price: o.price };
+    // The book's link to add that bet to its bet slip, when it gave one.
+    const link = (o) => (typeof o.link === 'string' && /^https:\/\//.test(o.link) ? { link: o.link } : {});
+    for (const o of outcomes('h2h')) (lines.ml ??= {})[side(o)] = { point: null, price: o.price, ...link(o) };
+    for (const o of outcomes('spreads')) (lines.spread ??= {})[side(o)] = { point: o.point, price: o.price, ...link(o) };
+    for (const o of outcomes('totals')) (lines.total ??= {})[o.name.toLowerCase()] = { point: o.point, price: o.price, ...link(o) };
     out[matchKey(ev.away_team, ev.home_team)] = lines;
   }
   return out;

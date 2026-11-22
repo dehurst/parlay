@@ -3144,7 +3144,7 @@ async function renderSlip(quiet = false) {
   const card = (p, i) => {
     // The banker can drop a leg the sportsbook wouldn't take, before placing.
     const canDrop = week.canEditStakes && !p.placed && !past && p.legs.length > 1;
-    const legs = p.legs.map((l) => `<li>${gradeMark(l.grade) || '<span class="mark">·</span>'}<span><b>${betLabel(l.label)}</b> <span class="muted">${fmtOdds(l.price)}</span>${canDrop ? ` <button type="button" class="link small danger" data-remove-leg="${esc(l.key)}" data-id="${esc(p.id)}" data-label="${esc(l.label)}">remove</button>` : ''}${legSub(l)}${l.grade === 'pending' ? lineMoved(l, data.book) : ''}</span></li>`).join('');
+    const legs = p.legs.map((l) => `<li>${gradeMark(l.grade) || '<span class="mark">·</span>'}<span><b>${betLabel(l.label)}</b> <span class="muted">${fmtOdds(l.price)}</span>${canDrop ? ` <button type="button" class="link small danger" data-remove-leg="${esc(l.key)}" data-id="${esc(p.id)}" data-label="${esc(l.label)}">remove</button>` : ''}${!p.placed && !past && l.current?.link ? ` <a class="small fd-leg" href="${esc(l.current.link)}" target="_blank" rel="noopener">FanDuel</a>` : ''}${legSub(l)}${l.grade === 'pending' ? lineMoved(l, data.book) : ''}</span></li>`).join('');
     const rows = Object.entries(p.stakes).map(([who, amt]) => `<tr>
         <td>${esc(who)}${who === me && !p.placed && !past ? ` <button type="button" class="link danger" data-slip-out="${esc(p.id)}">remove</button>` : ''}</td>
         <td class="num">${money(amt)}</td><td class="num">${money(amt * (payMultiplier(p) - 1))}</td><td class="num">${money(amt * payMultiplier(p))}</td></tr>`).join('');
@@ -3186,7 +3186,8 @@ async function renderSlip(quiet = false) {
                ${p.placed.payout ? `<br>${esc(data.book ?? 'Sportsbook')} pays <b>${money(p.placed.payout)}</b>${Math.abs(p.placed.payout - p.estimate) >= 0.01 ? ` (site estimated ${money(p.estimate)})` : ''}.` : ''}</span>
              <button type="button" class="link" data-edit-payout="${esc(p.id)}">${p.placed.payout ? 'Edit payout' : 'Add payout'}</button>
              <button type="button" class="link" data-place="${esc(p.id)}" data-val="0">Undo</button>`
-          : `<button type="button" class="primary" data-edit-payout="${esc(p.id)}">Mark placed</button>
+          : `${bookSlipLink(p.legs) ? `<a class="button fd-open" href="${esc(bookSlipLink(p.legs))}" target="_blank" rel="noopener">Open in ${esc(data.book ?? 'FanDuel')}</a>` : ''}
+             <button type="button" class="primary" data-edit-payout="${esc(p.id)}">Mark placed</button>
              <span class="small muted">Tap after you've placed it at ${esc(data.book ?? 'the sportsbook')}.</span>
              ${week.canEditStakes ? `<button type="button" class="link small" data-edit-stakes="${esc(p.id)}">Edit stakes</button>` : ''}
              ${deleteHtml(p, true)}`}
@@ -3244,6 +3245,25 @@ async function renderSlip(quiet = false) {
         <tfoot><tr><th>Total</th><th class="num">${money(sum('placed'))}</th>${anyWaiting ? `<th class="num muted">${money(sum('waiting'))}</th>` : ''}</tr></tfoot></table>
     </div>`;
   if (quiet) window.scrollTo(0, y);
+}
+
+// ---- Open in FanDuel (test) --------------------------------------------------
+// FanDuel's "add to bet slip" links come with the lines. One link per leg; for
+// a parlay, the legs' links are merged into one (FanDuel numbers each leg's
+// marketId[n] / selectionId[n]). Null if any leg has no link.
+function bookSlipLink(legs) {
+  const links = legs.map((l) => l.current?.link ?? l.link);
+  if (!links.length || links.some((u) => !u)) return null;
+  if (links.length === 1) return links[0];
+  try {
+    const urls = links.map((u) => new URL(u));
+    const base = `${urls[0].origin}${urls[0].pathname}`;
+    if (urls.some((u) => `${u.origin}${u.pathname}` !== base)) return null;
+    const pairs = urls.flatMap((u, i) => [...u.searchParams].map(([k, v]) => [k.replace(/\[\d+\]$/, `[${i}]`), v]));
+    return `${base}?${pairs.map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join('&')}`;
+  } catch {
+    return null;
+  }
 }
 
 // ---- Balances ----------------------------------------------------------------
