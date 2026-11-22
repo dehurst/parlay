@@ -3144,7 +3144,7 @@ async function renderSlip(quiet = false) {
   const card = (p, i) => {
     // The banker can drop a leg the sportsbook wouldn't take, before placing.
     const canDrop = week.canEditStakes && !p.placed && !past && p.legs.length > 1;
-    const legs = p.legs.map((l) => `<li>${gradeMark(l.grade) || '<span class="mark">·</span>'}<span><b>${betLabel(l.label)}</b> <span class="muted">${fmtOdds(l.price)}</span>${canDrop ? ` <button type="button" class="link small danger" data-remove-leg="${esc(l.key)}" data-id="${esc(p.id)}" data-label="${esc(l.label)}">remove</button>` : ''}${!p.placed && !past && l.current?.link ? ` <a class="small fd-leg" href="${esc(l.current.link)}" target="_blank" rel="noopener">FanDuel</a>` : ''}${legSub(l)}${l.grade === 'pending' ? lineMoved(l, data.book) : ''}</span></li>`).join('');
+    const legs = p.legs.map((l) => `<li>${gradeMark(l.grade) || '<span class="mark">·</span>'}<span><b>${betLabel(l.label)}</b> <span class="muted">${fmtOdds(l.price)}</span>${canDrop ? ` <button type="button" class="link small danger" data-remove-leg="${esc(l.key)}" data-id="${esc(p.id)}" data-label="${esc(l.label)}">remove</button>` : ''}${legSub(l)}${l.grade === 'pending' ? lineMoved(l, data.book) : ''}</span></li>`).join('');
     const rows = Object.entries(p.stakes).map(([who, amt]) => `<tr>
         <td>${esc(who)}${who === me && !p.placed && !past ? ` <button type="button" class="link danger" data-slip-out="${esc(p.id)}">remove</button>` : ''}</td>
         <td class="num">${money(amt)}</td><td class="num">${money(amt * (payMultiplier(p) - 1))}</td><td class="num">${money(amt * payMultiplier(p))}</td></tr>`).join('');
@@ -3206,7 +3206,9 @@ async function renderSlip(quiet = false) {
   // Not placed yet always on top (whatever happened in the games), then
   // placed bets still in play, then placed bets that hit (pushes too, they pay
   // back), then placed bets that didn't hit.
-  const unplaced = data.parlays.filter((p) => !p.placed);
+  // Not placed yet: the one with the earliest kickoff first (place those first).
+  const firstKick = (p) => Math.min(...p.legs.map((l) => new Date(l.commence ?? gameOf(l.key)?.commence ?? 8.64e15).getTime()));
+  const unplaced = data.parlays.filter((p) => !p.placed).sort((a, b) => firstKick(a) - firstKick(b) || b.total - a.total);
   const placed = data.parlays.filter((p) => p.placed);
   const inPlay = placed.filter((p) => p.status === 'pending');
   const hit = placed.filter((p) => p.status === 'won' || p.status === 'push');

@@ -1201,4 +1201,3 @@ details.bank[open] > summary { margin-bottom: 4px; }
 .bank-offer .bank-actions { margin-top: 8px; }
 /* Open a bet in the sportsbook's app (FanDuel blue) */
 .fd-open { display: inline-flex; align-items: center; padding: 8px 14px; border-radius: 10px; background: #1493ff; color: #fff; font-weight: 600; text-decoration: none; }
-.fd-leg { color: #1493ff; text-decoration: none; margin-left: 4px; }
