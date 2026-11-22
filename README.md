@@ -266,12 +266,18 @@ yet is "on hold": it comes off what's available, not the balance. Both
 leagues share one balance. Only the banker records Venmos (and can remove a
 mistaken one); everyone can see every balance and its history.
 
-Lines (in `src/bank.js`): under **$20** available, the person gets a
-notification to top up (and a heads-up when they pledge more than they have;
-nothing is blocked); at **$200**, the banker gets one to pay them back down to
-**$100**. Alerts go out from the 5-minute reminder check, once per crossing.
-With Venmo usernames saved, the banker gets Request / Pay buttons that open
-Venmo with the amount filled in.
+Lines (in `src/bank.js`), to keep everyone near **$100**:
+- At **$0** available or less, the person is told to top up back to $100
+  (and gets a heads-up when they pledge more than they have; nothing is
+  blocked).
+- At **$150**, the person is offered a cash-out of everything over $100 (so
+  at least $50): **Cash out** tells the banker, who Venmos them and taps
+  **Mark paid**; **Keep it in** stops the offer until they drop under $150 and
+  come back. They can cash out from the Bet Slip anytime they're over $150.
+
+Alerts go out from the 5-minute reminder check, once per crossing. With
+Venmo usernames saved, the banker gets a Pay button that opens Venmo with the
+amount filled in.
 
 ## Hosting on Vercel (free)
 

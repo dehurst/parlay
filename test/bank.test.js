@@ -48,18 +48,26 @@ test('balances: deposits, placed bets, wins, pushes, holds', () => {
   assert.equal(m.Matt.history[0].text, 'Daniel paid you back'); // newest first
 });
 
-test('balances: low and high lines, alerts once per crossing', () => {
-  const low = computeBank(bank([dep('Matt', 30)]), [bet({ id: 'a', stakes: { Matt: 15 }, total: 15, placed: null })], ['Matt'], 'Daniel').members[0];
-  assert.equal(low.status, 'low'); // $30, $15 on hold: $15 available
-  assert.equal(low.topUp, 85);
-  const high = computeBank(bank([dep('Asher', 100)]), [bet({ id: 'a', stakes: { Asher: 20 }, total: 20, status: 'won', returned: 140 })], ['Asher'], 'Daniel').members[0];
-  assert.equal(high.balance, 220);
+test('balances: $0 top-up line, $150 cash-out line, alerts once per crossing', () => {
+  // $30 in, $30 on a bet not placed yet: $0 available, so they owe more.
+  const low = computeBank(bank([dep('Matt', 30)]), [bet({ id: 'a', stakes: { Matt: 30 }, total: 30, placed: null })], ['Matt'], 'Daniel').members[0];
+  assert.equal(low.available, 0);
+  assert.equal(low.status, 'low');
+  assert.equal(low.topUp, 100);
+  // Nothing recorded yet (balances just started): not "low".
+  assert.equal(computeBank(bank(), [], ['Matt'], 'Daniel').members[0].status, 'ok');
+  // $100 in, a $20 bet pays $80: $160, so $60 to cash out (back to $100).
+  const high = computeBank(bank([dep('Asher', 100)]), [bet({ id: 'a', stakes: { Asher: 20 }, total: 20, status: 'won', returned: 80 })], ['Asher'], 'Daniel').members[0];
+  assert.equal(high.balance, 160);
   assert.equal(high.status, 'high');
-  assert.equal(high.cashOut, 120);
+  assert.equal(high.cashOut, 60);
+  // $149.99 isn't there yet.
+  const almost = computeBank(bank([dep('Asher', 149.99)]), [], ['Asher'], 'Daniel').members[0];
+  assert.equal(almost.status, 'ok');
   let r = bankAlerts([low, high], {});
   assert.equal(r.alerts.length, 2);
   r = bankAlerts([low, high], r.sent);
   assert.equal(r.alerts.length, 0); // already told
   r = bankAlerts([{ ...low, status: 'ok' }], r.sent);
-  assert.deepEqual(r.sent, {}); // back to normal: next dip alerts again
+  assert.deepEqual(r.sent, {}); // back to normal: next time alerts again
 });

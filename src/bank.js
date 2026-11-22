@@ -9,9 +9,9 @@
 // but not the balance until the bet is placed.
 
 export const BANK_LINES = {
-  low: 20, // warn when available drops under this
-  high: 200, // tell the banker to cash someone out at this
-  backTo: 100, // ...back down to this
+  low: 0, // at or under this available, they owe more: tell them to top up
+  high: 150, // at this balance, offer them a cash-out...
+  backTo: 100, // ...of everything over this (so at least $50)
 };
 
 const cents = (n) => Math.round(n * 100) / 100;
@@ -58,14 +58,16 @@ export function computeBank(bank, bets, members, banker, lines = BANK_LINES) {
   const out = [...rows.values()].map((r) => {
     const balance = cents(r.deposits - r.cashouts - r.staked + r.returned);
     const available = cents(balance - r.hold);
-    const status = available < lines.low ? 'low' : balance >= lines.high ? 'high' : 'ok';
+    // No activity yet (balances just started, Venmo not recorded): not "low".
+    const active = r.history.length > 0;
+    const status = active && available <= lines.low ? 'low' : balance >= lines.high ? 'high' : 'ok';
     return {
       name: r.name,
       balance, available,
       hold: cents(r.hold), inPlay: cents(r.inPlay),
       status,
       cashOut: status === 'high' ? cents(balance - lines.backTo) : 0,
-      topUp: available < lines.low ? cents(lines.backTo - available) : 0, // back to the starting amount
+      topUp: status === 'low' ? cents(lines.backTo - available) : 0, // back to the starting amount
       history: r.history
         .map((h) => ({ ...h, amount: cents(h.amount) }))
         .sort((a, b) => b.at - a.at),

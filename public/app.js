@@ -3252,7 +3252,7 @@ async function renderSlip(quiet = false) {
 
 let bankInfo = null;
 let bankForm = null; // { who, kind } while the banker is recording a Venmo
-let bankOpen = false; // the Balances card starts closed; stays open across redraws once opened
+let bankOpen = new URLSearchParams(location.search).get('bank') === '1'; // closed unless a notification opened it; stays open across redraws once opened
 const signedMoney = (n) => `${n < 0 ? '−' : ''}$${Math.abs(n).toFixed(2)}`;
 const venmoLink = (handle, txn, amount, note) => `https://venmo.com/${encodeURIComponent(handle)}?${new URLSearchParams({ txn, amount: amount.toFixed(2), note })}`;
 
@@ -3266,15 +3266,30 @@ function bankHtml(b) {
   const fmtWhen = (t) => new Date(t).toLocaleDateString([], { month: 'short', day: 'numeric' });
   const row = (m) => {
     const handle = b.venmo?.[m.name];
-    const note = m.status === 'low'
-      ? `<div class="small neg">Low: Venmo ${esc(b.banker)} ${money(m.topUp)} to get back to $${b.lines.backTo}</div>`
-      : m.status === 'high' ? `<div class="small pos">${b.canEdit ? `Pay back ${money(m.cashOut)}` : `${esc(b.banker)} owes you ${money(m.cashOut)}`} (back to $${b.lines.backTo})</div>` : '';
+    const asked = b.requests?.[m.name];
+    const me = m.name === b.me;
+    let note = '';
+    if (m.status === 'low') {
+      note = `<div class="small neg">${me ? `You’re out. Venmo ${esc(b.banker)} ${money(m.topUp)} to get back to $${b.lines.backTo}.` : `Out: owes a ${money(m.topUp)} top-up`}</div>`;
+    } else if (asked) {
+      note = `<div class="small pos">${me ? `Cash-out of ${money(asked.amount)} requested. ${esc(b.banker)} will Venmo you.` : `Asked to cash out ${money(asked.amount)}`}</div>`;
+    } else if (m.status === 'high' && me && !b.kept?.[m.name]) {
+      // Their call: take everything over $100 now, or let it ride.
+      note = `<div class="bank-offer"><div class="small">You’re up to <b>${money(m.balance)}</b>. Cash out ${money(m.cashOut)} and go back to $${b.lines.backTo}?</div>
+        <div class="bank-actions"><button type="button" class="primary" data-bank-cashout>Cash out ${money(m.cashOut)}</button>
+        <button type="button" class="link small" data-bank-keep>Keep it in</button></div></div>`;
+    } else if (m.status === 'high') {
+      note = me
+        ? `<div class="small pos">You can cash out ${money(m.cashOut)} anytime. <button type="button" class="link small" data-bank-cashout>Cash out</button></div>`
+        : `<div class="small pos">Over $${b.lines.high}: can cash out ${money(m.cashOut)}${b.kept?.[m.name] ? ' (chose to keep it in)' : ''}</div>`;
+    }
     const extra = [m.inPlay > 0 && `${money(m.inPlay)} in play`, m.hold > 0 && `${money(m.hold)} on bets not placed yet`].filter(Boolean).join(' · ');
     const actions = b.canEdit ? `<div class="bank-actions">
         <button type="button" class="link small" data-bank-form="${esc(m.name)}" data-kind="deposit">+ Venmo in</button>
         <button type="button" class="link small" data-bank-form="${esc(m.name)}" data-kind="cashout">Paid back</button>
         ${handle && m.status === 'low' ? `<a class="small" href="${esc(venmoLink(handle, 'charge', m.topUp, 'Parlay balance top-up'))}" target="_blank" rel="noopener">Request ${money(m.topUp)} in Venmo</a>` : ''}
-        ${handle && m.status === 'high' ? `<a class="small" href="${esc(venmoLink(handle, 'pay', m.cashOut, 'Parlay balance cash-out'))}" target="_blank" rel="noopener">Pay ${money(m.cashOut)} in Venmo</a>` : ''}
+        ${asked ? `<button type="button" class="primary" data-bank-paid="${esc(m.name)}" data-amount="${asked.amount}">Mark paid ${money(asked.amount)}</button>` : ''}
+        ${handle && asked ? `<a class="small" href="${esc(venmoLink(handle, 'pay', asked.amount, 'Parlay balance cash-out'))}" target="_blank" rel="noopener">Pay ${money(asked.amount)} in Venmo</a>` : ''}
       </div>
       ${bankForm?.who === m.name ? `<form class="bank-form" data-who="${esc(m.name)}" data-kind="${bankForm.kind}">
         <label>${bankForm.kind === 'deposit' ? `${esc(m.name)} Venmo’d you` : `You Venmo’d ${esc(m.name)}`} $<input name="amount" type="number" inputmode="decimal" min="0.01" step="0.01" required></label>
@@ -3297,8 +3312,8 @@ function bankHtml(b) {
   };
   // Collapsed by default: the line you see closed is your own number (or, for
   // the banker, what they're holding and who needs a top-up or cash-out).
-  const attention = b.members.filter((m) => m.status !== 'ok').length;
-  const peek = mine ? `You: <b class="${mine.status === 'low' ? 'neg' : ''}">${signedMoney(mine.available)}</b> available`
+  const attention = b.members.filter((m) => m.status === 'low' || b.requests?.[m.name]).length;
+  const peek = mine ? `You: <b class="${mine.status === 'low' ? 'neg' : ''}">${signedMoney(mine.available)}</b> available${mine.status === 'high' && !b.requests?.[mine.name] ? ' · <span class="pos">cash-out ready</span>' : ''}`
     : b.canEdit ? `Holding <b>${money(b.holding)}</b>${attention ? ` · <span class="warn-text">${attention} need${attention === 1 ? 's' : ''} attention</span>` : ''}` : '';
   return `<details class="card bank"${bankOpen ? ' open' : ''}><summary class="bank-head"><b>Balances</b><span class="small muted">${peek}</span></summary>
     ${b.members.map(row).join('')}
@@ -3331,6 +3346,27 @@ $('#slip').addEventListener('click', async (e) => {
   }
   if (e.target.closest('[data-bank-cancel]')) {
     bankForm = null;
+    return renderSlip(true);
+  }
+  if (e.target.closest('[data-bank-cashout], [data-bank-keep]')) {
+    const keep = !!e.target.closest('[data-bank-keep]');
+    try {
+      await api('/api/bank/cashout', { method: 'POST', body: { name: me, keep } });
+      notice(keep ? 'Keeping it in. You can still cash out from here anytime.' : `Cash-out requested. ${bankInfo?.banker ?? 'The banker'} will Venmo you.`);
+    } catch (err) {
+      return notice(err.message);
+    }
+    return renderSlip(true);
+  }
+  const paidBtn = e.target.closest('[data-bank-paid]');
+  if (paidBtn) {
+    const amount = Number(paidBtn.dataset.amount);
+    if (!confirm(`Mark that you Venmo'd ${paidBtn.dataset.bankPaid} ${money(amount)}?`)) return;
+    try {
+      await api('/api/bank/entry', { method: 'POST', body: { name: me, who: paidBtn.dataset.bankPaid, kind: 'cashout', amount, note: 'Cash-out' } });
+    } catch (err) {
+      return notice(err.message);
+    }
     return renderSlip(true);
   }
   const del = e.target.closest('[data-bank-delete]');

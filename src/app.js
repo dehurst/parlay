@@ -143,6 +143,8 @@ async function loadBank() {
   await bankStore.load();
   bankStore.data.entries ??= []; // deposits and cash-outs
   bankStore.data.alerts ??= {}; // { member: 'low' | 'high' } last alert sent
+  bankStore.data.requests ??= {}; // { member: { amount, at } } cash-outs they asked for, not paid yet
+  bankStore.data.kept ??= {}; // { member: ms } said "keep it in" this time over the line
   return bankStore.data; // startAt (ms) once the banker starts balances
 }
 // Run fn with another league's data loaded as `store`.
@@ -177,23 +179,25 @@ async function bankNow() {
   const bets = await bankBets(data.startAt);
   return { data, on: true, ...computeBank(data, bets, bankMembers, banker) };
 }
+const bankMoney = (n) => `${n < 0 ? '−' : ''}$${Math.abs(n).toFixed(2)}`;
 // Tell people when a balance crosses a line (from the 5-minute check).
 async function bankAlertsRun() {
   const now = await bankNow();
   if (!now.on) return [];
   const { sent, alerts } = bankAlerts(now.members, now.data.alerts);
   now.data.alerts = sent;
+  // Back under the cash-out line: a "keep it in" no longer applies.
+  for (const m of now.members) if (m.status !== 'high') delete now.data.kept[m.name];
   await bankStore.save();
-  const money = (n) => `${n < 0 ? '−' : ''}$${Math.abs(n).toFixed(2)}`;
   for (const m of alerts) {
     if (m.status === 'low') {
-      await notify({ type: 'bank', to: [m.name], id: `low:${m.name}`, url: '/?tab=slip',
-        title: `Your balance is ${money(m.available)}`,
-        body: `Venmo ${banker} to top up (${money(m.topUp)} gets you back to ${money(BANK_LINES.backTo)}).` });
-    } else {
-      await notify({ type: 'bank', to: [banker], id: `high:${m.name}`, url: '/?tab=slip',
-        title: `${m.name} is at ${money(m.balance)}`,
-        body: `Venmo ${m.name} ${money(m.cashOut)} to bring them back to ${money(BANK_LINES.backTo)}, then record it on the Bet Slip.` });
+      await notify({ type: 'bank', to: [m.name], id: `low:${m.name}`, url: '/?tab=slip&bank=1',
+        title: `You're out: ${bankMoney(m.available)} available`,
+        body: `Venmo ${banker} ${bankMoney(m.topUp)} to get back to ${bankMoney(BANK_LINES.backTo)}.` });
+    } else if (!now.data.requests[m.name]) {
+      await notify({ type: 'bank', to: [m.name], id: `high:${m.name}`, url: '/?tab=slip&bank=1',
+        title: `You're up to ${bankMoney(m.balance)}`,
+        body: `Cash out ${bankMoney(m.cashOut)} (back to ${bankMoney(BANK_LINES.backTo)}) or keep it in? Tap to choose.` });
     }
   }
   return alerts.map((m) => `${m.name}: ${m.status}`);
@@ -1413,6 +1417,7 @@ app.get('/api/bank', async (req, res, next) => {
       canEdit: me === banker, me,
       members: now.members ?? [], holding: now.holding ?? 0, inPlay: now.inPlay ?? 0,
       venmo: now.data.venmo ?? {},
+      requests: now.data.requests ?? {}, kept: now.data.kept ?? {},
     });
   } catch (err) {
     next(err);
@@ -1450,12 +1455,45 @@ app.post('/api/bank/entry', async (req, res, next) => {
     const data = await loadBank();
     if (!data.startAt) return res.status(409).json({ error: 'Start balances first.' });
     data.entries.push({ id: randomUUID(), who, kind, amount, at: Date.now(), note: String(req.body.note ?? '').slice(0, 80) });
+    if (kind === 'cashout') delete data.requests[who];
     await bankStore.save();
+    if (kind === 'cashout') {
+      await notify({ type: 'bank', to: [who], id: `paid:${who}`, url: '/?tab=slip&bank=1',
+        title: `${banker} paid you ${bankMoney(amount)}`, body: 'It’s on its way in Venmo and off your balance in the app.' });
+    }
     res.json({ ok: true });
   } catch (err) {
     next(err);
   }
 });
+// A member over the cash-out line asks for it (everything over $100), or
+// chooses to keep it in. The banker gets told about a request.
+app.post('/api/bank/cashout', async (req, res, next) => {
+  try {
+    const name = checkPlayer(req, res);
+    if (!name) return;
+    if (!bankMembers.includes(name)) return res.status(403).json({ error: 'Only Asher and Matt cash out.' });
+    const now = await bankNow();
+    const mine = now.members?.find((m) => m.name === name);
+    if (!mine || mine.status !== 'high') return res.status(409).json({ error: `Cash-outs open at ${bankMoney(BANK_LINES.high)}.` });
+    if (req.body.keep) {
+      now.data.kept[name] = Date.now();
+      delete now.data.requests[name];
+      await bankStore.save();
+      return res.json({ kept: true });
+    }
+    now.data.requests[name] = { amount: mine.cashOut, at: Date.now() };
+    delete now.data.kept[name];
+    await bankStore.save();
+    await notify({ type: 'bank', to: [banker], id: `ask:${name}`, url: '/?tab=slip&bank=1',
+      title: `${name} wants to cash out ${bankMoney(mine.cashOut)}`,
+      body: `Venmo ${name} ${bankMoney(mine.cashOut)}, then tap Mark paid on the Bet Slip.` });
+    res.json({ requested: mine.cashOut });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // Undo a mistaken entry.
 app.post('/api/bank/delete', async (req, res, next) => {
   try {
