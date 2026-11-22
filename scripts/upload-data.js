@@ -8,7 +8,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { loadEnvFile } from '../src/env.js';
-import { RedisStore, normalize } from '../src/store.js';
+import { RedisStore, normalize, LEAGUE_PARTS } from '../src/store.js';
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 loadEnvFile(join(root, '.env'));
@@ -28,7 +28,7 @@ try {
   process.exit(1);
 }
 
-const store = new RedisStore({ url, token });
+const store = new RedisStore({ url, token, parts: LEAGUE_PARTS });
 await store.load();
 const hasData = Object.keys(store.data.picks).length || Object.keys(store.data.stakes).length;
 if (hasData && !process.argv.includes('--force')) {

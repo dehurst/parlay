@@ -109,9 +109,12 @@ test('uses Upstash Redis when its env vars are set', async () => {
   const calls = [];
   globalThis.fetch = async (url, opts) => {
     calls.push({ url, auth: opts.headers.authorization });
-    const [cmd, key, value] = JSON.parse(opts.body);
-    if (cmd === 'SET') db.set(key, value);
-    return Response.json({ result: cmd === 'GET' ? db.get(key) ?? null : 'OK' });
+    const run = ([cmd, key, value]) => {
+      if (cmd === 'SET') db.set(key, value);
+      return cmd === 'GET' ? db.get(key) ?? null : 'OK';
+    };
+    const body = JSON.parse(opts.body);
+    return Response.json(url.endsWith('/pipeline') ? body.map((c) => ({ result: run(c) })) : { result: run(body) });
   };
   try {
     await store.load();
@@ -125,7 +128,7 @@ test('uses Upstash Redis when its env vars are set', async () => {
     assert.equal(other.data.picks.w.Daniel.length, 1);
     // Old weeks' lines are pruned unless someone bet that week.
     assert.deepEqual(Object.keys(other.data.lines).sort(), ['2026-09-01', '2026-10-13']);
-    assert.equal(calls[0].url, 'https://example.upstash.io');
+    assert.equal(calls[0].url, 'https://example.upstash.io/pipeline');
     assert.equal(calls[0].auth, 'Bearer t0k');
   } finally {
     globalThis.fetch = realFetch;

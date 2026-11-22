@@ -2,7 +2,7 @@ import express from 'express';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { loadEnvFile } from './env.js';
-import { createStore } from './store.js';
+import { createStore, LEAGUE_PARTS } from './store.js';
 import { weekWindow, weekLabel, lastSlot, nextSlot } from './week.js';
 import { fetchEspnSchedule, fetchEspnRecords, demoSchedule, hasStarted, matchKey, teamKey } from './schedule.js';
 import { fetchOddsApiSchedule, fetchBookLines, fetchEventIds, fetchEventProps } from './oddsapi.js';
@@ -217,7 +217,7 @@ const stores = {};
 const files = { nfl: DATA_FILE, cfb: CFB_DATA_FILE };
 const store = {
   get data() { return stores[sport().id].data; },
-  load() { return (stores[sport().id] ??= createStore(process.env, files[sport().id], sport().storeKey)).load(); },
+  load() { return (stores[sport().id] ??= createStore(process.env, files[sport().id], sport().storeKey, { parts: LEAGUE_PARTS })).load(); },
   save(week) { return stores[sport().id].save(week); },
 };
 const save = () => store.save(weekWindow().key);
