@@ -3144,7 +3144,9 @@ async function renderSlip(quiet = false) {
   const card = (p, i) => {
     // The banker can drop a leg the sportsbook wouldn't take, before placing.
     const canDrop = week.canEditStakes && !p.placed && !past && p.legs.length > 1;
-    const legs = p.legs.map((l) => `<li>${gradeMark(l.grade) || '<span class="mark">·</span>'}<span><b>${betLabel(l.label)}</b> <span class="muted">${fmtOdds(l.price)}</span>${canDrop ? ` <button type="button" class="link small danger" data-remove-leg="${esc(l.key)}" data-id="${esc(p.id)}" data-label="${esc(l.label)}">remove</button>` : ''}${legSub(l)}${l.grade === 'pending' ? lineMoved(l, data.book) : ''}</span></li>`).join('');
+    // ...and change a leg to an alternate line (spread, total) or odds.
+    const canFix = week.canEditStakes && !p.placed && !past;
+    const legs = p.legs.map((l) => `<li>${gradeMark(l.grade) || '<span class="mark">·</span>'}<span><b>${betLabel(l.label)}</b> <span class="muted">${fmtOdds(l.price)}</span>${canDrop ? ` <button type="button" class="link small danger" data-remove-leg="${esc(l.key)}" data-id="${esc(p.id)}" data-label="${esc(l.label)}">remove</button>` : ''}${canFix && ['spread', 'total', 'ml'].includes(l.key.split('|')[1]) ? ` <button type="button" class="link small" data-edit-leg="${esc(l.key)}" data-id="${esc(p.id)}" data-label="${esc(l.label)}" data-market="${esc(l.key.split('|')[1])}" data-point="${l.point ?? ''}" data-price="${l.price}">edit line</button>` : ''}${l.alt ? ' <span class="chip tag">alt line</span>' : ''}${legSub(l)}${l.grade === 'pending' && !l.alt ? lineMoved(l, data.book) : ''}</span></li>`).join('');
     const rows = Object.entries(p.stakes).map(([who, amt]) => `<tr>
         <td>${esc(who)}${who === me && !p.placed && !past ? ` <button type="button" class="link danger" data-slip-out="${esc(p.id)}">remove</button>` : ''}</td>
         <td class="num">${money(amt)}</td><td class="num">${money(amt * (payMultiplier(p) - 1))}</td><td class="num">${money(amt * payMultiplier(p))}</td></tr>`).join('');
@@ -3254,7 +3256,7 @@ async function renderSlip(quiet = false) {
 // a parlay, the legs' links are merged into one (FanDuel numbers each leg's
 // marketId[n] / selectionId[n]). Null if any leg has no link.
 function bookSlipLink(legs) {
-  const links = legs.map((l) => l.current?.link ?? l.link);
+  const links = legs.map((l) => (l.alt ? null : l.current?.link ?? l.link));
   if (!links.length || links.some((u) => !u)) return null;
   if (links.length === 1) return links[0];
   try {
@@ -3803,6 +3805,26 @@ $('#slip').addEventListener('click', async (e) => {
     placingId = open.dataset.editPayout;
     await renderSlip(true);
     $('.payout-form input')?.select();
+    return;
+  }
+  const fixLeg = e.target.closest('[data-edit-leg]');
+  if (fixLeg) {
+    const { market, label } = fixLeg.dataset;
+    let point = null;
+    if (market === 'spread' || market === 'total') {
+      const was = market === 'spread' ? fmtPoint(Number(fixLeg.dataset.point)) : fixLeg.dataset.point;
+      point = prompt(`${label}: what ${market === 'spread' ? 'spread' : 'total'} did you get at FanDuel? (now ${was})`, was);
+      if (point == null) return;
+    }
+    const price = prompt(`${label}: the odds at FanDuel for that line? (like -180 or +150)`, fmtOdds(Number(fixLeg.dataset.price)));
+    if (price == null) return;
+    try {
+      await api('/api/edit-leg', { method: 'POST', body: { name: me, id: fixLeg.dataset.id, key: fixLeg.dataset.editLeg, point: point == null ? null : Number(String(point).replace(/[^\d.+-]/g, '')), price: Number(String(price).replace(/[^\d+-]/g, '')) } });
+      notice(null);
+    } catch (err) {
+      notice(err.message);
+    }
+    renderSlip(true);
     return;
   }
   const dropLeg = e.target.closest('[data-remove-leg]');

@@ -1255,6 +1255,48 @@ app.post('/api/stakes-all', async (req, res, next) => {
 // ones can't be deleted: undo "placed" first.
 // Drop one leg from a bet that isn't placed yet (say the sportsbook wouldn't
 // take that leg in time). The odds are re-priced from the legs left.
+// Change one leg's line on a bet not placed yet: an alternate spread or
+// total from the sportsbook (say Bengals -2.5 instead of -6.5) and its odds.
+// It's graded at the new line; the parlay is re-priced.
+app.post('/api/edit-leg', async (req, res, next) => {
+  try {
+    const name = checkPlayer(req, res);
+    if (!name) return;
+    if (!canEditStakes(name)) return res.status(403).json({ error: 'Only the person who places the bets can change a bet’s legs.' });
+    const win = weekWindow();
+    const saved = store.data.stakes[win.key]?.[String(req.body.id ?? '')];
+    if (!saved) return res.status(404).json({ error: 'That bet isn’t on the slip anymore. Refresh and try again.' });
+    if (saved.placed) return res.status(409).json({ error: 'It’s marked placed. Undo that first.' });
+    const leg = saved.legs.find((l) => l.key === req.body.key);
+    if (!leg) return res.status(404).json({ error: 'That leg isn’t on this bet anymore.' });
+    const [gameId, market, side] = leg.key.split('|');
+    const price = Math.round(Number(req.body.price));
+    if (!Number.isFinite(price) || Math.abs(price) < 100 || Math.abs(price) > 100000) {
+      return res.status(400).json({ error: 'Enter American odds, like -180 or +150.' });
+    }
+    let point = leg.point;
+    if (market === 'spread' || market === 'total') {
+      point = Number(req.body.point);
+      if (!Number.isFinite(point) || Math.abs(point) > 100 || Math.round(point * 2) !== point * 2 || (market === 'total' && point <= 0)) {
+        return res.status(400).json({ error: market === 'total' ? 'Enter a total like 49.5.' : 'Enter a spread like -2.5 or +3.' });
+      }
+    }
+    const game = store.data.schedule[win.key]?.games?.find((g) => g.id === gameId);
+    leg.point = point;
+    leg.price = price;
+    if (game) leg.label = selectionLabel(game, market, side, point);
+    leg.alt = true; // not the book's main line: no "line moved" note, no bet-slip link
+    const priced = priceParlay(saved.legs.map((l) => ({ ...l, fairProb: 0.5 })));
+    saved.decimal = priced.decimal;
+    saved.american = priced.american;
+    saved.legsEdited = true;
+    await save();
+    res.json({ label: leg.label, american: priced.american });
+  } catch (err) {
+    next(err);
+  }
+});
+
 app.post('/api/remove-leg', async (req, res, next) => {
   try {
     const name = checkPlayer(req, res);
