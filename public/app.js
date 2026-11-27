@@ -869,6 +869,7 @@ function renderGames() {
           <span class="team-line">${teamLogo(g.away)}${esc(g.away)}${rec(g.awayRecord)} @</span>
           <span class="team-line">${teamLogo(g.home)}${esc(g.home)}${rec(g.homeRecord)}</span>
         </h3>
+        <button type="button" class="matchup-btn" data-matchup-away="${esc(g.away)}" data-matchup-home="${esc(g.home)}">Matchup</button>
       </div>
       <div class="score small" data-score="${esc(g.id)}"${g.started || liveNow[g.id] ? '' : ' hidden'}>${scoreHtml(g)}</div>
       <div class="game-grid ${locked ? 'is-locked' : ''}">
@@ -2899,9 +2900,12 @@ function playersHtml(team, data) {
 // One team's season: record, against the spread, over/under, strength of
 // schedule, and every game; or (Compare mode) two teams' offense vs defense
 // side by side, or (League mode) every team ranked. Season-wide (not tied to the week up top).
-async function renderResearch(quiet = false) {
-  if (!quiet || !$('#research').innerHTML) $('#research').innerHTML = '<p class="muted">Loading team stats…</p>';
-  const data = await api(`/api/research?team=${encodeURIComponent(researchTeam ?? '')}`).catch((err) => (notice(err.message), null));
+// popup: { el, away, home } draws just the Compare view for those two teams
+// into el (the game cards' Matchup button) and leaves this tab alone.
+async function renderResearch(quiet = false, popup = null) {
+  const target = popup?.el ?? $('#research');
+  if (!quiet || !target.innerHTML) target.innerHTML = '<p class="muted">Loading team stats…</p>';
+  const data = await api(`/api/research?team=${encodeURIComponent(popup?.away ?? researchTeam ?? '')}`).catch((err) => (notice(err.message), null));
   if (!data) return;
   const teams = data.teams;
   addTeams(Object.fromEntries(teams.filter((x) => x.logo).map((x) => [x.name, { short: x.short, abbr: x.abbr, logo: x.logo }])));
@@ -2921,13 +2925,13 @@ async function renderResearch(quiet = false) {
     ${league === 'nfl' ? `<button type="button" data-mode="players" class="${researchMode === 'players' ? 'active' : ''}">Players</button>` : ''}
   </div>`;
   if (researchMode === 'players' && league !== 'nfl') researchMode = 'team';
-  if (researchMode === 'players') {
+  if (!popup && researchMode === 'players') {
     $('#research').innerHTML = `${modeSwitch}<label class="team-pick">${teamPick('research-team', t.name)}</label><div id="players-view"><p class="muted">Loading players…</p></div>`;
     renderPlayers(t);
     return;
   }
 
-  if (researchMode === 'league') {
+  if (!popup && researchMode === 'league') {
     $('#research').innerHTML = modeSwitch + schemeLeagueHtml(teams, data.schemeSeasons) + leagueHtml(teams);
     return;
   }
@@ -3000,22 +3004,38 @@ async function renderResearch(quiet = false) {
   const sourcesNote = `<p class="small muted">Scores and lines come from ESPN (the closing line for finished games); games ESPN has no line for use the ${esc(data.book ?? 'sportsbook')} line saved here.
       ✓ = covered the spread, O/U = went over or under the total. A season is a small sample, and the line already prices in most of what these numbers show.</p>`;
 
-  if (researchMode === 'compare') {
-    if (!teams.some((x) => x.name === compareA)) compareA = t.name;
-    if (!teams.some((x) => x.name === compareB) || compareB === compareA) {
-      compareB = teams.find((x) => x.name === next?.oppName)?.name ?? teams.find((x) => x.name !== compareA)?.name;
+  if (popup || researchMode === 'compare') {
+    let a;
+    let b;
+    if (popup) {
+      // The schedule's names can differ a little from ESPN's (college).
+      const norm = (s) => String(s ?? '').toLowerCase().replace(/[^a-z]/g, '');
+      const find = (name) => teams.find((x) => x.name === name)
+        ?? teams.find((x) => norm(x.name) === norm(name))
+        ?? teams.find((x) => norm(x.short).length >= 4 && norm(name).includes(norm(x.short)));
+      a = find(popup.away);
+      b = find(popup.home);
+      if (!a || !b) {
+        target.innerHTML = `<p class="muted">No season stats for ${esc(a ? popup.home : popup.away)} yet.</p>`;
+        return;
+      }
+    } else {
+      if (!teams.some((x) => x.name === compareA)) compareA = t.name;
+      if (!teams.some((x) => x.name === compareB) || compareB === compareA) {
+        compareB = teams.find((x) => x.name === next?.oppName)?.name ?? teams.find((x) => x.name !== compareA)?.name;
+      }
+      a = teams.find((x) => x.name === compareA);
+      b = teams.find((x) => x.name === compareB);
     }
-    const a = teams.find((x) => x.name === compareA);
-    const b = teams.find((x) => x.name === compareB);
     const matchup = (off, def) => foldCard(`compare-${off === a ? 'ab' : 'ba'}`,
       `${teamLogo(off.name, 'small')}${esc(off.short)} offense vs ${teamLogo(def.name, 'small')}${esc(def.short)} defense`,
       a.advGames || b.advGames ? advTable(off, def, `${off.short} off`, `${def.short} def`) : '<p class="small muted">No box scores yet.</p>');
     // One section of the Team page, with both teams side by side.
     const pair = (id, title, text, body) => foldCard(`compare-${id}`, title, `${note(text)}<div class="pair">${[a, b].map((x) => `
       <div class="pair-col"><div class="pair-name">${teamLogo(x.name)}<b>${esc(x.short)}</b></div>${body(x)}</div>`).join('')}</div>`);
-    $('#research').innerHTML = `
-      ${modeSwitch}
-      <div class="team-pick">${teamPick('compare-a', a.name)}<span class="muted small">vs</span>${teamPick('compare-b', b.name)}</div>
+    target.innerHTML = `
+      ${popup ? '' : `${modeSwitch}
+      <div class="team-pick">${teamPick('compare-a', a.name)}<span class="muted small">vs</span>${teamPick('compare-b', b.name)}</div>`}
       ${matchup(a, b)}
       ${matchup(b, a)}
       <p class="small muted">Per game this season from ESPN's box scores. Ranks are out of ${teams.length} (1st = best). A season is a small sample.</p>
@@ -3441,7 +3461,49 @@ $('#games').addEventListener('toggle', (e) => {
   if (box.open) openProps.add(box.dataset.props);
   else openProps.delete(box.dataset.props);
 }, true);
+// ---- Matchup pop-up: the Compare view for one game's two teams -----------
+function openMatchup(away, home) {
+  let modal = $('#matchup-modal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'matchup-modal';
+    modal.className = 'modal-back';
+    modal.innerHTML = `<div class="modal" role="dialog" aria-modal="true" aria-labelledby="matchup-title">
+      <div class="modal-head"><b id="matchup-title"></b><button type="button" class="modal-x" aria-label="Close">×</button></div>
+      <div class="modal-body"></div></div>`;
+    document.body.append(modal);
+    modal.addEventListener('click', (e) => {
+      if (e.target === modal || e.target.closest('.modal-x')) return closeMatchup();
+      const head = e.target.closest('.fold-head');
+      if (head) {
+        const card = head.closest('.fold');
+        const shut = card.classList.toggle('folded');
+        if (shut) folded.add(card.dataset.fold);
+        else folded.delete(card.dataset.fold);
+        head.setAttribute('aria-expanded', String(!shut));
+      }
+    });
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && !$('#matchup-modal').hidden) closeMatchup();
+    });
+  }
+  modal.querySelector('#matchup-title').innerHTML = `${teamLogo(away, 'small')}${esc(shortTeam(away))} @ ${teamLogo(home, 'small')}${esc(shortTeam(home))}`;
+  const body = modal.querySelector('.modal-body');
+  body.innerHTML = '';
+  body.scrollTop = 0;
+  modal.hidden = false;
+  document.body.classList.add('modal-open');
+  renderResearch(false, { el: body, away, home });
+}
+function closeMatchup() {
+  $('#matchup-modal').hidden = true;
+  document.body.classList.remove('modal-open');
+}
+const shortTeam = (name) => (league === 'cfb' ? college(name)?.short ?? name : name.split(' ').pop());
+
 $('#games').addEventListener('click', (e) => {
+  const mu = e.target.closest('[data-matchup-away]');
+  if (mu) return openMatchup(mu.dataset.matchupAway, mu.dataset.matchupHome);
   const all = e.target.closest('[data-all-td]');
   if (all) {
     allScorers.add(all.dataset.allTd);

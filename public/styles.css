@@ -1201,3 +1201,15 @@ details.bank[open] > summary { margin-bottom: 4px; }
 .bank-offer .bank-actions { margin-top: 8px; }
 /* Open a bet in the sportsbook's app (FanDuel blue) */
 .fd-open { display: inline-flex; align-items: center; padding: 8px 14px; border-radius: 10px; background: #1493ff; color: #fff; font-weight: 600; text-decoration: none; }
+
+/* Game cards: Matchup button, and its pop-up with the two teams compared */
+.matchup-btn { flex: none; align-self: flex-start; padding: 5px 12px; border-radius: 999px; font-size: 13px; font-weight: 600; background: none; border: 1px solid var(--line); color: var(--text); }
+.matchup-btn:hover { border-color: var(--accent); }
+.modal-back { position: fixed; inset: 0; z-index: 50; background: rgba(0, 0, 0, .6); display: flex; align-items: flex-end; justify-content: center; }
+.modal-back[hidden] { display: none; }
+.modal { width: min(760px, 100%); max-height: 88vh; display: flex; flex-direction: column; background: var(--bg); border: 1px solid var(--line); border-radius: 16px 16px 0 0; }
+.modal-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 14px 16px; border-bottom: 1px solid var(--line); }
+.modal-x { background: none; border: 0; color: var(--muted); font-size: 26px; line-height: 1; padding: 0 4px; }
+.modal-body { overflow-y: auto; padding: 12px 16px calc(16px + env(safe-area-inset-bottom)); -webkit-overflow-scrolling: touch; }
+@media (min-width: 700px) { .modal-back { align-items: center; } .modal { border-radius: 16px; } }
+body.modal-open { overflow: hidden; }
